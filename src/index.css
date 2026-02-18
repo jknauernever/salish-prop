@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+
+  --color-deep-teal: #0D4F4F;
+  --color-deep-teal-light: #1A7A7A;
+  --color-slate-blue: #2C3E50;
+  --color-slate-blue-light: #34495E;
+  --color-fog-gray: #E8ECEF;
+  --color-fog-gray-dark: #CED4DA;
+  --color-forest-green: #1B4332;
+  --color-forest-green-light: #2D6A4F;
+  --color-driftwood: #D4A574;
+  --color-driftwood-light: #E5C9A8;
+  --color-ocean-blue: #1A6B8A;
+  --color-ocean-blue-light: #2691B8;
+  --color-sand: #F5F1EB;
+  --color-kelp: #3D5A3E;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Google Maps autocomplete dropdown styling */
+.pac-container {
+  border-radius: 0.75rem;
+  border: 1px solid #CED4DA;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  margin-top: 4px;
+  font-family: "Source Sans 3", sans-serif;
+}
+
+.pac-item {
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #2C3E50;
+  border-top: 1px solid #E8ECEF;
+}
+
+.pac-item:first-child {
+  border-top: none;
+}
+
+.pac-item:hover {
+  background-color: #E8ECEF;
+}
+
+.pac-item-query {
+  font-size: 14px;
+  color: #2C3E50;
+}
