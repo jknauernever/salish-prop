@@ -14,6 +14,15 @@ interface LayerControlsProps {
 }
 
 export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl }: LayerControlsProps) {
+  // All categories start collapsed
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(categoryOrder.map(cat => [cat, true]))
+  );
+
+  const toggleCollapsed = (category: string) => {
+    setCollapsed(prev => ({ ...prev, [category]: !prev[category] }));
+  };
+
   const groupedLayers = categoryOrder
     .map(cat => ({
       category: cat,
@@ -32,14 +41,27 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
         const activeLayers = group.layers.filter(l => !l.config.placeholder);
         const allVisible = activeLayers.length > 0 && activeLayers.every(l => l.visible);
         const noneVisible = activeLayers.every(l => !l.visible);
+        const isCollapsed = !!collapsed[group.category];
 
         return (
-          <div key={group.category} className="mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-slate-blue/70 uppercase tracking-wider">
-                {group.label}
-              </h3>
-              {activeLayers.length > 1 && (
+          <div key={group.category} className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <button
+                onClick={() => toggleCollapsed(group.category)}
+                className="flex items-center gap-1.5 group cursor-pointer"
+              >
+                <svg
+                  className={`w-3 h-3 text-slate-blue/50 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+                  viewBox="0 0 12 12"
+                  fill="currentColor"
+                >
+                  <path d="M4 2 L9 6 L4 10 Z" />
+                </svg>
+                <h3 className="text-xs font-semibold text-slate-blue/70 uppercase tracking-wider group-hover:text-slate-blue transition-colors">
+                  {group.label}
+                </h3>
+              </button>
+              {!isCollapsed && activeLayers.length > 1 && (
                 <button
                   onClick={() => onSetAllVisible(group.category, noneVisible || !allVisible)}
                   className="text-xs text-ocean-blue hover:text-ocean-blue-light transition-colors"
@@ -49,25 +71,27 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
               )}
             </div>
 
-            <div className="space-y-1">
-              {group.layers.map(layer => (
-                <LayerRow
-                  key={layer.config.id}
-                  layer={layer}
-                  onToggle={() => onToggleLayer(layer.config.id)}
-                  onOpacityChange={
-                    (layer.config.layerType === 'raster' || layer.config.layerType === 'dynamic-raster') && onSetLayerOpacity
-                      ? (opacity: number) => onSetLayerOpacity(layer.config.id, opacity)
-                      : undefined
-                  }
-                  onSetDynamicTileUrl={
-                    layer.config.layerType === 'dynamic-raster' && onSetDynamicTileUrl
-                      ? (tileUrl: string) => onSetDynamicTileUrl(layer.config.id, tileUrl)
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
+            {!isCollapsed && (
+              <div className="space-y-1">
+                {group.layers.map(layer => (
+                  <LayerRow
+                    key={layer.config.id}
+                    layer={layer}
+                    onToggle={() => onToggleLayer(layer.config.id)}
+                    onOpacityChange={
+                      (layer.config.layerType === 'raster' || layer.config.layerType === 'dynamic-raster') && onSetLayerOpacity
+                        ? (opacity: number) => onSetLayerOpacity(layer.config.id, opacity)
+                        : undefined
+                    }
+                    onSetDynamicTileUrl={
+                      layer.config.layerType === 'dynamic-raster' && onSetDynamicTileUrl
+                        ? (tileUrl: string) => onSetDynamicTileUrl(layer.config.id, tileUrl)
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -90,23 +114,31 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
     <div>
       <div
         className={`
-          flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors
+          flex items-center gap-2 px-2 py-1 rounded-md transition-colors
           ${isPlaceholder ? 'opacity-50' : 'hover:bg-fog-gray/50'}
         `}
       >
-        {/* Color swatch */}
-        <div
-          className="w-3 h-3 rounded-sm shrink-0 border border-black/10"
-          style={{
-            backgroundColor: config.style.fillOpacity > 0
-              ? config.style.fillColor
-              : config.style.strokeColor,
-          }}
-        />
+        {/* Color swatch or marker icon */}
+        {config.markerIcon ? (
+          <img
+            src={config.markerIcon}
+            alt=""
+            className="w-5 h-5 shrink-0"
+          />
+        ) : (
+          <div
+            className="w-4 h-4 rounded-sm shrink-0 border border-black/10"
+            style={{
+              backgroundColor: config.style.fillOpacity > 0
+                ? config.style.fillColor
+                : config.style.strokeColor,
+            }}
+          />
+        )}
 
         {/* Name and status */}
         <div className="flex-1 min-w-0">
-          <span className={`text-sm ${isPlaceholder ? 'text-slate-blue/40' : 'text-slate-blue'}`}>
+          <span className={`text-xs leading-tight ${isPlaceholder ? 'text-slate-blue/40' : 'text-slate-blue'}`}>
             {config.name}
           </span>
           {isPlaceholder && (

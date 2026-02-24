@@ -4,8 +4,10 @@ import { useMap } from '../../hooks/useMap';
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
-import { countIntersectingBuildings, queryShorelineHabitat } from '../../services/popupSpatial';
-import type { BuildingQueryResult, ShorelineQueryResult } from '../../services/popupSpatial';
+import { countIntersectingBuildings, queryShorelineHabitat, queryNearshoreVegetation } from '../../services/popupSpatial';
+import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
+import { fetchNearbyBirdSummary } from '../../services/ebird';
+import type { BirdSpeciesSummary } from '../../services/ebird';
 
 // NDVI parcel stats cache
 let ndviStatsCache: Record<string, NdviStats> | null = null;
@@ -150,6 +152,45 @@ interface FeaturePopupProps {
   layers: LayerState[];
 }
 
+// Dedicated overlay Data layer for the highlighted parcel selection.
+// Using a separate layer avoids issues with viewport-filtered layers
+// that remove/re-add features on every pan/zoom (which clears overrideStyle).
+let highlightLayer: google.maps.Data | null = null;
+let highlightLayerMap: google.maps.Map | null = null;
+
+function ensureHighlightLayer(map: google.maps.Map): google.maps.Data {
+  if (highlightLayer && highlightLayerMap === map) return highlightLayer;
+  if (highlightLayer) highlightLayer.setMap(null);
+  highlightLayer = new google.maps.Data({ map });
+  highlightLayer.setStyle({
+    strokeColor: '#F97316',
+    strokeWeight: 4,
+    fillColor: '#F97316',
+    fillOpacity: 0.25,
+    zIndex: 10,
+    clickable: false,
+  });
+  highlightLayerMap = map;
+  return highlightLayer;
+}
+
+function clearParcelHighlight() {
+  if (highlightLayer) {
+    highlightLayer.forEach(f => highlightLayer!.remove(f));
+  }
+}
+
+function highlightParcelGeometry(
+  geoFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null,
+  map: google.maps.Map,
+) {
+  const hl = ensureHighlightLayer(map);
+  hl.forEach(f => hl.remove(f));
+  if (geoFeature) {
+    hl.addGeoJson(geoFeature);
+  }
+}
+
 export function FeaturePopup({ layers }: FeaturePopupProps) {
   const { map } = useMap();
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
@@ -161,10 +202,15 @@ export function FeaturePopup({ layers }: FeaturePopupProps) {
 
     infoWindowRef.current = new google.maps.InfoWindow();
 
+    // Clear parcel highlight when popup is closed
+    infoWindowRef.current.addListener('closeclick', clearParcelHighlight);
+
     const listeners: google.maps.MapsEventListener[] = [];
 
     layers.forEach(layer => {
       if (!layer.dataLayer) return;
+      // eBird hotspots handle their own click (open eBird URL)
+      if (layer.config.id === 'ebird-hotspots') return;
 
       const listener = layer.dataLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
         const feature = event.feature;
@@ -213,6 +259,7 @@ export function FeaturePopup({ layers }: FeaturePopupProps) {
     return () => {
       listeners.forEach(l => google.maps.event.removeListener(l));
       infoWindowRef.current?.close();
+      clearParcelHighlight();
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
       delete (window as unknown as Record<string, unknown>).__openNdviInfo;
       window.removeEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
@@ -713,6 +760,14 @@ function openParcelPopupAtCoords(
   const label = getFeatureLabel(geoFeature, parcelLayer.config.id);
   const fields = extractAllFeatureProperties(geoFeature, parcelLayer.config.popupFields);
 
+  // Highlight the matched parcel geometry
+  if (matchedFeature.geometry && (matchedFeature.geometry.type === 'Polygon' || matchedFeature.geometry.type === 'MultiPolygon')) {
+    highlightParcelGeometry(
+      matchedFeature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
+      map,
+    );
+  }
+
   // Create a synthetic event with the searched position
   const latLng = new google.maps.LatLng(lat, lng);
   const syntheticEvent = { latLng } as google.maps.Data.MouseEvent;
@@ -740,6 +795,9 @@ function handleParcelClick(
 
   const parcelGeoFeature = findParcelGeometry(layer, props);
 
+  // Highlight selected parcel on the map
+  highlightParcelGeometry(parcelGeoFeature, map);
+
   const content = buildTabbedPopupHtml(label, layer, fields, addressRowId, popupId);
   infoWindowRef.current?.setContent(content);
   infoWindowRef.current?.setPosition(event.latLng!);
@@ -760,6 +818,13 @@ function handleParcelClick(
   const clickLat = event.latLng?.lat() ?? 0;
   const clickLng = event.latLng?.lng() ?? 0;
 
+  const titleElId = `${popupId}-title`;
+
+  const setPopupTitle = (address: string) => {
+    const titleEl = document.getElementById(titleElId);
+    if (titleEl) titleEl.textContent = address;
+  };
+
   getAddressLookup().then(lookup => {
     const entries = pin ? (lookup[pin] || []) : [];
     const el = document.getElementById(addressRowId);
@@ -769,6 +834,7 @@ function handleParcelClick(
       const primary = entries[0];
       const address = primary.FULLADDR || '';
       setAddressLink(el, address, clickLat, clickLng, infoWindowRef);
+      setPopupTitle(address || label);
     } else if (event.latLng) {
       // Fall back to Google reverse geocode
       reverseGeocode(clickLat, clickLng).then(address => {
@@ -778,20 +844,27 @@ function handleParcelClick(
           addrEl.textContent = 'Address not found';
           addrEl.style.color = COLOR.light;
           addrEl.style.fontStyle = 'italic';
+          setPopupTitle(label);
           return;
         }
         setAddressLink(addrEl, address, clickLat, clickLng, infoWindowRef);
+        setPopupTitle(address);
       });
+    } else {
+      setPopupTitle(label);
     }
   });
+
+  // Fetch bird observations (independent of parcel geometry)
+  runBirdQuery(clickLat, clickLng, popupId);
 
   // Run spatial queries + address-enriched summary
   if (parcelGeoFeature) {
     requestAnimationFrame(() => {
       const buildingResult = runBuildingQuery(parcelGeoFeature, allLayers, popupId);
-      const shorelineResult = runShorelineQuery(parcelGeoFeature, allLayers, popupId);
+      const { shorelineResult, vegResult } = runShorelineQuery(parcelGeoFeature, allLayers, popupId);
       // Initial render without NDVI or address data
-      renderSummary(popupId, props, buildingResult, shorelineResult, null, null, null);
+      renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
 
       const fid = String(props.FID ?? '');
       // Load NDVI stats and address data in parallel
@@ -809,7 +882,7 @@ function handleParcelClick(
           }
         }
         const addrEntries = pin ? (addrLookup[pin] || null) : null;
-        renderSummary(popupId, props, buildingResult, shorelineResult, ndvi, island, addrEntries);
+        renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries);
       });
     });
   } else {
@@ -817,7 +890,7 @@ function handleParcelClick(
     if (bEl) bEl.innerHTML = `<span style="color:${COLOR.light};font-style:italic;">Spatial data unavailable</span>`;
     const sEl = document.getElementById(`${popupId}-shoreline`);
     if (sEl) sEl.innerHTML = `<span style="color:${COLOR.light};font-style:italic;">Spatial data unavailable</span>`;
-    renderSummary(popupId, props, null, null, null, null, null);
+    renderSummary(popupId, props, null, null, null, null, null, null);
   }
 }
 
@@ -853,27 +926,174 @@ function runBuildingQuery(
   return result;
 }
 
+interface ShorelineAndVegResult {
+  shorelineResult: ShorelineQueryResult | null;
+  vegResult: NearshoreVegetationResult;
+}
+
 function runShorelineQuery(
   parcel: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
   layers: LayerState[],
   popupId: string,
-): ShorelineQueryResult | null {
+): ShorelineAndVegResult {
   const el = document.getElementById(`${popupId}-shoreline`);
   const hasFishLayer = layers.some(l => l.config.category === 'fish-habitat' && l.loaded && l.geojsonData);
+
+  // Always query nearshore vegetation (independent of fish layers)
+  const vegResult = queryNearshoreVegetation(parcel, layers);
+  const hasVegData = vegResult.bullKelp.present || vegResult.eelgrass.present;
+
   if (!hasFishLayer) {
-    if (el) el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Turn on a Fish Habitat layer in the sidebar to see shoreline analysis for this property.</p></div>`;
-    return null;
+    if (el) {
+      const vegHtml = hasVegData ? buildNearshoreVegetationHtml(vegResult) : '';
+      el.innerHTML = vegHtml + `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Turn on a Fish Habitat layer in the sidebar to see shoreline analysis for this property.</p></div>`;
+    }
+    return { shorelineResult: null, vegResult };
   }
 
   const result = queryShorelineHabitat(parcel, layers);
   if (el) {
-    if (result.species.length === 0) {
-      el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">No mapped fish habitat was found along the shoreline near this property.</p></div>`;
+    if (result.species.length === 0 && !hasVegData) {
+      el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">No shoreline adjacent to this property.</p></div>`;
     } else {
-      el.innerHTML = buildShorelineTab(result);
+      const vegHtml = hasVegData ? buildNearshoreVegetationHtml(vegResult) : '';
+      const shorelineHtml = result.species.length > 0 ? buildShorelineTab(result) : '';
+      el.innerHTML = vegHtml + shorelineHtml;
     }
   }
-  return result;
+  return { shorelineResult: result, vegResult };
+}
+
+// ---------------------------------------------------------------------------
+// Bird observations (eBird API)
+// ---------------------------------------------------------------------------
+
+const BIRD_RADIUS_OPTIONS = [
+  { miles: 1, km: 1.609 },
+  { miles: 5, km: 8.047 },
+  { miles: 10, km: 16.093 },
+  { miles: 20, km: 32.187 },
+];
+const DEFAULT_BIRD_RADIUS_MILES = 5;
+
+function runBirdQuery(lat: number, lng: number, popupId: string) {
+  const el = document.getElementById(`${popupId}-birds`);
+  if (!el) {
+    requestAnimationFrame(() => runBirdQuery(lat, lng, popupId));
+    return;
+  }
+
+  const defaultOpt = BIRD_RADIUS_OPTIONS.find(o => o.miles === DEFAULT_BIRD_RADIUS_MILES)!;
+  fetchNearbyBirdSummary(lat, lng, 30, defaultOpt.km).then(results => {
+    renderBirdsTab(popupId, results, 30, DEFAULT_BIRD_RADIUS_MILES, lat, lng);
+  }).catch(() => {
+    const birdsEl = document.getElementById(`${popupId}-birds`);
+    if (birdsEl) {
+      birdsEl.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Unable to load bird observations. Check your connection and try again.</p></div>`;
+    }
+  });
+}
+
+function renderBirdsTab(
+  popupId: string,
+  results: BirdSpeciesSummary[],
+  back: number,
+  radiusMiles: number,
+  lat: number,
+  lng: number,
+) {
+  const el = document.getElementById(`${popupId}-birds`);
+  if (!el) return;
+
+  const periodSelectId = `${popupId}-bird-period`;
+  const radiusSelectId = `${popupId}-bird-radius`;
+
+  const periodOptions = [
+    { value: 1, label: 'Today' },
+    { value: 7, label: 'Past Week' },
+    { value: 30, label: 'Past 30 Days' },
+  ];
+
+  const selectStyle = `
+    font-family:${FONT}; font-size:13px; padding:3px 6px;
+    border:1px solid ${COLOR.border}; border-radius:6px;
+    background:${COLOR.bg}; color:${COLOR.dark}; cursor:pointer;
+  `;
+
+  const periodSelectHtml = `
+    <select id="${periodSelectId}" style="${selectStyle}">
+      ${periodOptions.map(o =>
+        `<option value="${o.value}" ${o.value === back ? 'selected' : ''}>${esc(o.label)}</option>`
+      ).join('')}
+    </select>
+  `;
+
+  const radiusSelectHtml = `
+    <select id="${radiusSelectId}" style="${selectStyle}">
+      ${BIRD_RADIUS_OPTIONS.map(o =>
+        `<option value="${o.miles}" ${o.miles === radiusMiles ? 'selected' : ''}>${o.miles} mi</option>`
+      ).join('')}
+    </select>
+  `;
+
+  const header = `
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-size:16px;font-weight:700;color:${COLOR.dark};">${results.length} species</div>
+        <div style="display:flex;gap:6px;">${periodSelectHtml}${radiusSelectHtml}</div>
+      </div>
+      <div style="font-size:13px;color:${COLOR.mid};">Recent birds reported within a ${radiusMiles} mile radius</div>
+    </div>
+  `;
+
+  let listHtml: string;
+  if (results.length === 0) {
+    listHtml = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">No bird observations recorded in this area for the selected period.</p></div>`;
+  } else {
+    const rows = results.map(sp => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid ${COLOR.border};">
+        <div style="min-width:0;">
+          <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="https://ebird.org/species/${encodeURIComponent(sp.speciesCode)}" target="_blank" style="color:${COLOR.dark};text-decoration:none;" onmouseover="this.style.color='${COLOR.teal}'" onmouseout="this.style.color='${COLOR.dark}'">${esc(sp.comName)}</a></div>
+          <div style="font-size:13px;color:${COLOR.mid};font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(sp.sciName)}</div>
+        </div>
+        <div style="
+          min-width:36px; text-align:center; padding:3px 8px;
+          background:rgba(13,79,79,0.1); color:${COLOR.teal};
+          font-size:14px; font-weight:700; border-radius:12px; margin-left:12px; shrink:0;
+        ">${sp.count}</div>
+      </div>
+    `).join('');
+    listHtml = `<div style="${CARD}padding:0;overflow:hidden;">${rows}</div>`;
+  }
+
+  const attribution = `
+    <div style="font-size:12px;color:${COLOR.light};text-align:center;margin-top:8px;">
+      Data from <a href="https://ebird.org" target="_blank" style="color:${COLOR.teal};">eBird</a> (Cornell Lab of Ornithology)
+    </div>
+  `;
+
+  el.innerHTML = header + listHtml + attribution;
+
+  // Re-fetch helper
+  function refetch() {
+    const periodEl = document.getElementById(periodSelectId) as HTMLSelectElement | null;
+    const radiusEl = document.getElementById(radiusSelectId) as HTMLSelectElement | null;
+    const newBack = Number(periodEl?.value ?? back);
+    const newMiles = Number(radiusEl?.value ?? radiusMiles);
+    const newKm = BIRD_RADIUS_OPTIONS.find(o => o.miles === newMiles)?.km ?? 8.047;
+    el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>`;
+    fetchNearbyBirdSummary(lat, lng, newBack, newKm).then(newResults => {
+      renderBirdsTab(popupId, newResults, newBack, newMiles, lat, lng);
+    }).catch(() => {
+      el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Unable to load bird observations.</p></div>`;
+    });
+  }
+
+  const periodSelect = document.getElementById(periodSelectId) as HTMLSelectElement | null;
+  if (periodSelect) periodSelect.addEventListener('change', refetch);
+
+  const radiusSelect = document.getElementById(radiusSelectId) as HTMLSelectElement | null;
+  if (radiusSelect) radiusSelect.addEventListener('change', refetch);
 }
 
 // ---------------------------------------------------------------------------
@@ -934,10 +1154,12 @@ function renderPropertySnapshot(
   // Clear loading text
   container.innerHTML = '';
 
-  // Create mini-map
+  // Create mini-map matching the main map's base style
+  const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
   const miniMap = new google.maps.Map(container, {
     center: bounds.getCenter(),
-    mapTypeId: google.maps.MapTypeId.SATELLITE,
+    mapTypeId: google.maps.MapTypeId.HYBRID,
+    ...(mapId ? { mapId } : {}),
     disableDefaultUI: true,
     gestureHandling: 'none',
     clickableIcons: false,
@@ -945,81 +1167,16 @@ function renderPropertySnapshot(
   });
 
   // Fit to parcel with padding
-  miniMap.fitBounds(bounds, 30);
+  miniMap.fitBounds(bounds, 20);
 
-  // Add NDVI tile overlay (1m NAIP data)
-  const ndviOverlay = new google.maps.ImageMapType({
-    getTileUrl(coord, zoom) {
-      if (zoom < 10 || zoom > 19) return null;
-      return `https://storage.googleapis.com/salish-ndvi-tiles/ndvi/${zoom}/${coord.x}/${coord.y}.png`;
-    },
-    tileSize: new google.maps.Size(256, 256),
-    opacity: 0.75,
-    name: 'ndvi-snapshot',
-  });
-  miniMap.overlayMapTypes.insertAt(0, ndviOverlay);
-
-  // Clip NDVI to parcel shape: bounded mask rect with parcel hole cut out
-  // Compute parcel bounding box
-  const allCoords: number[][] = parcelFeature.geometry.type === 'Polygon'
-    ? (parcelFeature.geometry.coordinates[0] as number[][])
-    : (parcelFeature.geometry as GeoJSON.MultiPolygon).coordinates.flatMap(p => p[0] as number[][]);
-  let mnLat = 90, mxLat = -90, mnLng = 180, mxLng = -180;
-  for (const c of allCoords) {
-    if (c[1] < mnLat) mnLat = c[1];
-    if (c[1] > mxLat) mxLat = c[1];
-    if (c[0] < mnLng) mnLng = c[0];
-    if (c[0] > mxLng) mxLng = c[0];
-  }
-  const pad = 0.5; // ~0.5 degree padding to cover mini-map viewport
-  // Outer rect: clockwise (Google Maps convention for exterior path)
-  const outerPath = [
-    new google.maps.LatLng(mnLat - pad, mnLng - pad), // SW
-    new google.maps.LatLng(mxLat + pad, mnLng - pad), // NW
-    new google.maps.LatLng(mxLat + pad, mxLng + pad), // NE
-    new google.maps.LatLng(mnLat - pad, mxLng + pad), // SE
-  ];
-  // Parcel rings: ensure counter-clockwise (Google Maps convention for holes)
-  // Compute signed area to detect winding, reverse if needed
-  function ringIsClockwise(coords: number[][]): boolean {
-    let sum = 0;
-    for (let i = 0; i < coords.length - 1; i++) {
-      const [x1, y1] = coords[i];
-      const [x2, y2] = coords[i + 1];
-      sum += (x2 - x1) * (y2 + y1);
-    }
-    return sum > 0;
-  }
-  const rawRings: number[][][] = parcelFeature.geometry.type === 'Polygon'
-    ? [parcelFeature.geometry.coordinates[0] as number[][]]
-    : (parcelFeature.geometry as GeoJSON.MultiPolygon).coordinates.map(p => p[0] as number[][]);
-  const parcelRings: google.maps.LatLng[][] = rawRings.map(ring => {
-    // Hole must be CCW; if ring is CW (positive signed area), it's already CW — need to reverse
-    // If ring is CCW (negative signed area), reverse to make CW — wait, we need CCW for holes
-    // Actually: ringIsClockwise uses the shoelace formula on [lng,lat] coords.
-    // For Google Maps holes, we need the LatLng path to be counter-clockwise on the map.
-    // Since GeoJSON coords are [lng,lat], CW in [lng,lat] = CW on map. We want CCW on map.
-    const cw = ringIsClockwise(ring);
-    const ordered = cw ? ring.slice().reverse() : ring;
-    return ordered.map(c => new google.maps.LatLng(c[1], c[0]));
-  });
-
-  new google.maps.Polygon({
-    paths: [outerPath, ...parcelRings],
-    fillColor: '#F0F2F5',
-    fillOpacity: 1,
-    strokeWeight: 0,
-    clickable: false,
-    map: miniMap,
-  });
-
-  // Add parcel boundary stroke
+  // Add parcel boundary with the same highlight style as the main map selection
   const parcelData = new google.maps.Data({ map: miniMap });
   parcelData.addGeoJson({ type: 'FeatureCollection', features: [parcelFeature] });
   parcelData.setStyle({
-    fillOpacity: 0,
-    strokeColor: '#0A1628',
-    strokeWeight: 2.5,
+    fillColor: '#F97316',
+    fillOpacity: 0.25,
+    strokeColor: '#F97316',
+    strokeWeight: 4,
   });
 
   // Add building footprints within the parcel bounds
@@ -1093,11 +1250,11 @@ function buildTabbedPopupHtml(
 
   return `
     <div id="${popupId}" style="font-family:${FONT};width:580px;">
-      <div style="font-weight:700;font-size:18px;color:${COLOR.dark};margin-bottom:2px;">
-        ${esc(label)}
+      <div id="${popupId}-title" style="font-weight:700;font-size:18px;color:${COLOR.dark};margin-bottom:2px;">
+        Loading address...
       </div>
       <div style="font-size:14px;color:${COLOR.mid};margin-bottom:8px;">
-        ${esc(layer.config.name)}
+        Overview Report
       </div>
 
       <div style="display:flex;border-bottom:1px solid ${COLOR.border};margin-bottom:8px;" id="${popupId}-tabs">
@@ -1105,14 +1262,20 @@ function buildTabbedPopupHtml(
         ${tabBtn('Property', 'property', false)}
         ${tabBtn('Buildings', 'buildings', false)}
         ${tabBtn('Shoreline', 'shoreline', false)}
+        ${tabBtn('Birds', 'birds', false)}
       </div>
 
       <div data-panel="summary" style="display:block;${panelStyle}">
-        <div id="${popupId}-snapshot" style="width:100%;height:220px;border-radius:8px;overflow:hidden;margin-bottom:12px;background:${COLOR.bg};display:flex;align-items:center;justify-content:center;">
-          <span style="font-size:14px;color:${COLOR.light};font-style:italic;">Loading property view...</span>
+        <div style="display:flex;gap:12px;margin-bottom:12px;align-items:stretch;">
+          <div id="${popupId}-at-a-glance" style="flex:1;min-width:0;">
+            <div style="${CARD};height:100%;box-sizing:border-box;margin-bottom:0;"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading overview...</p></div>
+          </div>
+          <div id="${popupId}-snapshot" style="width:200px;height:200px;min-width:200px;border-radius:8px;overflow:hidden;background:${COLOR.bg};display:flex;align-items:center;justify-content:center;">
+            <span style="font-size:12px;color:${COLOR.light};font-style:italic;">Loading map...</span>
+          </div>
         </div>
-        <div id="${popupId}-summary">
-          <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading property overview...</p></div>
+        <div id="${popupId}-summary-cards">
+          <div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading property data...</p></div>
         </div>
       </div>
       <div data-panel="property" style="display:none;${panelStyle}">
@@ -1126,6 +1289,11 @@ function buildTabbedPopupHtml(
       <div data-panel="shoreline" style="display:none;${panelStyle}">
         <div id="${popupId}-shoreline">
           <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Analyzing nearby shoreline...</p></div>
+        </div>
+      </div>
+      <div data-panel="birds" style="display:none;${panelStyle}">
+        <div id="${popupId}-birds">
+          <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>
         </div>
       </div>
     </div>
@@ -1168,21 +1336,31 @@ function renderSummary(
   props: Record<string, unknown>,
   buildingResult: BuildingQueryResult | null,
   shorelineResult: ShorelineQueryResult | null,
+  vegResult: NearshoreVegetationResult | null,
   ndviStats: NdviStats | null,
   islandStats: IslandPercentile | null,
   addrEntries: AddressEntry[] | null,
 ) {
-  const el = document.getElementById(`${popupId}-summary`);
-  if (!el) return;
+  // At a Glance goes in the left column next to the snapshot
+  const glanceEl = document.getElementById(`${popupId}-at-a-glance`);
+  if (glanceEl) {
+    glanceEl.innerHTML = buildAtAGlanceCard(props, buildingResult, addrEntries);
+  }
+
+  // Remaining cards go below the hero row
+  const cardsEl = document.getElementById(`${popupId}-summary-cards`);
+  if (!cardsEl) return;
 
   const cards: string[] = [];
-
-  // --- At a Glance ---
-  cards.push(buildAtAGlanceCard(props, buildingResult, addrEntries));
 
   // --- Shoreline Description ---
   if (shorelineResult?.shorelineDescription) {
     cards.push(buildShorelineDescriptionCard(shorelineResult.shorelineDescription));
+  }
+
+  // --- Nearshore Ecology (Eelgrass & Kelp) ---
+  if (vegResult) {
+    cards.push(buildNearshoreEcologyCard(vegResult));
   }
 
   // --- Fish & Wildlife ---
@@ -1195,7 +1373,7 @@ function renderSummary(
     cards.push(buildGreeneryCard(ndviStats, Number(props.WF_LGTH) > 0, islandStats));
   }
 
-  el.innerHTML = cards.join('');
+  cardsEl.innerHTML = cards.join('');
 }
 
 function buildAtAGlanceCard(
@@ -1210,68 +1388,68 @@ function buildAtAGlanceCard(
   const buildings = buildingResult?.count ?? 0;
   const totalSqFt = buildingResult?.totalSqFt ?? 0;
 
-  // Stat boxes row
-  const stats: string[] = [];
-  stats.push(bigStat(acres, 'Acres'));
-  if (buildings > 0) stats.push(bigStat(String(buildings), buildings === 1 ? 'Building' : 'Buildings'));
-  if (totalSqFt > 0) stats.push(bigStat(Math.round(totalSqFt).toLocaleString(), 'Sq Ft'));
-  if (appraised > 0) stats.push(bigStat(fmtCurrency(appraised), 'Assessed Value'));
-  if (wfLength > 0) stats.push(bigStat(Math.round(wfLength) + ' ft', 'Waterfront'));
+  // Compact stat rows (label: value)
+  const compactStat = (value: string, label: string) =>
+    `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;">
+      <span style="font-size:12px;color:${COLOR.mid};font-weight:600;">${esc(label)}</span>
+      <span style="font-size:14px;font-weight:700;color:${COLOR.teal};">${esc(value)}</span>
+    </div>`;
 
-  const statsRow = `
-    <div style="display:flex;justify-content:space-around;gap:8px;margin-bottom:12px;">
-      ${stats.map(s => `<div style="flex:1;">${s}</div>`).join('')}
-    </div>
-  `;
+  const statRows: string[] = [];
+  statRows.push(compactStat(acres, 'Acres'));
+  if (buildings > 0) statRows.push(compactStat(String(buildings), buildings === 1 ? 'Building' : 'Buildings'));
+  if (totalSqFt > 0) statRows.push(compactStat(Math.round(totalSqFt).toLocaleString(), 'Sq Ft'));
+  if (appraised > 0) statRows.push(compactStat(fmtCurrency(appraised), 'Assessed Value'));
+  if (wfLength > 0) statRows.push(compactStat(Math.round(wfLength) + ' ft', 'Waterfront'));
+
+  const statsBlock = `<div style="margin-bottom:8px;border-bottom:1px solid ${COLOR.border};padding-bottom:6px;">${statRows.join('')}</div>`;
 
   // Quick details
-  const details: string[] = [];
-  if (taxArea) details.push(`Located in ${pill(taxArea)}`);
-  const description = String(props.Descriptio || '').trim();
-  if (description) details.push(`classified as ${pill(description)}`);
+  const COMPACT_BODY = `font-size:13px;color:${COLOR.dark};line-height:1.45;margin:0;`;
+  const compactPill = (text: string) => `<span style="color:${COLOR.teal};font-weight:700;font-size:13px;">${esc(text)}</span>`;
 
-  // Building type from address data
+  const details: string[] = [];
+  if (taxArea) details.push(`Located in ${compactPill(taxArea)}`);
+  const description = String(props.Descriptio || '').trim();
+  if (description) details.push(`classified as ${compactPill(description)}`);
+
   if (addrEntries && addrEntries.length > 0) {
     const bldgType = addrEntries[0].BLDGTYPE;
-    if (bldgType) details.push(`${pill(bldgType)} use`);
+    if (bldgType) details.push(`${compactPill(bldgType)} use`);
   }
 
   const salePrice = Number(props.Sale_Price) || 0;
   const saleDate = String(props.Sale_date || '').trim();
 
-  let detailText = details.length > 0 ? `<p style="${BODY}">${details.join(', ')}.</p>` : '';
+  let detailText = details.length > 0 ? `<p style="${COMPACT_BODY}">${details.join(', ')}.</p>` : '';
   if (salePrice > 0 && saleDate) {
-    detailText += `<p style="${BODY};margin-top:4px;">Last sold for ${pill(fmtCurrency(salePrice))} on ${esc(saleDate)}.</p>`;
+    detailText += `<p style="${COMPACT_BODY};margin-top:3px;">Last sold for ${compactPill(fmtCurrency(salePrice))} on ${esc(saleDate)}.</p>`;
   }
 
-  // Place name and address from address data
   if (addrEntries && addrEntries.length > 0) {
     const primary = addrEntries[0];
     const placeName = primary.PLACENAME;
-    const fullAddr = primary.FULLADDR;
     const community = primary.MSAG;
     const addrParts: string[] = [];
-    if (fullAddr) addrParts.push(pill(fullAddr));
-    if (placeName) addrParts.push(pill(placeName));
+    if (placeName) addrParts.push(compactPill(placeName));
     if (community) addrParts.push(esc(community));
     if (addrParts.length > 0) {
-      detailText += `<p style="${BODY};margin-top:4px;">${addrParts.join(', ')}.</p>`;
+      detailText += `<p style="${COMPACT_BODY};margin-top:3px;">${addrParts.join(', ')}.</p>`;
     }
 
-    // Show additional addresses on this parcel
     if (addrEntries.length > 1) {
       const others = addrEntries.slice(1).filter(e => e.FULLADDR).map(e => e.FULLADDR!);
       if (others.length > 0) {
         const label = others.length === 1 ? '1 additional address' : `${others.length} additional addresses`;
-        detailText += `<p style="${BODY};margin-top:4px;">${pill(label)} on this parcel: ${others.map(a => esc(a)).join(', ')}.</p>`;
+        detailText += `<p style="${COMPACT_BODY};margin-top:3px;">${compactPill(label)} on this parcel.</p>`;
       }
     }
   }
 
   return `
-    <div style="${CARD}">
-      ${sectionHeading('At a Glance')}
-      ${statsRow}
+    <div style="${CARD};height:100%;box-sizing:border-box;margin-bottom:0;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${COLOR.dark};margin:0 0 6px 0;">At a Glance</div>
+      ${statsBlock}
       ${detailText}
     </div>
   `;
@@ -1323,6 +1501,149 @@ function buildShorelineDescriptionCard(desc: NonNullable<ShorelineQueryResult['s
     <div style="${CARD}">
       ${sectionHeading('Shoreline Description')}
       <p style="${BODY}">${sentences.join(' ')}</p>
+    </div>
+  `;
+}
+
+function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
+  const { bullKelp, eelgrass } = veg;
+  const hasKelp = bullKelp.present;
+  const hasEelgrass = eelgrass.present;
+
+  const dot = (color: string) =>
+    `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;"></span>`;
+  const greenDot = dot('#22C55E');
+  const grayDot = dot(COLOR.border);
+
+  // --- Both present ---
+  if (hasKelp && hasEelgrass) {
+    return `
+      <div style="${CARD}">
+        ${sectionHeading('Nearshore Ecology')}
+        <div style="padding:10px 12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
+          <p style="font-size:13px;font-weight:600;color:#166534;margin:0 0 6px;">
+            ${greenDot}Bull Kelp &amp; Eelgrass Present
+          </p>
+          <p style="${BODY};color:#15803D;line-height:1.5;">
+            Both bull kelp and eelgrass beds are found within 100 ft of this property, indicating a
+            <strong>high-quality nearshore environment</strong> that supports diverse marine life.
+          </p>
+        </div>
+        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
+          <strong style="color:${COLOR.teal};">Eelgrass</strong> provides essential nursery habitat for juvenile salmon,
+          forage fish, and Dungeness crab. Eelgrass meadows help stabilize sediments, improve water clarity by filtering
+          nutrients and pollutants, and sequester carbon at rates comparable to terrestrial forests. They also buffer
+          shorelines from wave energy and erosion.
+        </p>
+        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
+          <strong style="color:${COLOR.teal};">Bull kelp</strong> forests are a critical component of the San Juan Islands
+          marine ecosystem. Kelp provides physical habitat structure for rockfish, lingcod, greenling, and
+          invertebrates, and serves as nursery habitat for juvenile fish including salmon. Kelp-derived carbon fuels
+          nearshore food webs, and kelp canopies dampen wave energy, influencing beach sediment composition and habitat
+          suitability for beach-spawning forage fish like surf smelt and sand lance.
+        </p>
+        <div style="position:relative;margin-top:12px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#ECFDF5 0%,#F0FDFA 100%);border-radius:10px;border:1px solid #A7F3D0;border-left:4px solid ${COLOR.teal};">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
+          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
+            The co-occurrence of kelp and eelgrass near this property suggests <strong style="color:${COLOR.teal};">productive waters</strong> with suitable substrate,
+            water clarity, and nutrient conditions. These habitats are protected under San Juan County's <strong>Environmentally
+            Sensitive Areas</strong> code and Washington State's <strong>Priority Habitats and Species Program</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- Only eelgrass ---
+  if (hasEelgrass) {
+    return `
+      <div style="${CARD}">
+        ${sectionHeading('Nearshore Ecology')}
+        <div style="padding:10px 12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;margin-bottom:10px;">
+          <p style="font-size:13px;font-weight:600;color:#115E59;margin:0 0 6px;">
+            ${greenDot}Eelgrass Present
+          </p>
+          <p style="${BODY};color:#0F766E;line-height:1.5;">
+            Eelgrass beds are found within 100 ft of this property.
+          </p>
+        </div>
+        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
+          Eelgrass (<em>Zostera marina</em>) meadows are among the most ecologically valuable habitats in the
+          Salish Sea. They serve as essential nursery grounds for juvenile salmon, Pacific herring, surf smelt, and
+          Dungeness crab. Eelgrass improves water quality by filtering nutrients and trapping sediments, and sequesters
+          carbon at rates up to 35 times faster than tropical rainforests per unit area. These beds also buffer
+          shorelines from wave energy and reduce erosion.
+        </p>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;flex:1;">
+            ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
+          </div>
+        </div>
+        <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#F0FDFA 0%,#ECFDF5 100%);border-radius:10px;border:1px solid #99F6E4;border-left:4px solid ${COLOR.teal};">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
+          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
+            Eelgrass is protected under <strong>Washington State law</strong> and San Juan County's <strong>Environmentally Sensitive Areas</strong> code.
+            Activities that increase sedimentation, shading, or nutrient runoff near this property could impact these beds.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- Only kelp ---
+  if (hasKelp) {
+    return `
+      <div style="${CARD}">
+        ${sectionHeading('Nearshore Ecology')}
+        <div style="padding:10px 12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
+          <p style="font-size:13px;font-weight:600;color:#166534;margin:0 0 6px;">
+            ${greenDot}Bull Kelp Present
+          </p>
+          <p style="${BODY};color:#15803D;line-height:1.5;">
+            Bull kelp beds are found within 100 ft of this property.
+          </p>
+        </div>
+        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
+          Bull kelp (<em>Nereocystis luetkeana</em>) forests are a cornerstone of the San Juan Islands nearshore
+          ecosystem. They provide essential habitat for rockfish, lingcod, greenling, and numerous invertebrates,
+          and serve as nursery areas for juvenile salmon including chinook, coho, and chum. Kelp-derived carbon is a
+          major driver of nearshore food web productivity, and kelp canopies dampen waves, influencing beach sediment
+          composition and suitability for spawning by forage fish like surf smelt and Pacific sand lance.
+        </p>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;flex:1;">
+            ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No eelgrass mapped within 100 ft</span>
+          </div>
+        </div>
+        <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#ECFDF5 0%,#F0FDF4 100%);border-radius:10px;border:1px solid #BBF7D0;border-left:4px solid ${COLOR.teal};">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
+          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
+            Bull kelp is listed as a <strong>priority habitat</strong> by Washington's Department of Fish &amp; Wildlife and is protected
+            under <strong>San Juan County code</strong>. Threats include sedimentation from land use, boat wake erosion, and climate change.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- Neither present ---
+  return `
+    <div style="${CARD}">
+      ${sectionHeading('Nearshore Ecology')}
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+        <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;">
+          ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
+        </div>
+        <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;">
+          ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No eelgrass mapped within 100 ft</span>
+        </div>
+      </div>
+      <p style="${BODY};line-height:1.5;color:${COLOR.mid};">
+        No bull kelp or eelgrass beds were identified within 100 ft of this property in Friends of the San Juans
+        survey data. This does not necessarily indicate poor water quality &mdash; these marine plants require specific
+        substrate, depth, and light conditions. Kelp needs rocky substrate and eelgrass needs soft sediment in
+        protected, shallow waters.
+      </p>
     </div>
   `;
 }
@@ -1517,6 +1838,140 @@ function buildFishCard(result: ShorelineQueryResult): string {
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">${hrmDesc} ${moreInfoLink}</p>
       <div style="font-size:14px;color:${COLOR.dark};margin-bottom:6px;">Habitat relevance score</div>
       ${bars}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Nearshore vegetation panel (Bull Kelp + Eelgrass)
+// ---------------------------------------------------------------------------
+
+function describeKelpExtent(acres: number): string {
+  if (acres >= 5) return 'Extensive kelp canopy';
+  if (acres >= 1) return 'Moderate kelp presence';
+  if (acres >= 0.1) return 'Small kelp patches';
+  return 'Trace kelp presence';
+}
+
+function describeKelpDensity(featureCount: number): string {
+  if (featureCount >= 50) return 'densely distributed';
+  if (featureCount >= 15) return 'moderately distributed';
+  if (featureCount >= 5) return 'sparsely distributed';
+  return 'in isolated patches';
+}
+
+function describeEelgrassExtent(segmentCount: number, totalLengthFt: number): string {
+  if (totalLengthFt >= 5000) return 'Extensive eelgrass coverage';
+  if (totalLengthFt >= 1000) return 'Moderate eelgrass presence';
+  if (segmentCount >= 3) return 'Multiple eelgrass survey sites';
+  return 'Eelgrass detected nearby';
+}
+
+function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
+  const { bullKelp, eelgrass } = veg;
+
+  const vegIcon = (present: boolean) => present
+    ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22C55E;margin-right:6px;vertical-align:middle;"></span>`
+    : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${COLOR.border};margin-right:6px;vertical-align:middle;"></span>`;
+
+  // --- Bull Kelp section ---
+  let kelpHtml = '';
+  if (bullKelp.present) {
+    const extent = describeKelpExtent(bullKelp.totalAcres);
+    const density = describeKelpDensity(bullKelp.featureCount);
+    const acresStr = bullKelp.totalAcres >= 0.1 ? bullKelp.totalAcres.toFixed(1) : '< 0.1';
+    kelpHtml = `
+      <div style="padding:12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;margin-bottom:6px;">
+          ${vegIcon(true)}
+          <span style="font-size:14px;font-weight:700;color:#166534;">Bull Kelp Present</span>
+        </div>
+        <p style="${BODY};color:#15803D;margin-bottom:8px;">
+          ${extent}, ${density} within 100 ft of this property.
+        </p>
+        <div style="display:flex;gap:16px;">
+          <div style="text-align:center;flex:1;padding:8px;background:white;border-radius:6px;">
+            <div style="font-size:20px;font-weight:700;color:#166534;">${acresStr}</div>
+            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Acres</div>
+          </div>
+          <div style="text-align:center;flex:1;padding:8px;background:white;border-radius:6px;">
+            <div style="font-size:20px;font-weight:700;color:#166534;">${bullKelp.featureCount.toLocaleString()}</div>
+            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Grid cells</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- Eelgrass section ---
+  let eelgrassHtml = '';
+  if (eelgrass.present) {
+    const extent = describeEelgrassExtent(eelgrass.segmentCount, eelgrass.totalLengthFt);
+    const lengthStr = eelgrass.totalLengthFt >= 1 ? Math.round(eelgrass.totalLengthFt).toLocaleString() : '—';
+    const depthStr = eelgrass.meanDepth !== null ? eelgrass.meanDepth.toFixed(1) : '—';
+    const maxDepthStr = eelgrass.maxDepth !== null ? eelgrass.maxDepth.toFixed(1) : '—';
+    const sitesStr = eelgrass.sites.length > 0 ? eelgrass.sites.slice(0, 3).join(', ') : '';
+
+    eelgrassHtml = `
+      <div style="padding:12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;margin-bottom:6px;">
+          ${vegIcon(true)}
+          <span style="font-size:14px;font-weight:700;color:#115E59;">Deepwater Eelgrass Present</span>
+        </div>
+        <p style="${BODY};color:#0F766E;margin-bottom:8px;">
+          ${extent} within 100 ft of this property${eelgrass.segmentCount > 1 ? ` across ${eelgrass.segmentCount} survey transects` : ''}.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${lengthStr !== '—' ? `
+          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
+            <div style="font-size:18px;font-weight:700;color:#115E59;">${lengthStr}</div>
+            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Length (ft)</div>
+          </div>` : ''}
+          ${depthStr !== '—' ? `
+          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
+            <div style="font-size:18px;font-weight:700;color:#115E59;">${depthStr}</div>
+            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Avg depth</div>
+          </div>` : ''}
+          ${maxDepthStr !== '—' ? `
+          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
+            <div style="font-size:18px;font-weight:700;color:#115E59;">${maxDepthStr}</div>
+            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Max depth</div>
+          </div>` : ''}
+        </div>
+        ${sitesStr ? `<p style="font-size:12px;color:${COLOR.mid};margin-top:8px;">Survey sites: ${esc(sitesStr)}</p>` : ''}
+      </div>
+    `;
+  }
+
+  // Summary sentence
+  const both = bullKelp.present && eelgrass.present;
+  const summaryNote = both
+    ? 'The presence of both kelp and eelgrass indicates a high-quality nearshore environment that supports diverse marine life.'
+    : bullKelp.present
+      ? 'Bull kelp forests provide essential habitat for rockfish, lingcod, invertebrates, and serve as nurseries for juvenile fish.'
+      : 'Eelgrass beds are critical nursery habitat for salmon, forage fish, and Dungeness crab. They also sequester carbon and stabilize sediments.';
+
+  return `
+    <div style="${CARD}">
+      ${sectionHeading('Nearshore Vegetation')}
+      <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
+        Marine vegetation within 100 ft of this property, based on Friends of the San Juans survey data.
+      </p>
+      ${kelpHtml}
+      ${eelgrassHtml}
+      ${!bullKelp.present ? `
+        <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
+          ${vegIcon(false)}
+          <span style="font-size:13px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
+        </div>` : ''}
+      ${!eelgrass.present ? `
+        <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
+          ${vegIcon(false)}
+          <span style="font-size:13px;color:${COLOR.mid};">No deepwater eelgrass mapped within 100 ft</span>
+        </div>` : ''}
+      <p style="font-size:12px;color:${COLOR.mid};margin-top:10px;line-height:1.4;font-style:italic;">
+        ${summaryNote}
+      </p>
     </div>
   `;
 }

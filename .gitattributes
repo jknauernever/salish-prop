@@ -1,3 +1,4 @@
 public/data/Tax_Parcels.geojson filter=lfs diff=lfs merge=lfs -text
 public/data/Building_Footprints.geojson filter=lfs diff=lfs merge=lfs -text
 public/data/*.geojson filter=lfs diff=lfs merge=lfs -text
+public/data/friends-bull-kelp.json filter=lfs diff=lfs merge=lfs -text

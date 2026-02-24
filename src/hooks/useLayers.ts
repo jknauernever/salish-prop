@@ -2,6 +2,62 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { LayerConfig, LayerState } from '../types';
 import { layerConfigs } from '../config/layers';
 import { fetchGeoJSON } from '../utils/geojson';
+import { fetchHotspotsGeoJSON } from '../services/ebird';
+
+/** Compute midpoint of a LineString coordinate array */
+function lineMidpoint(coords: number[][]): [number, number] {
+  if (coords.length === 0) return [0, 0];
+  if (coords.length === 1) return [coords[0][0], coords[0][1]];
+  // Walk along the line to find the midpoint by accumulated distance
+  let totalDist = 0;
+  const segments: number[] = [];
+  for (let i = 1; i < coords.length; i++) {
+    const dx = coords[i][0] - coords[i - 1][0];
+    const dy = coords[i][1] - coords[i - 1][1];
+    const d = Math.sqrt(dx * dx + dy * dy);
+    segments.push(d);
+    totalDist += d;
+  }
+  const half = totalDist / 2;
+  let acc = 0;
+  for (let i = 0; i < segments.length; i++) {
+    if (acc + segments[i] >= half) {
+      const frac = (half - acc) / segments[i];
+      const lng = coords[i][0] + frac * (coords[i + 1][0] - coords[i][0]);
+      const lat = coords[i][1] + frac * (coords[i + 1][1] - coords[i][1]);
+      return [lng, lat];
+    }
+    acc += segments[i];
+  }
+  const last = coords[coords.length - 1];
+  return [last[0], last[1]];
+}
+
+/** Create a GeoJSON FeatureCollection of midpoints from LineString features */
+function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
+  for (const f of data.features) {
+    const geom = f.geometry;
+    if (!geom) continue;
+    let coordArrays: number[][][];
+    if (geom.type === 'LineString') {
+      coordArrays = [(geom as GeoJSON.LineString).coordinates];
+    } else if (geom.type === 'MultiLineString') {
+      coordArrays = (geom as GeoJSON.MultiLineString).coordinates;
+    } else {
+      continue;
+    }
+    for (const coords of coordArrays) {
+      const [lng, lat] = lineMidpoint(coords);
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {},
+      });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
 
 function createInitialState(config: LayerConfig): LayerState {
   return {
@@ -56,6 +112,7 @@ export function useLayers(map: google.maps.Map | null) {
     layerConfigs.map(createInitialState)
   );
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
+  const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
   const loadedRef = useRef<Set<string>>(new Set());
 
@@ -69,6 +126,45 @@ export function useLayers(map: google.maps.Map | null) {
     if (!config || config.viewportFiltered) return; // viewport layers handled separately
     const dl = dataLayersRef.current.get(layerId);
     if (!dl) return;
+
+    // Layers with custom marker icons
+    if (config.markerIcon) {
+      // Check if this layer has a midpoint marker layer (LineString with icons)
+      const ml = markerLayersRef.current.get(layerId);
+      if (ml) {
+        // LineString layer: style the lines normally, toggle midpoint markers
+        dl.setStyle({
+          fillColor: config.style.fillColor,
+          fillOpacity: config.style.fillOpacity,
+          strokeColor: config.style.strokeColor,
+          strokeWeight: config.style.strokeWeight,
+          clickable: visible,
+          visible,
+        });
+        ml.setStyle(() => ({
+          icon: {
+            url: config.markerIcon!,
+            scaledSize: new google.maps.Size(22, 22),
+            anchor: new google.maps.Point(11, 11),
+          },
+          clickable: false,
+          visible,
+        }));
+      } else {
+        // Point layer: use icon directly
+        dl.setStyle(() => ({
+          icon: {
+            url: config.markerIcon!,
+            scaledSize: new google.maps.Size(28, 28),
+            anchor: new google.maps.Point(14, 14),
+          },
+          clickable: visible,
+          visible,
+        }));
+      }
+      return;
+    }
+
     dl.setStyle({
       fillColor: config.style.fillColor,
       fillOpacity: config.style.fillOpacity,
@@ -176,6 +272,63 @@ export function useLayers(map: google.maps.Map | null) {
         return;
       }
 
+      // --- eBird hotspot layer (fetched from API) ---
+      if (config.source === 'ebird:hotspots') {
+        loadedRef.current.add(config.id);
+
+        setLayers(prev => prev.map(l =>
+          l.config.id === config.id ? { ...l, loading: true } : l
+        ));
+
+        // Fetch hotspots centered on the current map center
+        const center = map.getCenter();
+        const lat = center?.lat() ?? 48.53;
+        const lng = center?.lng() ?? -123.02;
+
+        fetchHotspotsGeoJSON(lat, lng, 50).then(data => {
+          const dataLayer = new google.maps.Data({ map });
+          dataLayer.addGeoJson(data);
+
+          dataLayer.setStyle(() => ({
+            icon: config.markerIcon ? {
+              url: config.markerIcon,
+              scaledSize: new google.maps.Size(28, 28),
+              anchor: new google.maps.Point(14, 14),
+            } : undefined,
+            clickable: true,
+            visible: config.visible,
+          }));
+
+          // Click opens eBird hotspot page
+          dataLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
+            const url = event.feature.getProperty('ebirdUrl');
+            if (url) window.open(url as string, '_blank');
+          });
+
+          dataLayersRef.current.set(config.id, dataLayer);
+
+          setLayers(prev => prev.map(l =>
+            l.config.id === config.id
+              ? {
+                  ...l,
+                  loading: false,
+                  loaded: true,
+                  featureCount: data.features.length,
+                  geojsonData: data,
+                  dataLayer,
+                }
+              : l
+          ));
+        }).catch(() => {
+          setLayers(prev => prev.map(l =>
+            l.config.id === config.id
+              ? { ...l, loading: false, error: 'Failed to load eBird hotspots' }
+              : l
+          ));
+        });
+        return;
+      }
+
       // --- Vector GeoJSON layers ---
       loadedRef.current.add(config.id);
 
@@ -237,16 +390,53 @@ export function useLayers(map: google.maps.Map | null) {
           const aboveMinZoom = config.minZoom == null || currentZoom >= config.minZoom;
           const shouldShow = config.visible && aboveMinZoom;
 
-          dataLayer.setStyle({
-            fillColor: config.style.fillColor,
-            fillOpacity: config.style.fillOpacity,
-            strokeColor: config.style.strokeColor,
-            strokeWeight: config.style.strokeWeight,
-            clickable: shouldShow,
-            visible: shouldShow,
-          });
+          const hasPoints = data.features.some(f =>
+            f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
+          );
+
+          dataLayer.setStyle(config.markerIcon && hasPoints
+            ? () => ({
+                icon: {
+                  url: config.markerIcon!,
+                  scaledSize: new google.maps.Size(28, 28),
+                  anchor: new google.maps.Point(14, 14),
+                },
+                clickable: shouldShow,
+                visible: shouldShow,
+              })
+            : {
+                fillColor: config.style.fillColor,
+                fillOpacity: config.style.fillOpacity,
+                strokeColor: config.style.strokeColor,
+                strokeWeight: config.style.strokeWeight,
+                clickable: shouldShow,
+                visible: shouldShow,
+              }
+          );
 
           dataLayersRef.current.set(config.id, dataLayer);
+
+          // For LineString layers with a markerIcon, add midpoint markers
+          if (config.markerIcon) {
+            const hasLines = data.features.some(f =>
+              f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString'
+            );
+            if (hasLines) {
+              const midpoints = createMidpointMarkers(data);
+              const markerLayer = new google.maps.Data({ map });
+              markerLayer.addGeoJson(midpoints);
+              markerLayer.setStyle(() => ({
+                icon: {
+                  url: config.markerIcon!,
+                  scaledSize: new google.maps.Size(22, 22),
+                  anchor: new google.maps.Point(11, 11),
+                },
+                clickable: false,
+                visible: shouldShow,
+              }));
+              markerLayersRef.current.set(config.id, markerLayer);
+            }
+          }
 
           setLayers(prev => prev.map(l =>
             l.config.id === config.id

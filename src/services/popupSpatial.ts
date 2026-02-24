@@ -89,6 +89,105 @@ export function countIntersectingBuildings(
   return { count: buildings.length, buildings, totalSqFt };
 }
 
+// ---------------------------------------------------------------------------
+// Nearshore vegetation query (Bull Kelp + Deepwater Eelgrass within 1000 ft)
+// ---------------------------------------------------------------------------
+
+const VEGETATION_BUFFER_FT = 100;
+const VEGETATION_BUFFER_KM = VEGETATION_BUFFER_FT * 0.0003048;
+
+export interface NearshoreVegetationResult {
+  bullKelp: {
+    present: boolean;
+    featureCount: number;
+    totalAcres: number;
+  };
+  eelgrass: {
+    present: boolean;
+    segmentCount: number;
+    totalLengthFt: number;
+    sites: string[];
+    meanDepth: number | null;
+    maxDepth: number | null;
+  };
+}
+
+export function queryNearshoreVegetation(
+  parcelFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
+  layers: LayerState[],
+): NearshoreVegetationResult {
+  const result: NearshoreVegetationResult = {
+    bullKelp: { present: false, featureCount: 0, totalAcres: 0 },
+    eelgrass: { present: false, segmentCount: 0, totalLengthFt: 0, sites: [], meanDepth: null, maxDepth: null },
+  };
+
+  const buffered = turf.buffer(parcelFeature, VEGETATION_BUFFER_KM, { units: 'kilometers' });
+  if (!buffered) return result;
+  const searchBbox = turf.bbox(buffered);
+
+  // --- Bull Kelp ---
+  const kelpLayer = layers.find(l => l.config.id === 'friends-bull-kelp' && l.loaded && l.geojsonData);
+  if (kelpLayer?.geojsonData) {
+    let totalAcres = 0;
+    let count = 0;
+    for (const feat of kelpLayer.geojsonData.features) {
+      if (!feat.geometry) continue;
+      try {
+        const fb = turf.bbox(feat);
+        if (!bboxesOverlap(searchBbox, fb)) continue;
+        if (turf.booleanIntersects(feat, buffered)) {
+          count++;
+          totalAcres += Number(feat.properties?.Acres) || 0;
+        }
+      } catch { continue; }
+    }
+    result.bullKelp = { present: count > 0, featureCount: count, totalAcres };
+  }
+
+  // --- Deepwater/Edge Eelgrass ---
+  const eelgrassLayer = layers.find(l => l.config.id === 'friends-deepwater-eelgrass' && l.loaded && l.geojsonData);
+  if (eelgrassLayer?.geojsonData) {
+    let segmentCount = 0;
+    let totalLengthFt = 0;
+    const sites = new Set<string>();
+    const depths: number[] = [];
+    let maxDepth: number | null = null;
+
+    for (const feat of eelgrassLayer.geojsonData.features) {
+      if (!feat.geometry) continue;
+      try {
+        const fb = turf.bbox(feat);
+        if (!bboxesOverlap(searchBbox, fb)) continue;
+        if (turf.booleanIntersects(feat, buffered)) {
+          segmentCount++;
+          const p = feat.properties || {};
+          totalLengthFt += Number(p.LENGTH) || 0;
+          const site = String(p.SITE || '').trim();
+          if (site) sites.add(site);
+          const mean = Number(p.MEAN);
+          if (!isNaN(mean) && mean !== 0) depths.push(mean);
+          const mx = Number(p.MAX_);
+          if (!isNaN(mx) && mx !== 0) {
+            maxDepth = maxDepth === null ? mx : Math.max(maxDepth, mx);
+          }
+        }
+      } catch { continue; }
+    }
+
+    const meanDepth = depths.length > 0 ? depths.reduce((a, b) => a + b, 0) / depths.length : null;
+    result.eelgrass = {
+      present: segmentCount > 0,
+      segmentCount,
+      totalLengthFt,
+      sites: Array.from(sites),
+      meanDepth,
+      maxDepth,
+    };
+  }
+
+  return result;
+}
+
 // 50 ft buffer in kilometers for shoreline search
 const SHORELINE_BUFFER_FT = 50;
 const SHORELINE_BUFFER_KM = SHORELINE_BUFFER_FT * 0.0003048;

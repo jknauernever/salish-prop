@@ -1,4 +1,4 @@
-export type LayerCategory = 'ecological' | 'fish-habitat' | 'property' | 'community-science' | 'planning';
+export type LayerCategory = 'ecological' | 'fish-habitat' | 'property' | 'community-science' | 'planning' | 'friends-data';
 
 export interface PopupField {
   key: string;
@@ -29,6 +29,7 @@ export interface LayerConfig {
   apiEndpoint?: string;
   defaultOpacity?: number;
   viewportFiltered?: boolean;
+  markerIcon?: string;
 }
 
 export interface LayerState {
