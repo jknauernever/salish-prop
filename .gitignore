@@ -27,5 +27,7 @@ dist-ssr
 .env
 .env.local
 
-# Large data files (keep in public/data/ but don't commit huge ones)
+# Large data files (hosted on GCS instead)
 *.gdb.zip
+public/data/Tax_Parcels.geojson
+public/data/friends-bull-kelp.json

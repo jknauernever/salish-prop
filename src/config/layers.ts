@@ -7,7 +7,7 @@ export const layerConfigs: LayerConfig[] = [
     name: 'Tax Parcels',
     description: 'Property boundaries from San Juan County Assessor',
     category: 'property',
-    source: '/data/Tax_Parcels.geojson',
+    source: 'https://storage.googleapis.com/salish-ndvi-tiles/data/Tax_Parcels.geojson',
     visible: true,
     style: {
       fillColor: '#ADB5BD',
@@ -377,7 +377,7 @@ export const layerConfigs: LayerConfig[] = [
     name: 'Bull Kelp',
     description: 'Bull kelp canopy presence (DNR 2007)',
     category: 'friends-data',
-    source: '/data/friends-bull-kelp.json',
+    source: 'https://storage.googleapis.com/salish-ndvi-tiles/data/friends-bull-kelp.json',
     visible: false,
     style: {
       fillColor: '#6B8E23',
