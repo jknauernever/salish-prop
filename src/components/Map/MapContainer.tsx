@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { MapContext } from '../../hooks/useMap';
+import { Footer } from '../Layout/Footer';
 import type { ReactNode } from 'react';
 
 const SAN_JUAN_CENTER = { lat: 48.53, lng: -123.02 };
@@ -98,6 +99,7 @@ export function MapContainer({ header, children }: MapContainerProps) {
           )}
           {isLoaded && children}
         </div>
+        <Footer />
       </div>
     </MapContext.Provider>
   );

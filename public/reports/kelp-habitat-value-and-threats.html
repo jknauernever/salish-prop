@@ -290,6 +290,126 @@
     .ref-list li:last-child { border-bottom: none; }
     .ref-list .sci { font-style: italic; }
 
+    /* ---- Site header ---- */
+    .site-header {
+      height: 84px;
+      background: #334155;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .site-header a { text-decoration: none; }
+    .site-header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: white;
+    }
+    .site-header-icon {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--color-teal);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .site-header-icon svg { width: 16px; height: 16px; color: white; }
+    .site-header-title { font-size: 16px; font-weight: 600; line-height: 1.2; }
+    .site-header-tagline { font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.2; }
+    .site-header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .site-header-nav {
+      position: relative;
+    }
+    .site-header-nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.7);
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .site-header-nav-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+    .site-header-nav-btn svg { width: 16px; height: 16px; }
+    .site-header-nav-btn .chevron { width: 12px; height: 12px; transition: transform 0.15s; }
+    .site-header-dropdown {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      margin-top: 4px;
+      width: 260px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      border: 1px solid #E5E7EB;
+      padding: 4px 0;
+      z-index: 200;
+    }
+    .site-header-dropdown.open { display: block; }
+    .site-header-dropdown a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      font-size: 14px;
+      color: #374151;
+      transition: background 0.1s, color 0.1s;
+    }
+    .site-header-dropdown a:hover { background: #F0FDFA; color: var(--color-teal); }
+    .site-header-dropdown a svg { width: 16px; height: 16px; color: #9CA3AF; flex-shrink: 0; }
+    .site-header-dropdown a .ext-icon { margin-left: auto; width: 12px; height: 12px; color: #D1D5DB; }
+    .site-header-logo { height: 44px; opacity: 0.7; }
+    @media (max-width: 600px) {
+      .site-header-logo { display: none; }
+      .site-header-titles { display: none; }
+    }
+
+    /* ---- Site footer ---- */
+    .site-footer {
+      background: #334155;
+      position: relative;
+      padding: 10px 16px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .site-footer p {
+      color: white;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+      padding-right: 144px;
+      margin: 0;
+    }
+    .site-footer-logo {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.9;
+      transition: opacity 0.15s;
+    }
+    .site-footer-logo:hover { opacity: 1; }
+    .site-footer-logo img { height: 24px; }
+    @media (max-width: 600px) {
+      .site-footer p { padding-right: 0; }
+      .site-footer-logo { display: none; }
+    }
+
     /* --- Footer --- */
     .footer {
       text-align: center;
@@ -313,6 +433,39 @@
   </style>
 </head>
 <body>
+
+<!-- ====================== SITE HEADER ====================== -->
+<div class="site-header">
+  <a href="/" class="site-header-brand">
+    <div class="site-header-icon">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    </div>
+    <div class="site-header-titles">
+      <div class="site-header-title">Salish Sea Explorer</div>
+      <div class="site-header-tagline">Protect this Place&trade;</div>
+    </div>
+  </a>
+  <div class="site-header-right">
+    <div class="site-header-nav">
+      <button class="site-header-nav-btn" onclick="this.nextElementSibling.classList.toggle('open')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        Resources
+        <svg class="chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div class="site-header-dropdown">
+        <a href="/reports/living-with-the-shoreline.html">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Living with the Shoreline
+        </a>
+        <a href="/reports/kelp-habitat-value-and-threats.html">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Kelp Value and Threats
+        </a>
+      </div>
+    </div>
+    <img src="/friends-logo-white.webp" alt="Friends of the San Juans" class="site-header-logo">
+  </div>
+</div>
 
   <header class="hero">
     <div class="hero-content">
@@ -560,5 +713,19 @@
     <p><a href="https://sanjuans.org" target="_blank">sanjuans.org</a></p>
   </footer>
 
+  <div class="site-footer">
+    <p>&copy; 2026 Friends of the San Juans. Friends is a 501(c)3 nonprofit. EIN #91-1087153. Friends stewards charitable contributions and complex gifts responsibly, and we are proud to hold a Platinum rating from Candid. All donations to Friends are tax-deductible.</p>
+    <a href="https://sanjuans.org" target="_blank" rel="noopener noreferrer" class="site-footer-logo">
+      <img src="/friends-logo-white.webp" alt="Friends of the San Juans">
+    </a>
+  </div>
+
+  <script>
+  document.addEventListener('mousedown', function(e) {
+    document.querySelectorAll('.site-header-dropdown.open').forEach(function(d) {
+      if (!d.parentElement.contains(e.target)) d.classList.remove('open');
+    });
+  });
+  </script>
 </body>
 </html>

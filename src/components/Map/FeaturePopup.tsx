@@ -1515,6 +1515,18 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
   const greenDot = dot('#22C55E');
   const grayDot = dot(COLOR.border);
 
+  const learnMoreBlock = `
+    <div style="margin-top:14px;padding:12px 14px;background:#F8FAFC;border-radius:8px;border:1px solid ${COLOR.border};">
+      <p style="font-size:13px;color:${COLOR.dark};line-height:1.6;margin:0;">
+        Want to know how you can help protect the shoreline around your property?
+        <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">Read our guide for shoreline property owners</a>
+        &mdash; it's full of practical ideas from your neighbors in the San Juans. You can also
+        <a href="/reports/kelp-habitat-value-and-threats.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">learn more about kelp</a>
+        and why these underwater forests matter so much to the health of our islands.
+      </p>
+    </div>
+  `;
+
   // --- Both present ---
   if (hasKelp && hasEelgrass) {
     return `
@@ -1550,6 +1562,7 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
             Sensitive Areas</strong> code and Washington State's <strong>Priority Habitats and Species Program</strong>.
           </p>
         </div>
+        ${learnMoreBlock}
       </div>
     `;
   }
@@ -1586,6 +1599,7 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
             Activities that increase sedimentation, shading, or nutrient runoff near this property could impact these beds.
           </p>
         </div>
+        ${learnMoreBlock}
       </div>
     `;
   }
@@ -1622,6 +1636,7 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
             under <strong>San Juan County code</strong>. Threats include sedimentation from land use, boat wake erosion, and climate change.
           </p>
         </div>
+        ${learnMoreBlock}
       </div>
     `;
   }
@@ -1644,6 +1659,7 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
         substrate, depth, and light conditions. Kelp needs rocky substrate and eelgrass needs soft sediment in
         protected, shallow waters.
       </p>
+      ${learnMoreBlock}
     </div>
   `;
 }
