@@ -19,7 +19,7 @@ export function AddressSearch({ onPlaceSelected, isSearching }: AddressSearchPro
   const { map } = useMap();
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const [address, setAddress] = useState('');
+  const [_address, setAddress] = useState('');
   const onPlaceSelectedRef = useRef(onPlaceSelected);
   onPlaceSelectedRef.current = onPlaceSelected;
 

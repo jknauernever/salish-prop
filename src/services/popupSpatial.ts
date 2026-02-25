@@ -49,7 +49,9 @@ const SPECIES_CONFIG = [
   { name: 'Lingcod & Greenling', hrmKey: 'HRM_Hex', lrmKey: 'LRM_Hex' },
 ];
 
-function bboxesOverlap(a: turf.BBox, b: turf.BBox): boolean {
+type BBox = GeoJSON.BBox;
+
+function bboxesOverlap(a: BBox, b: BBox): boolean {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
 }
 

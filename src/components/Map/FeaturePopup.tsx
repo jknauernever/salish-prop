@@ -1081,11 +1081,11 @@ function renderBirdsTab(
     const newBack = Number(periodEl?.value ?? back);
     const newMiles = Number(radiusEl?.value ?? radiusMiles);
     const newKm = BIRD_RADIUS_OPTIONS.find(o => o.miles === newMiles)?.km ?? 8.047;
-    el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>`;
+    if (el) el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>`;
     fetchNearbyBirdSummary(lat, lng, newBack, newKm).then(newResults => {
       renderBirdsTab(popupId, newResults, newBack, newMiles, lat, lng);
     }).catch(() => {
-      el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Unable to load bird observations.</p></div>`;
+      if (el) el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Unable to load bird observations.</p></div>`;
     });
   }
 
@@ -1227,7 +1227,7 @@ function renderPropertySnapshot(
 // ---------------------------------------------------------------------------
 
 function buildTabbedPopupHtml(
-  label: string,
+  _label: string,
   layer: LayerState,
   fields: { label: string; value: string }[],
   addressRowId: string,
