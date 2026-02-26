@@ -113,6 +113,7 @@ export function useLayers(map: google.maps.Map | null) {
   );
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
+  const pointLayersRef = useRef<Set<string>>(new Set());
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
   const loadedRef = useRef<Set<string>>(new Set());
 
@@ -176,6 +177,32 @@ export function useLayers(map: google.maps.Map | null) {
           strokeColor: override.strokeColor ?? config.style.strokeColor,
           strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
           strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
+          clickable: visible,
+          visible,
+        };
+      });
+    } else if (pointLayersRef.current.has(layerId)) {
+      dl.setStyle((feature: google.maps.Data.Feature) => {
+        const geomType = feature.getGeometry()?.getType();
+        if (geomType === 'Point') {
+          return {
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: config.style.fillColor ?? config.style.strokeColor,
+              fillOpacity: config.style.fillOpacity ?? 1,
+              strokeColor: config.style.strokeColor,
+              strokeWeight: config.style.strokeWeight,
+              scale: 7,
+            },
+            clickable: visible,
+            visible,
+          };
+        }
+        return {
+          fillColor: config.style.fillColor,
+          fillOpacity: config.style.fillOpacity,
+          strokeColor: config.style.strokeColor,
+          strokeWeight: config.style.strokeWeight,
           clickable: visible,
           visible,
         };
@@ -432,6 +459,33 @@ export function useLayers(map: google.maps.Map | null) {
                 strokeColor: override.strokeColor ?? config.style.strokeColor,
                 strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
                 strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
+                clickable: shouldShow,
+                visible: shouldShow,
+              };
+            });
+          } else if (hasPoints) {
+            pointLayersRef.current.add(config.id);
+            dataLayer.setStyle((feature) => {
+              const geomType = feature.getGeometry()?.getType();
+              if (geomType === 'Point') {
+                return {
+                  icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    fillColor: config.style.fillColor ?? config.style.strokeColor,
+                    fillOpacity: config.style.fillOpacity ?? 1,
+                    strokeColor: config.style.strokeColor,
+                    strokeWeight: config.style.strokeWeight,
+                    scale: 7,
+                  },
+                  clickable: shouldShow,
+                  visible: shouldShow,
+                };
+              }
+              return {
+                fillColor: config.style.fillColor,
+                fillOpacity: config.style.fillOpacity,
+                strokeColor: config.style.strokeColor,
+                strokeWeight: config.style.strokeWeight,
                 clickable: shouldShow,
                 visible: shouldShow,
               };
