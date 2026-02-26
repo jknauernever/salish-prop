@@ -13,6 +13,12 @@ export interface LayerStyle {
   strokeOpacity?: number;
 }
 
+export interface StyleByProperty {
+  property: string;
+  values: Record<string, Partial<LayerStyle>>;
+  defaultStyle?: Partial<LayerStyle>;
+}
+
 export interface LayerConfig {
   id: string;
   name: string;
@@ -31,6 +37,7 @@ export interface LayerConfig {
   defaultOpacity?: number;
   viewportFiltered?: boolean;
   markerIcon?: string;
+  styleByProperty?: StyleByProperty;
 }
 
 export interface LayerState {

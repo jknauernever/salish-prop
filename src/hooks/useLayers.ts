@@ -165,14 +165,31 @@ export function useLayers(map: google.maps.Map | null) {
       return;
     }
 
-    dl.setStyle({
-      fillColor: config.style.fillColor,
-      fillOpacity: config.style.fillOpacity,
-      strokeColor: config.style.strokeColor,
-      strokeWeight: config.style.strokeWeight,
-      clickable: visible,
-      visible,
-    });
+    if (config.styleByProperty) {
+      const sbp = config.styleByProperty;
+      dl.setStyle((feature: google.maps.Data.Feature) => {
+        const val = String(feature.getProperty(sbp.property) ?? '');
+        const override = sbp.values[val] ?? sbp.defaultStyle ?? {};
+        return {
+          fillColor: override.fillColor ?? config.style.fillColor,
+          fillOpacity: override.fillOpacity ?? config.style.fillOpacity,
+          strokeColor: override.strokeColor ?? config.style.strokeColor,
+          strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
+          strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
+          clickable: visible,
+          visible,
+        };
+      });
+    } else {
+      dl.setStyle({
+        fillColor: config.style.fillColor,
+        fillOpacity: config.style.fillOpacity,
+        strokeColor: config.style.strokeColor,
+        strokeWeight: config.style.strokeWeight,
+        clickable: visible,
+        visible,
+      });
+    }
   }, []);
 
   // Update viewport-filtered layers: clear and re-add only features in current bounds
@@ -394,25 +411,41 @@ export function useLayers(map: google.maps.Map | null) {
             f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
           );
 
-          dataLayer.setStyle(config.markerIcon && hasPoints
-            ? () => ({
-                icon: {
-                  url: config.markerIcon!,
-                  scaledSize: new google.maps.Size(28, 28),
-                  anchor: new google.maps.Point(14, 14),
-                },
+          if (config.markerIcon && hasPoints) {
+            dataLayer.setStyle(() => ({
+              icon: {
+                url: config.markerIcon!,
+                scaledSize: new google.maps.Size(28, 28),
+                anchor: new google.maps.Point(14, 14),
+              },
+              clickable: shouldShow,
+              visible: shouldShow,
+            }));
+          } else if (config.styleByProperty) {
+            const sbp = config.styleByProperty;
+            dataLayer.setStyle((feature) => {
+              const val = String(feature.getProperty(sbp.property) ?? '');
+              const override = sbp.values[val] ?? sbp.defaultStyle ?? {};
+              return {
+                fillColor: override.fillColor ?? config.style.fillColor,
+                fillOpacity: override.fillOpacity ?? config.style.fillOpacity,
+                strokeColor: override.strokeColor ?? config.style.strokeColor,
+                strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
+                strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
                 clickable: shouldShow,
                 visible: shouldShow,
-              })
-            : {
-                fillColor: config.style.fillColor,
-                fillOpacity: config.style.fillOpacity,
-                strokeColor: config.style.strokeColor,
-                strokeWeight: config.style.strokeWeight,
-                clickable: shouldShow,
-                visible: shouldShow,
-              }
-          );
+              };
+            });
+          } else {
+            dataLayer.setStyle({
+              fillColor: config.style.fillColor,
+              fillOpacity: config.style.fillOpacity,
+              strokeColor: config.style.strokeColor,
+              strokeWeight: config.style.strokeWeight,
+              clickable: shouldShow,
+              visible: shouldShow,
+            });
+          }
 
           dataLayersRef.current.set(config.id, dataLayer);
 

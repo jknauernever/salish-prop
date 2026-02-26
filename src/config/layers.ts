@@ -733,17 +733,24 @@ export const layerConfigs: LayerConfig[] = [
       strokeWeight: 2.5,
       strokeOpacity: 0.8,
     },
+    styleByProperty: {
+      property: 'Year_originalArmorMapping',
+      values: {
+        '2009': { strokeColor: '#F59E0B', strokeWeight: 2.5 },
+        '2019': { strokeColor: '#DC2626', strokeWeight: 3 },
+      },
+    },
     popupFields: [
       { key: 'Armor_ID', label: 'Armor ID' },
+      { key: 'Year_originalArmorMapping', label: 'Year Originally Mapped' },
       { key: 'ConditionArmor', label: 'Condition' },
       { key: 'ArmorContainsRock', label: 'Contains Rock' },
       { key: 'ArmorContainsConcrete', label: 'Contains Concrete' },
       { key: 'ArmorContainsWood', label: 'Contains Wood' },
       { key: 'ArmorContainsCreosotesWood', label: 'Contains Creosote' },
       { key: 'TidalElev_Armor', label: 'Tidal Elevation' },
-      { key: 'Year_originalArmorMapping', label: 'Year Originally Mapped' },
     ],
-    standardMessage: 'Shoreline armor change analysis comparing 2009 and 2019 survey data by Friends of the San Juans. Shows changes in armor extent, condition, and material composition along San Juan Islands shorelines.',
+    standardMessage: 'Shoreline armor change analysis: amber segments were mapped in 2009, red segments are new armor identified in 2019. Data from Friends of the San Juans shoreline surveys.',
   },
   {
     id: 'friends-armor-2019',
