@@ -6,10 +6,11 @@ export interface PopupField {
 }
 
 export interface LayerStyle {
-  fillColor: string;
-  fillOpacity: number;
+  fillColor?: string;
+  fillOpacity?: number;
   strokeColor: string;
   strokeWeight: number;
+  strokeOpacity?: number;
 }
 
 export interface LayerConfig {

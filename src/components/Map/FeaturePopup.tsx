@@ -789,7 +789,7 @@ function handleParcelClick(
   infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
   allLayers: LayerState[],
 ) {
-  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor;
+  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
   const popupId = `parcel-${Date.now()}`;
   const addressRowId = `${popupId}-address`;
 
@@ -1233,7 +1233,7 @@ function buildTabbedPopupHtml(
   addressRowId: string,
   popupId: string,
 ): string {
-  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor;
+  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
 
   const tabBtn = (name: string, dataTab: string, active: boolean) => `
     <button data-tab="${dataTab}" style="
@@ -2097,7 +2097,7 @@ function buildPopupHtml(
   fields: { label: string; value: string }[],
   addressRowId: string | null,
 ): string {
-  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor;
+  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
 
   const addressRow = addressRowId
     ? `<tr>

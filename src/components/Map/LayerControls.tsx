@@ -129,8 +129,8 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
           <div
             className="w-4 h-4 rounded-sm shrink-0 border border-black/10"
             style={{
-              backgroundColor: config.style.fillOpacity > 0
-                ? config.style.fillColor
+              backgroundColor: (config.style.fillOpacity ?? 0) > 0
+                ? config.style.fillColor ?? config.style.strokeColor
                 : config.style.strokeColor,
             }}
           />
