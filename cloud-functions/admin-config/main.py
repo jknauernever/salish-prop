@@ -147,6 +147,11 @@ def admin_config(request):
         if not hmac.compare_digest(token, ADMIN_PASSWORD):
             return (jsonify({'error': 'Unauthorized'}), 401, cors)
 
+        # Verify-only mode: AuthGate uses this to check the password without
+        # making any changes. No body required, no side effects.
+        if request.args.get('verify') == '1':
+            return ('', 204, cors)
+
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return (jsonify({'error': 'Invalid JSON body'}), 400, cors)

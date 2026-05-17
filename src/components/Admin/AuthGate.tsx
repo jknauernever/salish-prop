@@ -4,8 +4,8 @@ const TOKEN_STORAGE_KEY = 'admin_token';
 
 /**
  * Read the admin token from sessionStorage. Returns null if absent.
- * Module-level helper so other admin components (and the save endpoint)
- * can grab the token without re-reading state.
+ * Module-level helper so other admin components can grab the token
+ * without re-reading state.
  */
 export function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -22,27 +22,52 @@ interface AuthGateProps {
 }
 
 /**
- * Client-side login gate. Stores the entered password in sessionStorage
- * and renders children. The token is only really validated when the user
- * tries to save — the server is the source of truth. This gate exists
- * for UX (don't show the admin UI to anonymous visitors) and to provide
- * a place to store the token between page loads in the same tab.
+ * Login gate that verifies the password against the server before granting
+ * access. Submits POST /api/admin/categories?verify=1 with the X-Admin-Token
+ * header; on 204 we store the token and reveal the admin UI, on 401 we
+ * surface a "Try again" error and keep the gate up. Tokens already present
+ * in sessionStorage (from a previous successful sign-in this tab) are
+ * trusted — the next API call will hit a real 401 if anything has changed.
  */
 export function AuthGate({ children }: AuthGateProps) {
   const [token, setTokenState] = useState<string | null>(() => getAdminToken());
   const [draft, setDraft] = useState('');
-  const [touched, setTouched] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (token) {
     return <>{children}</>;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched(true);
-    if (!draft) return;
-    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, draft);
-    setTokenState(draft);
+    setErrorMsg(null);
+    if (!draft) {
+      setErrorMsg('Enter the admin password.');
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await fetch('/api/admin/categories?verify=1', {
+        method: 'POST',
+        headers: { 'X-Admin-Token': draft },
+      });
+      if (res.status === 204) {
+        window.sessionStorage.setItem(TOKEN_STORAGE_KEY, draft);
+        setTokenState(draft);
+        return;
+      }
+      if (res.status === 401) {
+        setErrorMsg('Incorrect password. Try again.');
+        setDraft('');
+        return;
+      }
+      setErrorMsg(`Sign-in failed (HTTP ${res.status}).`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Sign-in failed.');
+    } finally {
+      setVerifying(false);
+    }
   }
 
   return (
@@ -65,19 +90,25 @@ export function AuthGate({ children }: AuthGateProps) {
             id="admin-password"
             type="password"
             autoFocus
+            autoComplete="current-password"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className="w-full px-3 py-2 rounded-md border border-fog-gray-dark/60 bg-white text-sm text-slate-blue focus:outline-none focus:ring-2 focus:ring-deep-teal/40"
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            disabled={verifying}
+            className="w-full px-3 py-2 rounded-md border border-fog-gray-dark/60 bg-white text-sm text-slate-blue focus:outline-none focus:ring-2 focus:ring-deep-teal/40 disabled:opacity-60"
           />
-          {touched && !draft && (
-            <p className="text-xs text-red-600 mt-1">Password is required.</p>
+          {errorMsg && (
+            <p className="text-xs text-red-600 mt-1.5">{errorMsg}</p>
           )}
         </div>
         <button
           type="submit"
-          className="w-full bg-slate-blue text-white text-sm font-medium py-2 rounded-md hover:bg-slate-blue/90 transition-colors"
+          disabled={verifying}
+          className="w-full bg-slate-blue text-white text-sm font-medium py-2 rounded-md hover:bg-slate-blue/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Sign in
+          {verifying ? 'Verifying…' : 'Sign in'}
         </button>
       </form>
     </div>

@@ -9,7 +9,8 @@ export default defineConfig({
       '/api/admin/categories': {
         target: 'https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config',
         changeOrigin: true,
-        rewrite: () => '',
+        // Strip just the route prefix so query strings (e.g. ?verify=1) survive
+        rewrite: (path) => path.replace(/^\/api\/admin\/categories/, ''),
       },
     },
   },
