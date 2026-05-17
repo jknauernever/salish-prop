@@ -802,13 +802,7 @@ export const layerConfigs: LayerConfig[] = [
   },
 ];
 
-export const categoryLabels: Record<string, string> = {
-  'fish-habitat': 'Fish Habitat',
-  ecological: 'Ecological',
-  property: 'Property',
-  'community-science': 'Community Science',
-  planning: 'Planning & Infrastructure',
-  'friends-data': "Friends of the San Juans",
-};
-
-export const categoryOrder = ['friends-data', 'fish-habitat', 'ecological', 'property', 'planning', 'community-science'];
+// Category labels and order are now sourced at runtime from the editable
+// category tree at gs://salish-ndvi-tiles/config/category-tree.json.
+// See src/services/categoryTree.ts. A baked-in fallback there keeps
+// the sidebar working if the live fetch fails.

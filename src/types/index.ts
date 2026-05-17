@@ -1,4 +1,7 @@
-export type LayerCategory = 'ecological' | 'fish-habitat' | 'property' | 'community-science' | 'planning' | 'friends-data';
+// Category ids are now validated at runtime against the fetched tree
+// (see src/services/categoryTree.ts → validateLayerCategories) instead of
+// the type system. The union was dropped when categories became editable.
+export type LayerCategory = string;
 
 export interface PopupField {
   key: string;

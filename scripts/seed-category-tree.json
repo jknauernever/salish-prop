@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "updated_at": "2026-05-17T18:33:45Z",
+  "tree": [
+    {
+      "id": "friends-data",
+      "label": "Friends of the San Juans",
+      "layers": [
+        "friends-herring-spawning",
+        "friends-bull-kelp",
+        "friends-deepwater-eelgrass",
+        "friends-potential-forage-spawning",
+        "friends-documented-forage-spawning",
+        "friends-shoreline-geology",
+        "friends-armor",
+        "friends-groins",
+        "friends-boat-ramps",
+        "friends-marine-railway",
+        "friends-mooring-buoys",
+        "friends-pilings",
+        "friends-docks",
+        "friends-restoration-sites",
+        "friends-iow-structures",
+        "friends-restoration-projects",
+        "friends-riparian-projects",
+        "friends-armor-change-2019",
+        "friends-armor-2019"
+      ],
+      "children": []
+    },
+    {
+      "id": "fish-habitat",
+      "label": "Fish Habitat",
+      "layers": [
+        "chinook-salmon",
+        "chum-salmon",
+        "pink-salmon",
+        "pacific-herring",
+        "pacific-sand-lance",
+        "surf-smelt",
+        "lingcod-greenling"
+      ],
+      "children": []
+    },
+    {
+      "id": "ecological",
+      "label": "Ecological",
+      "layers": [
+        "ndvi",
+        "ndvi-sentinel",
+        "eelgrass",
+        "shoreline-types",
+        "habitat-zones"
+      ],
+      "children": []
+    },
+    {
+      "id": "property",
+      "label": "Property",
+      "layers": [
+        "tax-parcels",
+        "building-footprints"
+      ],
+      "children": []
+    },
+    {
+      "id": "planning",
+      "label": "Planning & Infrastructure",
+      "layers": [
+        "stormwater-pipes"
+      ],
+      "children": []
+    },
+    {
+      "id": "community-science",
+      "label": "Community Science",
+      "layers": [
+        "ebird-hotspots"
+      ],
+      "children": []
+    }
+  ]
+}

@@ -633,9 +633,10 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
     }));
   }, [map, setVectorVisible, updateViewportLayers]);
 
-  const setAllVisible = useCallback((category: string, visible: boolean) => {
+  const setAllVisible = useCallback((layerIds: string[], visible: boolean) => {
+    const idSet = new Set(layerIds);
     setLayers(prev => prev.map(layer => {
-      if (layer.config.category !== category) return layer;
+      if (!idSet.has(layer.config.id)) return layer;
       if (layer.config.placeholder) return layer;
 
       // Raster layers
@@ -667,7 +668,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
       return { ...layer, visible };
     }));
 
-    // Trigger viewport update for any viewport-filtered layers in this category
+    // Trigger viewport update for any viewport-filtered layers in this group
     setTimeout(updateViewportLayers, 0);
   }, [map, setVectorVisible, updateViewportLayers]);
 

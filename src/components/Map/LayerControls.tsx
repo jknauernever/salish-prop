@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { LayerState } from '../../types';
-import { categoryLabels, categoryOrder } from '../../config/layers';
+import { useCategoryTree, flattenCategoryIds, type CategoryNode } from '../../services/categoryTree';
 import { Toggle } from '../common/Toggle';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingState';
@@ -8,74 +8,87 @@ import { LoadingSpinner } from '../common/LoadingState';
 interface LayerControlsProps {
   layers: LayerState[];
   onToggleLayer: (layerId: string) => void;
-  onSetAllVisible: (category: string, visible: boolean) => void;
+  onSetAllVisible: (layerIds: string[], visible: boolean) => void;
   onSetLayerOpacity?: (layerId: string, opacity: number) => void;
   onSetDynamicTileUrl?: (layerId: string, tileUrl: string) => void;
 }
 
 export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl }: LayerControlsProps) {
-  // All categories start collapsed
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(categoryOrder.map(cat => [cat, true]))
-  );
+  const { tree } = useCategoryTree();
+  const layersById = useMemo(() => {
+    const map = new Map<string, LayerState>();
+    for (const l of layers) map.set(l.config.id, l);
+    return map;
+  }, [layers]);
 
-  const toggleCollapsed = (category: string) => {
-    setCollapsed(prev => ({ ...prev, [category]: !prev[category] }));
+  const allIds = useMemo(() => flattenCategoryIds(tree.tree), [tree]);
+
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setCollapsed(prev => {
+      const next = { ...prev };
+      for (const id of allIds) {
+        if (!(id in next)) next[id] = true;
+      }
+      return next;
+    });
+  }, [allIds]);
+
+  const toggleCollapsed = (id: string) => {
+    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const groupedLayers = categoryOrder
-    .map(cat => ({
-      category: cat,
-      label: categoryLabels[cat] || cat,
-      layers: layers.filter(l => l.config.category === cat),
-    }))
-    .filter(g => g.layers.length > 0);
+  function renderNode(node: CategoryNode, depth: number): React.ReactNode {
+    const isCollapsed = !!collapsed[node.id];
 
-  return (
-    <div className="p-4">
-      <h2 className="text-sm font-semibold text-slate-blue uppercase tracking-wider mb-4">
-        Data Layers
-      </h2>
+    // Resolve assigned layer ids to LayerState entries; skip any unknown ids.
+    const groupLayers = node.layers
+      .map(id => layersById.get(id))
+      .filter((l): l is LayerState => !!l);
 
-      {groupedLayers.map(group => {
-        const activeLayers = group.layers.filter(l => !l.config.placeholder);
-        const allVisible = activeLayers.length > 0 && activeLayers.every(l => l.visible);
-        const noneVisible = activeLayers.every(l => !l.visible);
-        const isCollapsed = !!collapsed[group.category];
+    const hasOwnContent = groupLayers.length > 0;
+    const hasChildren = node.children.length > 0;
+    if (!hasOwnContent && !hasChildren) return null;
 
-        return (
-          <div key={group.category} className="mb-3">
-            <div className="flex items-center justify-between mb-1">
-              <button
-                onClick={() => toggleCollapsed(group.category)}
-                className="flex items-center gap-1.5 group cursor-pointer"
-              >
-                <svg
-                  className={`w-3 h-3 text-slate-blue/50 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
-                  viewBox="0 0 12 12"
-                  fill="currentColor"
-                >
-                  <path d="M4 2 L9 6 L4 10 Z" />
-                </svg>
-                <h3 className="text-xs font-semibold text-slate-blue/70 uppercase tracking-wider group-hover:text-slate-blue transition-colors">
-                  {group.label}
-                </h3>
-              </button>
-              {!isCollapsed && activeLayers.length > 1 && (
-                <button
-                  onClick={() => onSetAllVisible(group.category, noneVisible || !allVisible)}
-                  className="text-xs text-ocean-blue hover:text-ocean-blue-light transition-colors"
-                >
-                  {allVisible ? 'Hide all' : 'Show all'}
-                </button>
-              )}
-            </div>
+    const activeLayers = groupLayers.filter(l => !l.config.placeholder);
+    const allVisible = activeLayers.length > 0 && activeLayers.every(l => l.visible);
+    const noneVisible = activeLayers.every(l => !l.visible);
 
-            {!isCollapsed && (
+    return (
+      <div key={node.id} className="mb-3" style={depth > 0 ? { marginLeft: 12 } : undefined}>
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => toggleCollapsed(node.id)}
+            className="flex items-center gap-1.5 group cursor-pointer"
+          >
+            <svg
+              className={`w-3 h-3 text-slate-blue/50 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+              viewBox="0 0 12 12"
+              fill="currentColor"
+            >
+              <path d="M4 2 L9 6 L4 10 Z" />
+            </svg>
+            <h3 className="text-xs font-semibold text-slate-blue/70 uppercase tracking-wider group-hover:text-slate-blue transition-colors">
+              {node.label}
+            </h3>
+          </button>
+          {!isCollapsed && activeLayers.length > 1 && (
+            <button
+              onClick={() => onSetAllVisible(node.layers, noneVisible || !allVisible)}
+              className="text-xs text-ocean-blue hover:text-ocean-blue-light transition-colors"
+            >
+              {allVisible ? 'Hide all' : 'Show all'}
+            </button>
+          )}
+        </div>
+
+        {!isCollapsed && (
+          <>
+            {groupLayers.length > 0 && (
               <div className="space-y-1">
-                {group.layers.map(layer => (
+                {groupLayers.map(layer => (
                   <LayerRow
-                    key={layer.config.id}
+                    key={`${node.id}-${layer.config.id}`}
                     layer={layer}
                     onToggle={() => onToggleLayer(layer.config.id)}
                     onOpacityChange={
@@ -92,9 +105,19 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
                 ))}
               </div>
             )}
-          </div>
-        );
-      })}
+            {node.children.map(child => renderNode(child, depth + 1))}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4">
+      <h2 className="text-sm font-semibold text-slate-blue uppercase tracking-wider mb-4">
+        Data Layers
+      </h2>
+      {tree.tree.map(node => renderNode(node, 0))}
     </div>
   );
 }

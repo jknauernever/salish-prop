@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    {
+      "source": "/api/admin/categories",
+      "destination": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
