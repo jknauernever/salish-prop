@@ -13,6 +13,7 @@
 - [Spatial Query System](#spatial-query-system)
 - [Property Popup (FeaturePopup)](#property-popup-featurepopup)
 - [Preset Views](#preset-views)
+- [Admin Tool](#admin-tool)
 - [NDVI / Vegetation Analysis](#ndvi--vegetation-analysis)
 - [Cloud Functions](#cloud-functions)
 - [Theming & Styling](#theming--styling)
@@ -377,6 +378,137 @@ The solution is two pieces working together:
 
 ---
 
+## Admin Tool
+
+A password-gated `/admin` area inside the same app, for content administrators to maintain runtime configuration without code changes. The first (and currently only) module is the **Category Tree Editor**, which controls how the public sidebar groups data layers.
+
+### URL pattern
+
+| URL | Purpose |
+|---|---|
+| `/admin` | Sign-in screen, then admin home (module picker). |
+| `/admin/categories` | Category tree editor — the focus of v1. |
+| `/api/admin/categories` | Same-origin endpoint the editor calls (proxied to a Cloud Function — see Architecture below). Not for direct browser use. |
+
+### Authentication
+
+- Single shared password stored only as an env var on the Cloud Function (`ADMIN_PASSWORD`). Never set on Vercel or in code.
+- When an admin enters the password on the sign-in screen, the UI calls `POST /api/admin/categories?verify=1` with the password in an `X-Admin-Token` header. The function responds `204 No Content` on a match, `401 Unauthorized` on a mismatch — no side effects either way. Only the 204 response stores the token in `sessionStorage` and reveals the admin shell.
+- Every write request (`POST /api/admin/categories`) re-checks the same header. The Cloud Function compares with `hmac.compare_digest` (constant-time) so wrong tokens can't be timing-distinguished.
+- "Sign out" clears `sessionStorage`. The token lives only for the current tab.
+- This is a single-secret model — appropriate for v1's small admin team. Multi-user auth + roles are out of scope.
+
+### Architecture
+
+```
+                ┌──────────────────────────────────────────────────────────────┐
+                │  salishsea.knauernever.com                                   │
+                │                                                              │
+   browser ───▶ │  /admin/*               served by Vercel (the SPA)           │
+                │  /api/admin/categories  rewritten to → Cloud Function        │
+                └─────────────┬────────────────────────────────────────────────┘
+                              ▼
+              ┌───────────────────────────────────────────────┐
+              │  admin-config Cloud Function (us-west1)       │
+              │    GET  → returns current tree from GCS       │
+              │    POST → validates token + payload, writes   │
+              │    POST?verify=1 → checks token only          │
+              └─────────────┬─────────────────────────────────┘
+                            ▼
+              ┌──────────────────────────────────────────┐
+              │  gs://salish-ndvi-tiles/                 │
+              │     config/category-tree.json            │
+              │     (public read, function-only write)   │
+              └──────────────────────────────────────────┘
+```
+
+The public map and the admin tool **both** read the category tree from the same public GCS URL — no extra auth needed for reads, and changes flow to the map automatically on its next page load. Writes are funneled through the Cloud Function, which is the only writer to the file.
+
+### Category Tree data model
+
+Stored at `gs://salish-ndvi-tiles/config/category-tree.json`:
+
+```json
+{
+  "version": 8,
+  "updated_at": "2026-05-17T18:58:46Z",
+  "tree": [
+    {
+      "id": "friends-data",
+      "label": "Friends of the San Juans",
+      "layers": ["friends-herring-spawning", "friends-bull-kelp", "..." ],
+      "children": []
+    },
+    { "id": "fish-habitat", "label": "Fish Habitat", "layers": [...], "children": [] }
+  ]
+}
+```
+
+**Field rules:**
+
+| Field | Notes |
+|---|---|
+| `id` | Stable slug (`^[a-z0-9-]+$`, max 64 chars). For a newly added category, the slug regenerates from the label as the admin types — until the first successful save, when it **locks forever**. After that, only the label can be edited. |
+| `label` | Human-readable name shown in the sidebar. 1–120 chars. Editable any time. |
+| `layers` | Layer ids (from `src/config/layers.ts`) assigned to this category. Same layer id can appear in multiple categories — the layer will then show up in multiple sidebar groups. |
+| `children` | Recursive; empty array for leaf categories. A node can be both a branch and a leaf (have layers AND children). |
+| Order | The array order = the visual order. No separate `order` field. |
+| `version` / `updated_at` | Server-managed. Every successful POST bumps `version` and refreshes `updated_at`. The client's copy of these is ignored. |
+
+### Category Tree Editor — features
+
+Lives at [`src/components/Admin/CategoryTreeEditor.tsx`](src/components/Admin/CategoryTreeEditor.tsx). Built on `react-arborist`.
+
+- **Drag-and-drop** to reorder or nest categories. Drop onto a row to nest under it; drop between rows to reorder.
+- **Inline rename** on double-click. Enter to save, Escape to cancel. Spaces and other text editing keys are isolated from react-arborist's keyboard shortcuts.
+- **Add root** / **Add child** buttons. Newly added rows auto-focus their label input. The slug shown next to a fresh row tracks whatever you're typing; after the next Save, the slug locks.
+- **Delete** with safeguards: a category cannot be deleted while it has children or assigned layers. An explanatory alert tells the admin why.
+- **Layer assignment panel** (right side). Click any category row → the right panel lists every available data layer with a checkbox. Tick to assign, untick to remove. Search filters the list. A `+N` indicator next to a layer means it's also assigned to N other categories.
+- **Dirty-state Save / Discard** buttons appear only when local edits diverge from the server copy.
+- **Orphan warning** at the top: layers defined in code that aren't assigned to any category. They won't appear in the public sidebar until assigned.
+- **Empty-category warning** at the top: categories with no layers (directly or via descendants). They also won't appear in the public sidebar.
+- **Concurrency model:** last-write-wins. Two admins editing the same tree simultaneously won't see a conflict warning; whoever saves second wins. Acceptable for v1's small admin team. The Cloud Function can be extended later to refuse a write whose `version` is stale.
+
+### Cloud Function spec — `admin-config`
+
+Code: [`cloud-functions/admin-config/main.py`](cloud-functions/admin-config/main.py)
+
+| Method | Behavior |
+|---|---|
+| `GET /` | Returns the current tree from GCS. Public; no auth. CORS for `salishsea.knauernever.com`, `localhost:5173`, `localhost:4173`. |
+| `POST /?verify=1` | Validates `X-Admin-Token`; returns `204` on match, `401` on mismatch. No write side effects. Used by `AuthGate`. |
+| `POST /` | Full save: validates token, JSON-schema-validates the payload, checks id uniqueness across the tree, server-bumps `version` and `updated_at`, writes the JSON to GCS with `Cache-Control: no-cache, max-age=0` and refreshes the public-read ACL. |
+| `OPTIONS /` | CORS preflight. |
+
+**Validation rules** (jsonschema + custom checks):
+- Each node: `{ id, label, layers, children }`, all required except `layers` (defaults to `[]` if missing).
+- `id`: matches `^[a-z0-9-]+$`, 1–64 chars.
+- `label`: 1–120 chars.
+- `layers`: array of slug-shaped strings, deduplicated within a node.
+- `children`: recursive.
+- All `id` values across the entire tree must be unique. Duplicates are rejected with a descriptive `400` listing them.
+
+**Service account:** the function runs as `643709945717-compute@developer.gserviceaccount.com` with `roles/storage.objectAdmin` scoped to `gs://salish-ndvi-tiles`. This is the only identity allowed to write to the tree file.
+
+### Adding a new admin module (future)
+
+The shell is built to grow. To add another admin module (say, "Layers"):
+
+1. Add a route under `/admin/*` in [`src/main.tsx`](src/main.tsx).
+2. Add an entry to the `MODULES` array in [`src/components/Admin/AdminShell.tsx`](src/components/Admin/AdminShell.tsx).
+3. Build the module component under `src/components/Admin/`.
+4. If it needs a backend, add the endpoint either as another Cloud Function with a matching Vercel rewrite (`/api/admin/<name>`) or extend the existing `admin-config` function with a sub-path.
+
+The pattern is intentional: each admin module is independent, all share the same auth gate, and all backend traffic goes through the same `/api/admin/*` namespace on the user's own domain.
+
+### Local development
+
+The `dev` server proxies `/api/admin/categories` to the deployed Cloud Function automatically (configured in [`vite.config.ts`](vite.config.ts)). Query strings (e.g. `?verify=1`) survive the proxy. This means signing in to `/admin` locally hits the *real* deployed function — there's no separate local mock.
+
+If you want to test against a different password, deploy the function with a new `ADMIN_PASSWORD` env var (`gcloud functions deploy admin-config --update-env-vars ADMIN_PASSWORD=...`). The function and the admin UI both read it from the same place: the deployed env.
+
+---
+
 ## NDVI / Vegetation Analysis
 
 ### NAIP Layer (High Resolution)
@@ -420,6 +552,13 @@ Pre-computed from NAIP imagery. Each of the 19,020 parcels has: `mean`, `stdDev`
 ---
 
 ## Cloud Functions
+
+Two HTTP-triggered functions, both in `us-west1`.
+
+| Function | Source | Purpose |
+|---|---|---|
+| `ee-ndvi-tiles` | [`cloud-functions/ee-tiles/`](cloud-functions/ee-tiles/) | Computes Sentinel-2 NDVI tile URLs on demand. Public. See below. |
+| `admin-config` | [`cloud-functions/admin-config/`](cloud-functions/admin-config/) | Reads / writes the category tree. Writes require `X-Admin-Token`. See [Admin Tool](#admin-tool). |
 
 ### Sentinel-2 NDVI Tile Server
 
@@ -483,11 +622,15 @@ Defined via Tailwind CSS v4 `@theme` directive in `src/index.css`:
 ```
 salish-sea-propmapper/
 ├── cloud-functions/
-│   └── ee-tiles/
-│       ├── main.py              # Sentinel-2 NDVI Cloud Function
+│   ├── ee-tiles/
+│   │   ├── main.py              # Sentinel-2 NDVI Cloud Function
+│   │   └── requirements.txt
+│   └── admin-config/
+│       ├── main.py              # Category tree read/write endpoint (admin tool backend)
 │       └── requirements.txt
 ├── scripts/
-│   └── generate-preset-html.ts  # Build-time per-preset HTML generator (runs after vite build)
+│   ├── generate-preset-html.ts  # Build-time per-preset HTML generator (runs after vite build)
+│   └── seed-category-tree.json  # One-time seed for gs://salish-ndvi-tiles/config/category-tree.json
 ├── public/
 │   └── data/
 │       ├── Tax_Parcels.geojson         # 133 MB, 19K parcels
@@ -504,6 +647,10 @@ salish-sea-propmapper/
 │       └── ndvi_parcel_stats.json      # Per-parcel NDVI stats
 ├── src/
 │   ├── components/
+│   │   ├── Admin/
+│   │   │   ├── AuthGate.tsx            # Login screen + sessionStorage token (verifies against the function)
+│   │   │   ├── AdminShell.tsx          # Header + module nav layout used by all /admin routes
+│   │   │   └── CategoryTreeEditor.tsx  # Drag-drop tree + layer assignment panel (react-arborist)
 │   │   ├── Layout/
 │   │   │   ├── Header.tsx              # Top bar with branding + search
 │   │   │   └── Sidebar.tsx             # Slide-out layer controls panel
@@ -533,7 +680,8 @@ salish-sea-propmapper/
 │   ├── services/
 │   │   ├── spatial.ts                 # Turf.js spatial query engine
 │   │   ├── popupSpatial.ts           # Building count + shoreline habitat queries
-│   │   └── geocode.ts                # Google Geocoder wrapper
+│   │   ├── geocode.ts                # Google Geocoder wrapper
+│   │   └── categoryTree.ts           # Live-from-GCS category tree (with baked-in fallback)
 │   ├── types/
 │   │   └── index.ts                   # TypeScript interfaces
 │   ├── utils/
@@ -562,7 +710,8 @@ salish-sea-propmapper/
 |---|---|---|
 | `react` | 19.2.0 | UI framework |
 | `react-dom` | 19.2.0 | DOM renderer |
-| `react-router-dom` | 7.x | Client-side routing for preset views |
+| `react-router-dom` | 7.x | Client-side routing for preset views and `/admin/*` |
+| `react-arborist` | 3.x | Tree UI (drag-drop reorder/nest) used by the Category Tree Editor |
 | `@googlemaps/js-api-loader` | 2.0.2 | Google Maps API loading |
 | `@turf/turf` | 7.3.4 | Geospatial analysis (buffer, intersect, bbox, point-in-polygon) |
 | `tailwindcss` | 4.1.18 | Utility-first CSS framework |

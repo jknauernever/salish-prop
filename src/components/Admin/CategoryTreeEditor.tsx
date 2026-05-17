@@ -257,8 +257,19 @@ function CategoryRow({
           onClick={(e) => e.stopPropagation()}
           onBlur={commitEdit}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitEdit();
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              cancelEdit();
+              return;
+            }
+            // Stop space, arrows, etc. from bubbling up to react-arborist,
+            // which would otherwise hijack them for tree-level shortcuts.
+            e.stopPropagation();
           }}
           className="flex-1 px-1.5 py-0.5 text-sm border border-deep-teal rounded outline-none bg-white"
         />
@@ -420,6 +431,10 @@ export function CategoryTreeEditor() {
   const [success, setSuccess] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Ids of categories created in this editing session — their slug can still
+  // change as the user types a label. After a successful save, this clears
+  // (every node is now "saved" and its slug locks).
+  const [newIds, setNewIds] = useState<Set<string>>(() => new Set());
   const treeRef = useRef<TreeApi<EditorNode>>(null);
 
   useEffect(() => {
@@ -440,6 +455,22 @@ export function CategoryTreeEditor() {
     return layerConfigs.filter(l => !assigned.has(l.id)).map(l => l.id);
   }, [workingTree]);
 
+  const emptyCategoryLabels = useMemo(() => {
+    function nodeIsRendered(node: EditorNode): boolean {
+      if (node.layers.length > 0) return true;
+      return node.children.some(nodeIsRendered);
+    }
+    const empties: string[] = [];
+    function walk(nodes: EditorNode[]) {
+      for (const n of nodes) {
+        if (!nodeIsRendered(n)) empties.push(n.label);
+        walk(n.children);
+      }
+    }
+    walk(workingTree);
+    return empties;
+  }, [workingTree]);
+
   const selectedNode = useMemo(
     () => (selectedId ? findNodeById(workingTree, selectedId) : null),
     [selectedId, workingTree],
@@ -450,6 +481,7 @@ export function CategoryTreeEditor() {
     const label = 'New Category';
     const id = uniqueId(slugify(label), ids);
     setWorkingTree([...workingTree, { id, label, layers: [], children: [] }]);
+    setNewIds((prev) => new Set(prev).add(id));
     setTimeout(() => { setEditingId(id); setSelectedId(id); }, 0);
   }
 
@@ -458,6 +490,7 @@ export function CategoryTreeEditor() {
     const label = 'New Category';
     const id = uniqueId(slugify(label), ids);
     setWorkingTree(addChildTo(workingTree, parentId, { id, label, layers: [], children: [] }));
+    setNewIds((prev) => new Set(prev).add(id));
     setTimeout(() => {
       treeRef.current?.open(parentId);
       setEditingId(id);
@@ -465,13 +498,44 @@ export function CategoryTreeEditor() {
     }, 0);
   }
 
-  function handleRename(id: string, label: string) {
-    setWorkingTree(updateNode(workingTree, id, n => ({ ...n, label: label.trim() })));
+  function handleRename(id: string, rawLabel: string) {
+    const label = rawLabel.trim();
+    if (!label) return;
+
+    // For nodes added in this session, keep the slug in sync with the label.
+    // Once a node has been saved (id not in newIds), its slug is locked.
+    if (newIds.has(id)) {
+      const takenExceptThis = new Set(
+        Array.from(collectIds(workingTree)).filter((existing) => existing !== id),
+      );
+      const newId = uniqueId(slugify(label), takenExceptThis);
+      setWorkingTree(updateNode(workingTree, id, (n) => ({ ...n, id: newId, label })));
+      if (newId !== id) {
+        setNewIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          next.add(newId);
+          return next;
+        });
+        if (selectedId === id) setSelectedId(newId);
+        if (editingId === id) setEditingId(null);
+      }
+      return;
+    }
+
+    setWorkingTree(updateNode(workingTree, id, (n) => ({ ...n, label })));
   }
 
   function handleDelete(id: string) {
     setWorkingTree(removeNode(workingTree, id));
     if (selectedId === id) setSelectedId(null);
+    if (newIds.has(id)) {
+      setNewIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   function handleMove(args: { dragIds: string[]; parentId: string | null; index: number }) {
@@ -511,6 +575,7 @@ export function CategoryTreeEditor() {
       clearCache();
       setServerTree(fresh);
       setWorkingTree(cloneTree(fresh.tree));
+      setNewIds(new Set()); // all rows are now "saved" — slugs lock
       setSuccess(`Saved (version ${fresh.version}).`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -522,6 +587,7 @@ export function CategoryTreeEditor() {
   function handleDiscard() {
     if (!serverTree) return;
     setWorkingTree(cloneTree(serverTree.tree));
+    setNewIds(new Set());
     setError(null);
     setSuccess(null);
   }
@@ -594,6 +660,15 @@ export function CategoryTreeEditor() {
           <strong>{orphanIds.length} layer{orphanIds.length === 1 ? '' : 's'} not assigned to any category</strong>
           {' — won\'t appear in the public sidebar until assigned: '}
           <span className="font-mono">{orphanIds.join(', ')}</span>
+        </div>
+      )}
+      {emptyCategoryLabels.length > 0 && (
+        <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 text-xs text-amber-900 rounded">
+          <strong>
+            {emptyCategoryLabels.length} empty categor{emptyCategoryLabels.length === 1 ? 'y' : 'ies'}
+          </strong>
+          {' — won\'t appear in the public sidebar until you assign layers to '}
+          {emptyCategoryLabels.length === 1 ? 'it' : 'them'}: <em>{emptyCategoryLabels.join(', ')}</em>
         </div>
       )}
 
