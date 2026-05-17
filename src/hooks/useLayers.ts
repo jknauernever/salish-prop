@@ -59,10 +59,13 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.Feature
   return { type: 'FeatureCollection', features };
 }
 
-function createInitialState(config: LayerConfig): LayerState {
+function createInitialState(config: LayerConfig, initialLayerIds?: string[]): LayerState {
+  const visible = initialLayerIds
+    ? initialLayerIds.includes(config.id)
+    : config.visible;
   return {
     config,
-    visible: config.visible,
+    visible,
     loaded: false,
     loading: false,
     error: config.placeholder ? 'Data not yet available' : null,
@@ -107,9 +110,15 @@ function computeFeatureBbox(feature: GeoJSON.Feature): [number, number, number, 
   return [minLng, minLat, maxLng, maxLat];
 }
 
-export function useLayers(map: google.maps.Map | null) {
+export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[]) {
+  const isVisibleByDefault = useCallback((layerId: string): boolean => {
+    if (initialLayerIds) return initialLayerIds.includes(layerId);
+    const cfg = layerConfigs.find(c => c.id === layerId);
+    return cfg?.visible ?? false;
+  }, [initialLayerIds]);
+
   const [layers, setLayers] = useState<LayerState[]>(() =>
-    layerConfigs.map(createInitialState)
+    layerConfigs.map(c => createInitialState(c, initialLayerIds))
   );
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
@@ -280,6 +289,7 @@ export function useLayers(map: google.maps.Map | null) {
         const tileUrl = config.tileUrl;
         const tileMinZoom = config.minZoom ?? 0;
         const tileMaxZoom = 19;
+        const visibleByDefault = isVisibleByDefault(config.id);
         const imageMapType = new google.maps.ImageMapType({
           getTileUrl(coord, zoom) {
             if (zoom < tileMinZoom || zoom > tileMaxZoom) return null;
@@ -291,7 +301,7 @@ export function useLayers(map: google.maps.Map | null) {
           tileSize: new google.maps.Size(256, 256),
           maxZoom: tileMaxZoom,
           name: config.id,
-          opacity: config.visible ? (config.defaultOpacity ?? 0.7) : 0,
+          opacity: visibleByDefault ? (config.defaultOpacity ?? 0.7) : 0,
         });
 
         rasterLayersRef.current.set(config.id, imageMapType);
@@ -333,6 +343,7 @@ export function useLayers(map: google.maps.Map | null) {
           const dataLayer = new google.maps.Data({ map });
           dataLayer.addGeoJson(data);
 
+          const ebirdVisible = isVisibleByDefault(config.id);
           dataLayer.setStyle(() => ({
             icon: config.markerIcon ? {
               url: config.markerIcon,
@@ -340,7 +351,7 @@ export function useLayers(map: google.maps.Map | null) {
               anchor: new google.maps.Point(14, 14),
             } : undefined,
             clickable: true,
-            visible: config.visible,
+            visible: ebirdVisible,
           }));
 
           // Click opens eBird hotspot page
@@ -432,7 +443,7 @@ export function useLayers(map: google.maps.Map | null) {
 
           const currentZoom = map.getZoom() ?? 0;
           const aboveMinZoom = config.minZoom == null || currentZoom >= config.minZoom;
-          const shouldShow = config.visible && aboveMinZoom;
+          const shouldShow = isVisibleByDefault(config.id) && aboveMinZoom;
 
           const hasPoints = data.features.some(f =>
             f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
@@ -540,7 +551,7 @@ export function useLayers(map: google.maps.Map | null) {
         }
       });
     });
-  }, [map, updateViewportLayers]);
+  }, [map, updateViewportLayers, isVisibleByDefault]);
 
   // Update viewport-filtered layers on map idle (after pan/zoom settles)
   useEffect(() => {

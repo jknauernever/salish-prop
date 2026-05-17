@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { importLibrary } from '@googlemaps/js-api-loader';
 import { useMap } from '../../hooks/useMap';
 import { LoadingSpinner } from '../common/LoadingState';
 
@@ -7,7 +8,6 @@ interface AddressSearchProps {
   isSearching: boolean;
 }
 
-// San Juan County bounds for biasing
 const SJC_BOUNDS = {
   north: 48.85,
   south: 48.40,
@@ -17,52 +17,73 @@ const SJC_BOUNDS = {
 
 export function AddressSearch({ onPlaceSelected, isSearching }: AddressSearchProps) {
   const { map } = useMap();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const [_address, setAddress] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
   const onPlaceSelectedRef = useRef(onPlaceSelected);
   onPlaceSelectedRef.current = onPlaceSelected;
 
   useEffect(() => {
-    if (!map || !inputRef.current || autocompleteRef.current) return;
+    if (!map || !containerRef.current) return;
 
-    const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-      bounds: new google.maps.LatLngBounds(
-        { lat: SJC_BOUNDS.south, lng: SJC_BOUNDS.west },
-        { lat: SJC_BOUNDS.north, lng: SJC_BOUNDS.east },
-      ),
-      componentRestrictions: { country: 'us' },
-      types: ['address'],
-      fields: ['formatted_address', 'geometry.location'],
-    });
+    const container = containerRef.current;
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
 
-    autocompleteRef.current = autocomplete;
+    (async () => {
+      try {
+        await importLibrary('places');
+        // Ensure the custom element is registered before constructing it.
+        // Earlier attempts hit "Illegal constructor" because js-api-loader v2
+        // hadn't finished registering the element when new PlaceAutocompleteElement() ran.
+        await customElements.whenDefined('gmp-place-autocomplete');
+        if (cancelled) return;
 
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (!place.geometry?.location) return;
+        const el = new google.maps.places.PlaceAutocompleteElement({
+          locationBias: new google.maps.LatLngBounds(
+            { lat: SJC_BOUNDS.south, lng: SJC_BOUNDS.west },
+            { lat: SJC_BOUNDS.north, lng: SJC_BOUNDS.east },
+          ),
+          includedRegionCodes: ['us'],
+          placeholder: 'Search an address...',
+        });
 
-      const result = {
-        lat: place.geometry.location.lat(),
-        lng: place.geometry.location.lng(),
-        formattedAddress: place.formatted_address || '',
-      };
+        el.style.width = '100%';
+        container.appendChild(el);
 
-      setAddress(result.formattedAddress);
-      onPlaceSelectedRef.current(result);
-    });
+        const handler: EventListener = async (event) => {
+          const place = (event as google.maps.places.PlacePredictionSelectEvent).placePrediction.toPlace();
+          await place.fetchFields({ fields: ['formattedAddress', 'location'] });
+
+          const lat = place.location?.lat();
+          const lng = place.location?.lng();
+          if (typeof lat !== 'number' || typeof lng !== 'number') return;
+
+          onPlaceSelectedRef.current({
+            lat,
+            lng,
+            formattedAddress: place.formattedAddress ?? '',
+          });
+        };
+
+        el.addEventListener('gmp-select', handler);
+
+        cleanup = () => {
+          el.removeEventListener('gmp-select', handler);
+          el.remove();
+        };
+      } catch (err) {
+        console.error('Failed to initialize PlaceAutocompleteElement:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, [map]);
 
   return (
     <div className="flex items-center gap-2 w-full">
-      <div className="relative flex-1">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Search a San Juan County address..."
-          className="w-full px-3 py-1.5 rounded-md border border-white/20 bg-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-deep-teal/50 focus:bg-white/15"
-        />
-      </div>
+      <div ref={containerRef} className="address-search-container relative flex-1" />
       {isSearching && <LoadingSpinner size="sm" />}
     </div>
   );

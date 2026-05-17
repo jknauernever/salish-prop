@@ -150,6 +150,7 @@ export interface OpenParcelPopupDetail {
 
 interface FeaturePopupProps {
   layers: LayerState[];
+  propertyClick?: boolean;
 }
 
 // Dedicated overlay Data layer for the highlighted parcel selection.
@@ -191,7 +192,7 @@ function highlightParcelGeometry(
   }
 }
 
-export function FeaturePopup({ layers }: FeaturePopupProps) {
+export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps) {
   const { map } = useMap();
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const layersRef = useRef(layers);
@@ -211,6 +212,8 @@ export function FeaturePopup({ layers }: FeaturePopupProps) {
       if (!layer.dataLayer) return;
       // eBird hotspots handle their own click (open eBird URL)
       if (layer.config.id === 'ebird-hotspots') return;
+      // tax-parcels is the property-details layer; skip click registration when disabled
+      if (layer.config.id === 'tax-parcels' && !propertyClick) return;
 
       const listener = layer.dataLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
         const feature = event.feature;
@@ -249,12 +252,16 @@ export function FeaturePopup({ layers }: FeaturePopupProps) {
     (window as unknown as Record<string, unknown>).__openHabitatInfo = openHabitatInfoWindow;
     (window as unknown as Record<string, unknown>).__openNdviInfo = openNdviInfoWindow;
 
-    // Listen for programmatic popup requests (e.g. from address search)
-    const popupHandler = (e: Event) => {
-      const { lat, lng } = (e as CustomEvent<OpenParcelPopupDetail>).detail;
-      openParcelPopupAtCoords(lat, lng, map, infoWindowRef, layersRef.current);
-    };
-    window.addEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
+    // Listen for programmatic popup requests (e.g. from address search) — only when property details are enabled
+    const popupHandler = propertyClick
+      ? (e: Event) => {
+          const { lat, lng } = (e as CustomEvent<OpenParcelPopupDetail>).detail;
+          openParcelPopupAtCoords(lat, lng, map, infoWindowRef, layersRef.current);
+        }
+      : null;
+    if (popupHandler) {
+      window.addEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
+    }
 
     return () => {
       listeners.forEach(l => google.maps.event.removeListener(l));
@@ -262,9 +269,11 @@ export function FeaturePopup({ layers }: FeaturePopupProps) {
       clearParcelHighlight();
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
       delete (window as unknown as Record<string, unknown>).__openNdviInfo;
-      window.removeEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
+      if (popupHandler) {
+        window.removeEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
+      }
     };
-  }, [map, layers]);
+  }, [map, layers, propertyClick]);
 
   return null;
 }

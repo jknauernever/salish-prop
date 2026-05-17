@@ -12,6 +12,7 @@
 - [Map Layers](#map-layers)
 - [Spatial Query System](#spatial-query-system)
 - [Property Popup (FeaturePopup)](#property-popup-featurepopup)
+- [Preset Views](#preset-views)
 - [NDVI / Vegetation Analysis](#ndvi--vegetation-analysis)
 - [Cloud Functions](#cloud-functions)
 - [Theming & Styling](#theming--styling)
@@ -31,9 +32,9 @@
 - Zoom-level enforcement per layer (e.g., parcels appear at zoom 15+)
 
 ### Address Search
-- Google Places Autocomplete biased to San Juan County bounds (48.40–48.85 lat, -123.25 to -122.75 lng)
-- Searches restricted to address-type results
-- Selecting an address zooms the map, runs a spatial query, and opens a property popup on the containing parcel
+- Google **PlaceAutocompleteElement** (new Places API web component) with a soft location bias to San Juan County bounds (48.40–48.85 lat, -123.25 to -122.75 lng)
+- Results from outside SJC still resolve (so users can paste any US address), with local results ranked higher
+- Selecting an address recenters the map, draws a quarter-mile radius overlay, and opens the property popup at the containing parcel
 
 ### Spatial Query
 - Turf.js point buffer with bbox pre-filter for performance
@@ -100,9 +101,10 @@
 - **Node.js** 18+ and npm
 - A **Google Maps Platform** project with these APIs enabled:
   - Maps JavaScript API
-  - Places API
+  - **Places API (New)** — required for `PlaceAutocompleteElement` (the classic Places API is *not* used)
   - Geocoding API
 - A **Map ID** configured for the Maps JavaScript API (required for AdvancedMarkerElement)
+- The Maps API key's **Website restrictions** must include `http://localhost:5173/*` for local dev (and your production domain for deployment). The port-wildcard pattern (`localhost:*/*`) is unreliable — list each port literally.
 
 ### Installation
 
@@ -136,9 +138,14 @@ Opens at **http://localhost:5173/**. Vite provides HMR (hot module replacement) 
 ### Building for Production
 
 ```bash
-npm run build    # TypeScript check + Vite build → dist/
+npm run build    # tsc -b && vite build && tsx scripts/generate-preset-html.ts
 npm run preview  # Serve the production build locally
 ```
+
+The `build` script runs three stages:
+1. `tsc -b` — TypeScript type check across project references.
+2. `vite build` — Bundles the SPA into `dist/`.
+3. `tsx scripts/generate-preset-html.ts` — For every preset in `src/config/presets.ts`, writes `dist/view/{presetName}/index.html` with that preset's `<title>` and Open Graph / Twitter meta tags injected. See [Preset Views](#preset-views) for why.
 
 ---
 
@@ -276,6 +283,100 @@ Building count and total footprint sq ft. Lists individual buildings with their 
 
 ---
 
+## Preset Views
+
+Preset views are shareable, configurable map URLs that bundle a set of default layers, an initial map view, feature flags, and per-URL social preview meta tags. They're driven by code-defined configs in `src/config/presets.ts`, served by client-side React Router routes, and (in production) backed by build-time–generated HTML files so social crawlers see correct previews.
+
+### URL Pattern
+
+| URL | Behavior |
+|---|---|
+| `/` | Default map. No preset applied. Identical to pre-preset behavior. |
+| `/view/:presetName` | Preset applied. Layers, initial view, and feature flags come from `presets[presetName]`. |
+| `/view/unknown-name` | Unknown preset → falls back to the default map. A `console.warn` is logged for visibility. |
+
+### Defining a Preset
+
+All presets are TypeScript objects exported from [`src/config/presets.ts`](src/config/presets.ts).
+
+```ts
+type Preset = {
+  title: string;
+  description?: string;
+  layers: string[];                                // layer IDs from src/config/layers.ts to enable
+  features: {
+    propertyClick?: boolean;                       // default true; when false, parcel clicks + popup-from-search are disabled
+  };
+  locked: boolean;                                 // when true, hide/disable UI controls
+  lockedControls?: Array<'layers' | 'search'>;     // granular lockdown; omitted = lock everything
+  initialView?: {
+    center: { lat: number; lng: number };
+    zoom: number;
+  };
+  meta: {
+    title: string;                                 // <title> and og:title
+    description: string;                           // <meta name="description"> and og:description
+    ogImage: string;                               // absolute URL to social preview image
+    ogUrl: string;                                 // canonical URL for this preset
+  };
+};
+```
+
+### How Preset Application Flows Through the App
+
+1. [`src/main.tsx`](src/main.tsx) mounts `<BrowserRouter>` with two routes: `/` renders `<App />` (no preset prop); `/view/:presetName` renders a small `PresetView` wrapper that calls `getPreset(name)` and passes the resolved preset (or `null`) into `<App preset={...} />`.
+2. `App` threads `preset?.initialView` into `MapContainer` (which uses it for the initial Google Maps `center` / `zoom`) and `preset?.layers` into `useLayers` (as the `initialLayerIds` override for default visibility — overrides each layer's `config.visible`).
+3. `App` derives a `lockedSet` from `preset.locked` + `preset.lockedControls`. When `locked: true` is set without `lockedControls`, all lockable controls are locked. The set drives:
+    - `searchLocked` → omit the `<AddressSearch>` slot from the header
+    - `layersLocked` → hide the sidebar toggle button (`hideSidebarToggle` prop on `<Header>`) and skip rendering `<Sidebar>` entirely
+4. `App` passes `preset?.features.propertyClick ?? true` to `<FeaturePopup>`. With `propertyClick: false`, both paths that open the property-details popup are dead:
+    - Map clicks on the `tax-parcels` layer (the click listener is not registered for that one layer)
+    - `OPEN_PARCEL_POPUP_EVENT` (the event listener is not registered) — so address-search-recenter still works, but it does not open the parcel popup
+5. On any `/view/*` route (preset resolved or not), a small "← View full map" link is rendered in the header's right-side cluster. It uses `react-router-dom`'s `<Link to="/">` for client-side navigation. The element-type change between `<App />` and `<PresetView />` causes a fresh mount, which cleanly resets all preset state.
+
+### SPA Routing on Vercel + Per-Preset HTML for Social Previews
+
+The challenge: the app is a client-side SPA, but social crawlers (Facebook, LinkedIn, Slack, iMessage, etc.) don't run JavaScript. They read static `<meta>` tags from the response HTML. For a crawler to see correct previews for `/view/salmon-habitat`, the HTML returned at that URL must contain the right title / description / OG tags.
+
+The solution is two pieces working together:
+
+1. **Build-time HTML generation** — [`scripts/generate-preset-html.ts`](scripts/generate-preset-html.ts) runs after `vite build`. It reads `dist/index.html` as a template, then for each preset writes `dist/view/{presetName}/index.html` with:
+    - `<title>` replaced with `preset.meta.title`
+    - These tags injected before `</head>`:
+        - `<meta name="description">`
+        - `<meta property="og:title" | og:description | og:image | og:url | og:type>`
+        - `<meta name="twitter:card" content="summary_large_image">`
+    - All other tags (assets, fonts, viewport) preserved from the SPA template, so JS/CSS load with the same hashed asset URLs.
+
+2. **Vercel filesystem-precedence routing** — [`vercel.json`](vercel.json) has a single catch-all rewrite to `/index.html`:
+
+    ```json
+    { "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+    ```
+
+    Vercel's routing order is **filesystem → redirects → rewrites**. Real files always win first. So:
+
+    | URL | What happens |
+    |---|---|
+    | `/view/salmon-habitat` | `dist/view/salmon-habitat/index.html` exists → served. Crawler sees preset meta tags. SPA loads → React Router renders the preset. |
+    | `/view/unknown` | No file → catch-all rewrite → `dist/index.html` → SPA loads → `getPreset('unknown')` returns `null` → fallback default map. |
+    | `/assets/main.js` | Real file → served as-is (rewrite skipped). |
+    | `/` | Real `dist/index.html` → served. |
+
+### Local Behavior vs. Production Behavior
+
+- In `npm run dev`, Vite serves the raw `index.html` for every route. Per-preset titles/meta tags are **not** visible — that's expected, they only live in the build-time generated files. You can verify runtime preset application (layers, initial view, View full map link) just fine in dev; meta tags require `npm run build && npm run preview`.
+- `npm run preview` serves `dist/` statically on port 4173 — the closest local approximation to Vercel.
+
+### Adding a New Preset
+
+1. Open [`src/config/presets.ts`](src/config/presets.ts).
+2. Add an entry to the `presets` record. Use layer IDs from [`src/config/layers.ts`](src/config/layers.ts).
+3. `npm run build` to verify the preset HTML generates correctly under `dist/view/{name}/index.html`.
+4. Deploy. The route `https://your-domain/view/{name}` immediately works.
+
+---
+
 ## NDVI / Vegetation Analysis
 
 ### NAIP Layer (High Resolution)
@@ -385,6 +486,8 @@ salish-sea-propmapper/
 │   └── ee-tiles/
 │       ├── main.py              # Sentinel-2 NDVI Cloud Function
 │       └── requirements.txt
+├── scripts/
+│   └── generate-preset-html.ts  # Build-time per-preset HTML generator (runs after vite build)
 ├── public/
 │   └── data/
 │       ├── Tax_Parcels.geojson         # 133 MB, 19K parcels
@@ -420,7 +523,8 @@ salish-sea-propmapper/
 │   │       ├── Badge.tsx               # Count badge (default/muted/accent)
 │   │       └── LoadingState.tsx        # Spinner and overlay components
 │   ├── config/
-│   │   └── layers.ts                   # Layer definitions (20 layers)
+│   │   ├── layers.ts                   # Layer definitions (20 layers)
+│   │   └── presets.ts                  # Preset view definitions (see Preset Views)
 │   ├── hooks/
 │   │   ├── useMap.ts                   # MapContext consumer
 │   │   ├── useGeocode.ts              # Geocoding wrapper
@@ -444,6 +548,8 @@ salish-sea-propmapper/
 ├── tsconfig.app.json
 ├── tsconfig.node.json
 ├── vite.config.ts
+├── vercel.json                  # SPA catch-all rewrite (filesystem precedence keeps per-preset HTML wins)
+├── PRESET_VIEWS_PLAN.md         # Design notes for the preset views system
 └── eslint.config.js
 ```
 
@@ -456,6 +562,7 @@ salish-sea-propmapper/
 |---|---|---|
 | `react` | 19.2.0 | UI framework |
 | `react-dom` | 19.2.0 | DOM renderer |
+| `react-router-dom` | 7.x | Client-side routing for preset views |
 | `@googlemaps/js-api-loader` | 2.0.2 | Google Maps API loading |
 | `@turf/turf` | 7.3.4 | Geospatial analysis (buffer, intersect, bbox, point-in-polygon) |
 | `tailwindcss` | 4.1.18 | Utility-first CSS framework |
@@ -468,6 +575,8 @@ salish-sea-propmapper/
 | `vite` | 7.3.1 | Build tool + dev server |
 | `@vitejs/plugin-react` | 4.x | React Fast Refresh for Vite |
 | `eslint` | 9.x | Linting |
+| `tsx` | 4.x | Runs the preset HTML generator script as part of `npm run build` |
+| `@types/google.maps` | 3.64+ | Type definitions for Google Maps (incl. `PlaceAutocompleteElement`) |
 
 ---
 
@@ -478,8 +587,24 @@ salish-sea-propmapper/
 - **Initialization**: Use `APILoader.setOptions({ key, v: 'weekly' })` + `importLibrary()` — NOT `new Loader()`. The v2 API uses static methods.
 - **Option names**: `key` (not `apiKey`), `v` (not `version`).
 - **AdvancedMarkerElement**: Must `importLibrary('marker')` first and store the class in a ref. It is not available on `google.maps` directly.
-- **PlaceAutocompleteElement**: UNRELIABLE with js-api-loader v2 — the `importLibrary('places')` call does not properly register the custom element, causing `"Illegal constructor"` errors. Use the legacy `google.maps.places.Autocomplete` with a styled `<input>` element instead. The deprecation warning for legacy Autocomplete is harmless (only blocks accounts created after March 2025).
+- **PlaceAutocompleteElement** works with js-api-loader v2 *if* you wait for the custom element to register before constructing it. The minimal recipe:
+    ```ts
+    await importLibrary('places');
+    await customElements.whenDefined('gmp-place-autocomplete');
+    const el = new google.maps.places.PlaceAutocompleteElement({ /* options */ });
+    ```
+    Earlier "Illegal constructor" errors came from constructing synchronously before the element class was registered.
+- **New Places API is a separate product from classic Places API.** `PlaceAutocompleteElement` requires "Places API (New)" to be enabled in Google Cloud and listed in the key's API restrictions. The classic "Places API" is not used by this project.
+- **`includedPrimaryTypes` is stricter in the new Places API** — the legacy `'address'` category is not a valid value. Either omit the filter or use specific types like `street_address`, `premise`. The current implementation uses no type filter, just `locationBias` to softly prefer San Juan County.
+- **`locationBias` vs `locationRestriction`** — bias is a soft preference (results outside the bounds still appear, ranked lower); restriction is a hard filter (results outside are excluded entirely). The current implementation uses bias so users can search any US address.
+- **Event handling on `PlaceAutocompleteElement`** — listen for `gmp-select`; the event is `PlacePredictionSelectEvent`. Convert to a `Place` via `event.placePrediction.toPlace()`, then `await place.fetchFields({ fields: [...] })` to lazily resolve the values you need.
 - **Always verify against Google's official docs** — the Maps JavaScript API surface area is large and inconsistently documented across versions.
+
+### Routing / SPA Hosting
+
+- **Per-route HTML on Vercel** — Vercel resolves filesystem matches *before* applying rewrites. Generating `dist/view/{name}/index.html` files at build time gives social crawlers correct per-URL `<meta>` tags while a single SPA bundle still handles client-side rendering. A catch-all rewrite (`/(.*)` → `/index.html`) covers any URL that doesn't have a real file.
+- **`tsx` for build-time scripts** — Avoids a separate `node-fetch-tsc` build step. The HTML generator imports `src/config/presets.ts` directly, which means presets and HTML stay in sync without code generation.
+- **Different element types for different routes** — `<Route path="/" element={<App />} />` vs. `<Route path="/view/:name" element={<PresetView />} />` ensures React unmounts/remounts cleanly when navigating between preset and default routes. That gives a free state reset (map remounts with fresh hooks), which is the desired behavior for "View full map".
 
 ### GeoJSON & Spatial Operations
 

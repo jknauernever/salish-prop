@@ -16,14 +16,20 @@ setOptions({
 interface MapContainerProps {
   header?: ReactNode;
   children: ReactNode;
+  initialView?: {
+    center: { lat: number; lng: number };
+    zoom: number;
+  };
 }
 
-export function MapContainer({ header, children }: MapContainerProps) {
+export function MapContainer({ header, children, initialView }: MapContainerProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const startCenter = initialView?.center ?? SAN_JUAN_CENTER;
+  const startZoom = initialView?.zoom ?? DEFAULT_ZOOM;
+  const [zoom, setZoom] = useState(startZoom);
 
   useEffect(() => {
     let mounted = true;
@@ -33,8 +39,8 @@ export function MapContainer({ header, children }: MapContainerProps) {
 
       const { Map } = mapsLib as google.maps.MapsLibrary;
       const mapInstance = new Map(mapRef.current, {
-        center: SAN_JUAN_CENTER,
-        zoom: DEFAULT_ZOOM,
+        center: startCenter,
+        zoom: startZoom,
         mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
         mapTypeId: google.maps.MapTypeId.HYBRID,
         disableDefaultUI: false,

@@ -4,6 +4,8 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   searchBar?: ReactNode;
+  hideSidebarToggle?: boolean;
+  extraAction?: ReactNode;
 }
 
 const RESOURCES = [
@@ -11,7 +13,7 @@ const RESOURCES = [
   { label: 'Kelp Value and Threats', href: '/reports/kelp-habitat-value-and-threats.html' },
 ];
 
-export function Header({ onToggleSidebar, sidebarOpen, searchBar }: HeaderProps) {
+export function Header({ onToggleSidebar, sidebarOpen, searchBar, hideSidebarToggle = false, extraAction }: HeaderProps) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -28,19 +30,21 @@ export function Header({ onToggleSidebar, sidebarOpen, searchBar }: HeaderProps)
 
   return (
     <header className="h-[84px] bg-slate-blue flex items-center px-4 z-50 relative shadow-md shrink-0">
-      <button
-        onClick={onToggleSidebar}
-        className="text-white/80 hover:text-white mr-3 p-1 rounded transition-colors"
-        aria-label={sidebarOpen ? 'Close layers panel' : 'Open layers panel'}
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          {sidebarOpen ? (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          ) : (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          )}
-        </svg>
-      </button>
+      {!hideSidebarToggle && (
+        <button
+          onClick={onToggleSidebar}
+          className="text-white/80 hover:text-white mr-3 p-1 rounded transition-colors"
+          aria-label={sidebarOpen ? 'Close layers panel' : 'Open layers panel'}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {sidebarOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
+      )}
 
       <div className="flex items-center gap-3 shrink-0">
         <div className="w-8 h-8 rounded-full bg-deep-teal flex items-center justify-center">
@@ -65,6 +69,7 @@ export function Header({ onToggleSidebar, sidebarOpen, searchBar }: HeaderProps)
       )}
 
       <div className="ml-auto flex items-center gap-4 shrink-0">
+        {extraAction}
         {/* Resources dropdown */}
         <div ref={menuRef} className="relative">
           <button
