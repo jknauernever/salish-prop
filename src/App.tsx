@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { MapContainer } from './components/Map/MapContainer';
 import { LayerControls } from './components/Map/LayerControls';
 import { FeaturePopup, PARCEL_SEARCH_EVENT, OPEN_PARCEL_POPUP_EVENT } from './components/Map/FeaturePopup';
+import { ForestLossPopup } from './components/Map/ForestLossPopup';
 import type { ParcelSearchDetail, OpenParcelPopupDetail } from './components/Map/FeaturePopup';
 import { RadiusOverlay } from './components/Map/RadiusOverlay';
 import { AddressSearch } from './components/Search/AddressSearch';
@@ -131,6 +132,7 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
       />
 
       <FeaturePopup layers={layers} propertyClick={preset?.features.propertyClick ?? true} />
+      <ForestLossPopup layers={layers} />
 
       {!layersLocked && (
         <Sidebar open={sidebarOpen}>

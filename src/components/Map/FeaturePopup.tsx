@@ -153,44 +153,9 @@ interface FeaturePopupProps {
   propertyClick?: boolean;
 }
 
-// Dedicated overlay Data layer for the highlighted parcel selection.
-// Using a separate layer avoids issues with viewport-filtered layers
-// that remove/re-add features on every pan/zoom (which clears overrideStyle).
-let highlightLayer: google.maps.Data | null = null;
-let highlightLayerMap: google.maps.Map | null = null;
-
-function ensureHighlightLayer(map: google.maps.Map): google.maps.Data {
-  if (highlightLayer && highlightLayerMap === map) return highlightLayer;
-  if (highlightLayer) highlightLayer.setMap(null);
-  highlightLayer = new google.maps.Data({ map });
-  highlightLayer.setStyle({
-    strokeColor: '#F97316',
-    strokeWeight: 4,
-    fillColor: '#F97316',
-    fillOpacity: 0.25,
-    zIndex: 10,
-    clickable: false,
-  });
-  highlightLayerMap = map;
-  return highlightLayer;
-}
-
-function clearParcelHighlight() {
-  if (highlightLayer) {
-    highlightLayer.forEach(f => highlightLayer!.remove(f));
-  }
-}
-
-function highlightParcelGeometry(
-  geoFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null,
-  map: google.maps.Map,
-) {
-  const hl = ensureHighlightLayer(map);
-  hl.forEach(f => hl.remove(f));
-  if (geoFeature) {
-    hl.addGeoJson(geoFeature);
-  }
-}
+// Highlight helpers live in featureHighlight.ts so other popups (e.g. ForestLossPopup)
+// can share the same overlay layer.
+import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighlight';
 
 export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps) {
   const { map } = useMap();
@@ -204,7 +169,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
     infoWindowRef.current = new google.maps.InfoWindow();
 
     // Clear parcel highlight when popup is closed
-    infoWindowRef.current.addListener('closeclick', clearParcelHighlight);
+    infoWindowRef.current.addListener('closeclick', clearFeatureHighlight);
 
     const listeners: google.maps.MapsEventListener[] = [];
 
@@ -238,6 +203,11 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
             infoWindowRef, layersRef.current,
           );
         } else {
+          // Highlight the clicked feature so users can see what their popup describes.
+          // toGeoJson is async (callback-based); fire-and-forget — popup opens immediately.
+          feature.toGeoJson((json) => {
+            highlightFeatureGeometry(json as GeoJSON.Feature, map);
+          });
           const content = buildPopupHtml(label, layer, fields, null);
           infoWindowRef.current?.setContent(content);
           infoWindowRef.current?.setPosition(event.latLng!);
@@ -266,7 +236,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
     return () => {
       listeners.forEach(l => google.maps.event.removeListener(l));
       infoWindowRef.current?.close();
-      clearParcelHighlight();
+      clearFeatureHighlight();
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
       delete (window as unknown as Record<string, unknown>).__openNdviInfo;
       if (popupHandler) {
@@ -771,7 +741,7 @@ function openParcelPopupAtCoords(
 
   // Highlight the matched parcel geometry
   if (matchedFeature.geometry && (matchedFeature.geometry.type === 'Polygon' || matchedFeature.geometry.type === 'MultiPolygon')) {
-    highlightParcelGeometry(
+    highlightFeatureGeometry(
       matchedFeature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
       map,
     );
@@ -805,7 +775,7 @@ function handleParcelClick(
   const parcelGeoFeature = findParcelGeometry(layer, props);
 
   // Highlight selected parcel on the map
-  highlightParcelGeometry(parcelGeoFeature, map);
+  highlightFeatureGeometry(parcelGeoFeature, map);
 
   const content = buildTabbedPopupHtml(label, layer, fields, addressRowId, popupId);
   infoWindowRef.current?.setContent(content);
@@ -866,6 +836,10 @@ function handleParcelClick(
 
   // Fetch bird observations (independent of parcel geometry)
   runBirdQuery(clickLat, clickLng, popupId);
+
+  // If the forest-loss raster layer is on, fetch + render a small line
+  // describing the loss patch at this click point.
+  runForestLossQuery(clickLat, clickLng, popupId, allLayers);
 
   // Run spatial queries + address-enriched summary
   if (parcelGeoFeature) {
@@ -984,6 +958,63 @@ const BIRD_RADIUS_OPTIONS = [
   { miles: 20, km: 32.187 },
 ];
 const DEFAULT_BIRD_RADIUS_MILES = 5;
+
+/**
+ * If the forest-loss raster layer is currently visible, ask the Hansen
+ * Cloud Function for the loss-patch info at the click point and inject
+ * a small line into the Summary tab. No-op when the layer is off.
+ */
+function runForestLossQuery(
+  lat: number,
+  lng: number,
+  popupId: string,
+  allLayers: LayerState[],
+) {
+  const layer = allLayers.find(l => l.config.id === 'forest-loss');
+  if (!layer?.visible) return;
+  const endpoint = layer.config.apiEndpoint;
+  if (!endpoint) return;
+
+  const inject = (html: string) => {
+    const el = document.getElementById(`${popupId}-forest-loss`);
+    if (el) el.innerHTML = html;
+  };
+
+  inject(`<div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Looking up forest loss…</p></div>`);
+
+  fetch(`${endpoint}?lat=${lat}&lng=${lng}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{ year: number | null; acres: number; truncated?: boolean }>;
+    })
+    .then(data => {
+      if (!data.year) {
+        inject(
+          `<div style="${CARD}"><p style="font-size:13px;color:${COLOR.mid};">No forest loss recorded at this point.</p></div>`,
+        );
+        return;
+      }
+      const acresStr = data.acres >= 0.01
+        ? `${data.acres.toFixed(2)} acre${Math.abs(data.acres - 1) < 0.005 ? '' : 's'}`
+        : '&lt; 0.01 acres';
+      const truncatedNote = data.truncated
+        ? ` <span style="color:${COLOR.mid};">(very large patch &mdash; area underestimated)</span>`
+        : '';
+      inject(
+        `<div style="${CARD}">
+           <p style="font-size:13px;color:${COLOR.dark};margin:0;">
+             <strong style="color:${COLOR.teal};">Forest loss</strong> &mdash; ${acresStr} lost in ${data.year} at this point${truncatedNote}
+           </p>
+         </div>`,
+      );
+    })
+    .catch(err => {
+      console.error('Forest loss lookup failed:', err);
+      inject(
+        `<div style="${CARD}"><p style="font-size:13px;color:#B91C1C;margin:0;">Could not load forest-loss data.</p></div>`,
+      );
+    });
+}
 
 function runBirdQuery(lat: number, lng: number, popupId: string) {
   const el = document.getElementById(`${popupId}-birds`);
@@ -1286,6 +1317,7 @@ function buildTabbedPopupHtml(
         <div id="${popupId}-summary-cards">
           <div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading property data...</p></div>
         </div>
+        <div id="${popupId}-forest-loss"></div>
       </div>
       <div data-panel="property" style="display:none;${panelStyle}">
         ${propertyContent}

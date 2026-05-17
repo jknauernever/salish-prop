@@ -22,6 +22,14 @@ export interface StyleByProperty {
   defaultStyle?: Partial<LayerStyle>;
 }
 
+/** Color-ramp legend for raster layers (e.g. NDVI, Hansen loss-by-year). */
+export interface GradientLegend {
+  type: 'gradient';
+  colors: string[];
+  minLabel: string;
+  maxLabel: string;
+}
+
 export interface LayerConfig {
   id: string;
   name: string;
@@ -37,6 +45,12 @@ export interface LayerConfig {
   layerType?: 'vector' | 'raster' | 'dynamic-raster';
   tileUrl?: string;
   apiEndpoint?: string;
+  /** For dynamic-raster layers that don't need a date picker (e.g. cumulative datasets). */
+  hideDateRange?: boolean;
+  /** Link to the canonical data source. Surfaces as a "Learn more" link in the info panel. */
+  sourceUrl?: string;
+  /** Visual legend rendered under the row when the layer is visible. */
+  legend?: GradientLegend;
   defaultOpacity?: number;
   viewportFiltered?: boolean;
   markerIcon?: string;

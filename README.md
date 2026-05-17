@@ -219,6 +219,7 @@ Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Rele
 |---|---|---|---|
 | Vegetation Health (NDVI) | Raster (static) | GCS bucket, NAIP Oct 2023 | 0.6 m resolution, zoom 10–17 |
 | Sentinel-2 NDVI (10 m) | Raster (dynamic) | Earth Engine Cloud Function | Seasonal date picker, zoom 10+ |
+| Forest Loss (2001–2025) | Raster (dynamic, no date picker) | Earth Engine Cloud Function (`hansen-forest-change`) | UMD Hansen Global Forest Change; loss pixels colored by year (dark red → yellow); 30 m, zoom 9+ |
 | Eelgrass Beds | Vector | *Placeholder* | Data pending |
 | Shoreline Types | Vector | *Placeholder* | Data pending |
 | Habitat Zones | Vector | *Placeholder* | Data pending |
@@ -553,11 +554,12 @@ Pre-computed from NAIP imagery. Each of the 19,020 parcels has: `mean`, `stdDev`
 
 ## Cloud Functions
 
-Two HTTP-triggered functions, both in `us-west1`.
+Three HTTP-triggered functions, all in `us-west1`.
 
 | Function | Source | Purpose |
 |---|---|---|
 | `ee-ndvi-tiles` | [`cloud-functions/ee-tiles/`](cloud-functions/ee-tiles/) | Computes Sentinel-2 NDVI tile URLs on demand. Public. See below. |
+| `hansen-forest-change` | [`cloud-functions/hansen-forest-change/`](cloud-functions/hansen-forest-change/) | Returns a tile URL visualizing UMD Hansen Global Forest Change loss-by-year for San Juan County. Public; no parameters. |
 | `admin-config` | [`cloud-functions/admin-config/`](cloud-functions/admin-config/) | Reads / writes the category tree. Writes require `X-Admin-Token`. See [Admin Tool](#admin-tool). |
 
 ### Sentinel-2 NDVI Tile Server
@@ -624,6 +626,9 @@ salish-sea-propmapper/
 ├── cloud-functions/
 │   ├── ee-tiles/
 │   │   ├── main.py              # Sentinel-2 NDVI Cloud Function
+│   │   └── requirements.txt
+│   ├── hansen-forest-change/
+│   │   ├── main.py              # Hansen Forest Change tile server (lossyear visualization)
 │   │   └── requirements.txt
 │   └── admin-config/
 │       ├── main.py              # Category tree read/write endpoint (admin tool backend)

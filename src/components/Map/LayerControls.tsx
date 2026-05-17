@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { LayerState } from '../../types';
 import { useCategoryTree, flattenCategoryIds, type CategoryNode } from '../../services/categoryTree';
 import { Toggle } from '../common/Toggle';
@@ -132,6 +132,8 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
   const isPlaceholder = config.placeholder;
   const isRaster = config.layerType === 'raster' || config.layerType === 'dynamic-raster';
   const isDynamic = config.layerType === 'dynamic-raster';
+  const hasInfo = !!config.standardMessage || !!config.sourceUrl;
+  const [showInfo, setShowInfo] = useState(false);
 
   return (
     <div>
@@ -172,6 +174,23 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
           )}
         </div>
 
+        {/* Info button */}
+        {hasInfo && !isPlaceholder && (
+          <button
+            type="button"
+            onClick={() => setShowInfo(v => !v)}
+            aria-label={showInfo ? 'Hide layer info' : 'Show layer info'}
+            aria-expanded={showInfo}
+            className={`shrink-0 w-4 h-4 inline-flex items-center justify-center rounded-full border text-[10px] font-semibold transition-colors ${
+              showInfo
+                ? 'bg-deep-teal text-white border-deep-teal'
+                : 'bg-white text-slate-blue/50 border-slate-blue/30 hover:text-slate-blue hover:border-slate-blue/60'
+            }`}
+          >
+            i
+          </button>
+        )}
+
         {/* Loading indicator */}
         {loading && <LoadingSpinner size="sm" />}
 
@@ -187,6 +206,42 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
           disabled={isPlaceholder || (!loaded && !loading)}
         />
       </div>
+
+      {/* Info panel */}
+      {showInfo && hasInfo && (
+        <div className="ml-5 mr-2 mb-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/80">
+          {config.standardMessage && <p className="m-0">{config.standardMessage}</p>}
+          {config.sourceUrl && (
+            <p className="m-0 mt-1.5">
+              <a
+                href={config.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ocean-blue hover:text-ocean-blue-light underline"
+              >
+                Learn more about this dataset &rarr;
+              </a>
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Color-ramp legend (e.g. forest-loss year palette) */}
+      {visible && loaded && config.legend?.type === 'gradient' && (
+        <div className="ml-5 mr-2 mb-1.5 mt-0.5">
+          <div
+            className="h-2 rounded"
+            style={{
+              backgroundImage: `linear-gradient(to right, ${config.legend.colors.join(', ')})`,
+            }}
+            aria-hidden="true"
+          />
+          <div className="flex justify-between mt-0.5">
+            <span className="text-[10px] text-slate-blue/50">{config.legend.minLabel}</span>
+            <span className="text-[10px] text-slate-blue/50">{config.legend.maxLabel}</span>
+          </div>
+        </div>
+      )}
 
       {/* Opacity slider for raster layers */}
       {isRaster && visible && loaded && onOpacityChange && (
@@ -206,12 +261,19 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
         </div>
       )}
 
-      {/* Date range picker for dynamic raster layers */}
+      {/* Tile URL fetcher for dynamic raster layers */}
       {isDynamic && visible && loaded && onSetDynamicTileUrl && (
-        <DynamicRasterDatePicker
-          apiEndpoint={config.apiEndpoint ?? ''}
-          onTileUrl={onSetDynamicTileUrl}
-        />
+        config.hideDateRange ? (
+          <StaticTileFetcher
+            apiEndpoint={config.apiEndpoint ?? ''}
+            onTileUrl={onSetDynamicTileUrl}
+          />
+        ) : (
+          <DynamicRasterDatePicker
+            apiEndpoint={config.apiEndpoint ?? ''}
+            onTileUrl={onSetDynamicTileUrl}
+          />
+        )
       )}
     </div>
   );
@@ -245,6 +307,32 @@ const SEASONS: SeasonStep[] = (() => {
 
 // Default to Summer 2024
 const DEFAULT_INDEX = SEASONS.findIndex(s => s.label === 'Summer 2024');
+
+/**
+ * Headless fetcher for dynamic-raster layers that don't need a date picker
+ * (e.g. cumulative datasets like Hansen forest loss). Fires the apiEndpoint
+ * once when the layer becomes visible, hands the resulting tileUrl back.
+ */
+function StaticTileFetcher({ apiEndpoint, onTileUrl }: {
+  apiEndpoint: string;
+  onTileUrl: (tileUrl: string) => void;
+}) {
+  const fetchedRef = useRef(false);
+  useEffect(() => {
+    if (!apiEndpoint || fetchedRef.current) return;
+    fetchedRef.current = true;
+    fetch(apiEndpoint)
+      .then(res => res.json())
+      .then(data => {
+        if (data?.tileUrl) onTileUrl(data.tileUrl);
+      })
+      .catch(err => {
+        console.error('Failed to fetch tile URL from', apiEndpoint, err);
+        fetchedRef.current = false; // allow retry on next mount
+      });
+  }, [apiEndpoint, onTileUrl]);
+  return null;
+}
 
 function DynamicRasterDatePicker({ apiEndpoint, onTileUrl }: {
   apiEndpoint: string;
