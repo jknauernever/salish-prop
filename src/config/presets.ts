@@ -34,7 +34,7 @@ export const presets: Record<string, Preset> = {
     locked: false,
     initialView: {
       center: { lat: 48.605, lng: -123.0 },
-      zoom: 10.5,
+      zoom: 10.8,
     },
     meta: {
       title: 'Salmon Habitat in the San Juan Islands',

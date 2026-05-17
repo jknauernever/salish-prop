@@ -4,8 +4,8 @@ import { MapContext } from '../../hooks/useMap';
 import { Footer } from '../Layout/Footer';
 import type { ReactNode } from 'react';
 
-const SAN_JUAN_CENTER = { lat: 48.53, lng: -123.02 };
-const DEFAULT_ZOOM = 11;
+const SAN_JUAN_CENTER = { lat: 48.605, lng: -123.0 };
+const DEFAULT_ZOOM = 10.8;
 
 setOptions({
   key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
