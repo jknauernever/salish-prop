@@ -135,6 +135,14 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
   const hasInfo = !!config.standardMessage || !!config.sourceUrl;
   const [showInfo, setShowInfo] = useState(false);
 
+  // For dynamic-raster layers with multiple visualization modes, track the
+  // selected mode here so the legend and the tile fetcher both see it.
+  const [vizMode, setVizMode] = useState<string>(
+    () => config.visualizationModes?.[0]?.id ?? ''
+  );
+  const activeMode = config.visualizationModes?.find(m => m.id === vizMode);
+  const legend = activeMode?.legend ?? config.legend;
+
   return (
     <div>
       <div
@@ -227,19 +235,42 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
       )}
 
       {/* Color-ramp legend (e.g. forest-loss year palette) */}
-      {visible && loaded && config.legend?.type === 'gradient' && (
+      {visible && loaded && legend?.type === 'gradient' && (
         <div className="ml-5 mr-2 mb-1.5 mt-0.5">
           <div
             className="h-2 rounded"
             style={{
-              backgroundImage: `linear-gradient(to right, ${config.legend.colors.join(', ')})`,
+              backgroundImage: `linear-gradient(to right, ${legend.colors.join(', ')})`,
             }}
             aria-hidden="true"
           />
           <div className="flex justify-between mt-0.5">
-            <span className="text-[10px] text-slate-blue/50">{config.legend.minLabel}</span>
-            <span className="text-[10px] text-slate-blue/50">{config.legend.maxLabel}</span>
+            <span className="text-[10px] text-slate-blue/50">{legend.minLabel}</span>
+            <span className="text-[10px] text-slate-blue/50">{legend.maxLabel}</span>
           </div>
+        </div>
+      )}
+
+      {/* Visualization-mode segmented toggle */}
+      {isDynamic && visible && loaded && config.visualizationModes && config.visualizationModes.length > 1 && (
+        <div className="ml-5 mr-2 mb-1.5 flex gap-0.5 rounded-md bg-fog-gray/60 p-0.5">
+          {config.visualizationModes.map(mode => {
+            const active = mode.id === vizMode;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setVizMode(mode.id)}
+                className={`flex-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                  active
+                    ? 'bg-white text-slate-blue shadow-sm'
+                    : 'text-slate-blue/60 hover:text-slate-blue'
+                }`}
+              >
+                {mode.label}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -263,7 +294,13 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
 
       {/* Tile URL fetcher for dynamic raster layers */}
       {isDynamic && visible && loaded && onSetDynamicTileUrl && (
-        config.hideDateRange ? (
+        config.visualizationModes && config.visualizationModes.length > 0 ? (
+          <ModalTileFetcher
+            apiEndpoint={config.apiEndpoint ?? ''}
+            mode={vizMode}
+            onTileUrl={onSetDynamicTileUrl}
+          />
+        ) : config.hideDateRange ? (
           <StaticTileFetcher
             apiEndpoint={config.apiEndpoint ?? ''}
             onTileUrl={onSetDynamicTileUrl}
@@ -332,6 +369,66 @@ function StaticTileFetcher({ apiEndpoint, onTileUrl }: {
       });
   }, [apiEndpoint, onTileUrl]);
   return null;
+}
+
+/**
+ * Headless fetcher for dynamic-raster layers with multiple visualization
+ * modes (e.g. OPERA DIST-ALERT: recency / status / severity). Re-fetches the
+ * tile URL whenever `mode` changes and passes the result to `onTileUrl`.
+ */
+function ModalTileFetcher({ apiEndpoint, mode, onTileUrl }: {
+  apiEndpoint: string;
+  mode: string;
+  onTileUrl: (tileUrl: string) => void;
+}) {
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!apiEndpoint || !mode) return;
+    let cancelled = false;
+    setFetching(true);
+    setFetchError(null);
+    fetch(`${apiEndpoint}?mode=${encodeURIComponent(mode)}`)
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(body.error || `HTTP ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (cancelled) return;
+        if (data?.tileUrl) {
+          onTileUrl(data.tileUrl);
+        } else {
+          throw new Error('No tileUrl in response');
+        }
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setFetchError(err instanceof Error ? err.message : 'Failed to fetch tiles');
+      })
+      .finally(() => {
+        if (!cancelled) setFetching(false);
+      });
+    return () => { cancelled = true; };
+  }, [apiEndpoint, mode, onTileUrl]);
+
+  if (!fetching && !fetchError) return null;
+  return (
+    <div className="ml-5 px-2 pb-2">
+      {fetching && (
+        <div className="flex items-center gap-1.5">
+          <LoadingSpinner size="sm" />
+          <span className="text-xs text-slate-blue/50">Loading {mode}…</span>
+        </div>
+      )}
+      {fetchError && (
+        <p className="text-xs text-red-500">{fetchError}</p>
+      )}
+    </div>
+  );
 }
 
 function DynamicRasterDatePicker({ apiEndpoint, onTileUrl }: {

@@ -48,6 +48,7 @@
       "layers": [
         "ndvi",
         "ndvi-sentinel",
+        "opera-dist-alert",
         "eelgrass",
         "shoreline-types",
         "habitat-zones"

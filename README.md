@@ -214,12 +214,13 @@ Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Rele
 | Surf Smelt | `#4ECDC4` (cyan) | HRM_Smelt / LRM_Smelt |
 | Lingcod & Greenling | `#6B8F71` (olive) | HRM_Hex / LRM_Hex |
 
-### Ecological (5 layers)
+### Ecological (6 layers)
 | Layer | Type | Source | Notes |
 |---|---|---|---|
 | Vegetation Health (NDVI) | Raster (static) | GCS bucket, NAIP Oct 2023 | 0.6 m resolution, zoom 10–17 |
 | Sentinel-2 NDVI (10 m) | Raster (dynamic) | Earth Engine Cloud Function | Seasonal date picker, zoom 10+ |
 | Forest Loss (2001–2025) | Raster (dynamic, no date picker) | Earth Engine Cloud Function (`hansen-forest-change`) | UMD Hansen Global Forest Change; loss pixels colored by year (dark red → yellow); 30 m, zoom 9+ |
+| Forest Disturbance (DIST-ALERT) | Raster (dynamic, mode toggle) | Earth Engine Cloud Function (`opera-dist-alert`) | OPERA L3 DIST-ALERT (GLAD mirror), 30 m, zoom 9+. Three viz modes: recency / status / severity. Near-real-time companion to the Hansen layer. |
 | Eelgrass Beds | Vector | *Placeholder* | Data pending |
 | Shoreline Types | Vector | *Placeholder* | Data pending |
 | Habitat Zones | Vector | *Placeholder* | Data pending |
@@ -554,12 +555,13 @@ Pre-computed from NAIP imagery. Each of the 19,020 parcels has: `mean`, `stdDev`
 
 ## Cloud Functions
 
-Three HTTP-triggered functions, all in `us-west1`.
+Four HTTP-triggered functions, all in `us-west1`.
 
 | Function | Source | Purpose |
 |---|---|---|
 | `ee-ndvi-tiles` | [`cloud-functions/ee-tiles/`](cloud-functions/ee-tiles/) | Computes Sentinel-2 NDVI tile URLs on demand. Public. See below. |
 | `hansen-forest-change` | [`cloud-functions/hansen-forest-change/`](cloud-functions/hansen-forest-change/) | Returns a tile URL visualizing UMD Hansen Global Forest Change loss-by-year for San Juan County. Public; no parameters. |
+| `opera-dist-alert` | [`cloud-functions/opera-dist-alert/`](cloud-functions/opera-dist-alert/) | Returns a tile URL for the OPERA L3 DIST-ALERT near-real-time vegetation disturbance product (GLAD mirror). Public; `?mode=recency\|status\|severity`. |
 | `admin-config` | [`cloud-functions/admin-config/`](cloud-functions/admin-config/) | Reads / writes the category tree. Writes require `X-Admin-Token`. See [Admin Tool](#admin-tool). |
 
 ### Sentinel-2 NDVI Tile Server
@@ -585,6 +587,36 @@ Three HTTP-triggered functions, all in `us-west1`.
 3. Masks clouds via SCL band
 4. Computes median composite, then NDVI from B8/B4
 5. Returns a tile URL with the shared NDVI color palette
+
+**Dependencies:** `functions-framework`, `earthengine-api`, `flask`, `google-auth`
+
+### OPERA DIST-ALERT Tile Server
+
+**Location:** `cloud-functions/opera-dist-alert/main.py`
+
+**Endpoint:** `GET https://us-west1-salish-sea-property-mapper.cloudfunctions.net/opera-dist-alert`
+
+**Query Parameters:**
+| Param | Values | Default | Description |
+|---|---|---|---|
+| `mode` | `recency`, `status`, `severity` | `recency` | Which DIST-ALERT band + palette to render. |
+
+**Response:**
+```json
+{ "tileUrl": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}" }
+```
+
+**How it works:**
+1. Lazily initializes Earth Engine with default credentials
+2. Mosaics the appropriate band ImageCollection from `projects/glad/HLSDIST/current/` over the San Juan County bbox, filtered from 2023-01-01
+   - `recency`  → `VEG-DIST-DATE` (days since 2020-12-31), painted dark-red → bright-red as recency increases
+   - `status`   → `VEG-DIST-STATUS` (provisional vs. confirmed, first vs. ongoing) with a categorical 1–6 palette
+   - `severity` → `VEG-ANOM-MAX` (0–100 % vegetation loss) with a yellow → red ramp
+3. Returns the visualized tile URL
+
+**Why a separate function from `hansen-forest-change`:** Hansen is an annual cumulative product (the "what's the historical loss footprint" view); DIST-ALERT is the near-real-time companion (continuously updated by GLAD since 2023). They're surfaced together in the **Ecological** category as complementary layers.
+
+**Source:** [GLAD viewer](https://glad.earthengine.app/view/dist-alert) (script source decompiled to resolve `projects/glad/HLSDIST/current/`). Upstream is [NASA OPERA L3 DIST-ALERT HLS V1](https://www.earthdata.nasa.gov/data/catalog/lpcloud-opera-l3-dist-alert-hls-v1-1). The GLAD mirror exposes one ImageCollection per band rather than a single multi-band collection.
 
 **Dependencies:** `functions-framework`, `earthengine-api`, `flask`, `google-auth`
 
@@ -629,6 +661,9 @@ salish-sea-propmapper/
 │   │   └── requirements.txt
 │   ├── hansen-forest-change/
 │   │   ├── main.py              # Hansen Forest Change tile server (lossyear visualization)
+│   │   └── requirements.txt
+│   ├── opera-dist-alert/
+│   │   ├── main.py              # OPERA DIST-ALERT tile server (recency / status / severity)
 │   │   └── requirements.txt
 │   └── admin-config/
 │       ├── main.py              # Category tree read/write endpoint (admin tool backend)

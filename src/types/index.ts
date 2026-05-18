@@ -47,6 +47,18 @@ export interface LayerConfig {
   apiEndpoint?: string;
   /** For dynamic-raster layers that don't need a date picker (e.g. cumulative datasets). */
   hideDateRange?: boolean;
+  /**
+   * Visualization modes for dynamic-raster layers that render the same dataset
+   * multiple ways. Renders as a segmented toggle under the layer row; the
+   * selected mode's `id` is passed to `apiEndpoint` as `?mode=...`. First entry
+   * is the default. Per-mode `legend` overrides the row's top-level legend
+   * while that mode is selected.
+   */
+  visualizationModes?: {
+    id: string;
+    label: string;
+    legend?: GradientLegend;
+  }[];
   /** Link to the canonical data source. Surfaces as a "Learn more" link in the info panel. */
   sourceUrl?: string;
   /** Visual legend rendered under the row when the layer is visible. */
