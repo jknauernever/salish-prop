@@ -841,6 +841,9 @@ function handleParcelClick(
   // describing the loss patch at this click point.
   runForestLossQuery(clickLat, clickLng, popupId, allLayers);
 
+  // Same for the DIST-ALERT raster layer: per-pixel disturbance info.
+  runDistAlertQuery(clickLat, clickLng, popupId, allLayers);
+
   // Run spatial queries + address-enriched summary
   if (parcelGeoFeature) {
     requestAnimationFrame(() => {
@@ -1012,6 +1015,78 @@ function runForestLossQuery(
       console.error('Forest loss lookup failed:', err);
       inject(
         `<div style="${CARD}"><p style="font-size:13px;color:#B91C1C;margin:0;">Could not load forest-loss data.</p></div>`,
+      );
+    });
+}
+
+/**
+ * If the opera-dist-alert raster layer is currently visible, ask the
+ * Cloud Function for the disturbance-alert info at the click point and
+ * inject a small line into the Summary tab. No-op when the layer is off.
+ */
+function runDistAlertQuery(
+  lat: number,
+  lng: number,
+  popupId: string,
+  allLayers: LayerState[],
+) {
+  const layer = allLayers.find(l => l.config.id === 'opera-dist-alert');
+  if (!layer?.visible) return;
+  const endpoint = layer.config.apiEndpoint;
+  if (!endpoint) return;
+
+  const inject = (html: string) => {
+    const el = document.getElementById(`${popupId}-dist-alert`);
+    if (el) el.innerHTML = html;
+  };
+
+  inject(`<div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Looking up disturbance alert…</p></div>`);
+
+  fetch(`${endpoint}?lat=${lat}&lng=${lng}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{
+        date: string | null;
+        statusLabel: string | null;
+        severity: number | null;
+        acres?: number;
+        truncated?: boolean;
+      }>;
+    })
+    .then(data => {
+      if (!data.date) {
+        inject(
+          `<div style="${CARD}"><p style="font-size:13px;color:${COLOR.mid};">No vegetation disturbance recorded at this point.</p></div>`,
+        );
+        return;
+      }
+      const prettyDate = new Date(data.date).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      const severityStr = data.severity != null
+        ? ` (${Math.round(data.severity)}% vegetation loss)`
+        : '';
+      const acresStr = data.acres != null && data.acres >= 0.01
+        ? `${data.acres.toFixed(2)} acre${Math.abs(data.acres - 1) < 0.005 ? '' : 's'}`
+        : '&lt; 0.01 acres';
+      const truncatedNote = data.truncated
+        ? ` <span style="color:${COLOR.mid};">(very large patch &mdash; area underestimated)</span>`
+        : '';
+      inject(
+        `<div style="${CARD}">
+           <p style="font-size:13px;color:${COLOR.dark};margin:0;">
+             <strong style="color:${COLOR.teal};">Disturbance alert</strong> &mdash; ${data.statusLabel ?? 'detected'} on ${prettyDate}${severityStr}
+           </p>
+           <p style="font-size:12px;color:${COLOR.mid};margin:4px 0 0;">${acresStr} in this connected patch${truncatedNote}</p>
+         </div>`,
+      );
+    })
+    .catch(err => {
+      console.error('DIST-ALERT lookup failed:', err);
+      inject(
+        `<div style="${CARD}"><p style="font-size:13px;color:#B91C1C;margin:0;">Could not load disturbance-alert data.</p></div>`,
       );
     });
 }
@@ -1318,6 +1393,7 @@ function buildTabbedPopupHtml(
           <div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading property data...</p></div>
         </div>
         <div id="${popupId}-forest-loss"></div>
+        <div id="${popupId}-dist-alert"></div>
       </div>
       <div data-panel="property" style="display:none;${panelStyle}">
         ${propertyContent}

@@ -31,3 +31,6 @@ dist-ssr
 *.gdb.zip
 public/data/Tax_Parcels.geojson
 public/data/friends-bull-kelp.json
+
+# Claude Code session state (worktrees, scheduled tasks, local settings)
+.claude/

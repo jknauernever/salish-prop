@@ -384,6 +384,12 @@ function ModalTileFetcher({ apiEndpoint, mode, onTileUrl }: {
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Hold the latest onTileUrl in a ref so the fetch effect doesn't re-run
+  // every time the parent passes a new callback identity (which would otherwise
+  // turn the first-fetch success into an infinite loop of re-fetches).
+  const onTileUrlRef = useRef(onTileUrl);
+  useEffect(() => { onTileUrlRef.current = onTileUrl; }, [onTileUrl]);
+
   useEffect(() => {
     if (!apiEndpoint || !mode) return;
     let cancelled = false;
@@ -400,7 +406,7 @@ function ModalTileFetcher({ apiEndpoint, mode, onTileUrl }: {
       .then(data => {
         if (cancelled) return;
         if (data?.tileUrl) {
-          onTileUrl(data.tileUrl);
+          onTileUrlRef.current(data.tileUrl);
         } else {
           throw new Error('No tileUrl in response');
         }
@@ -413,7 +419,7 @@ function ModalTileFetcher({ apiEndpoint, mode, onTileUrl }: {
         if (!cancelled) setFetching(false);
       });
     return () => { cancelled = true; };
-  }, [apiEndpoint, mode, onTileUrl]);
+  }, [apiEndpoint, mode]);
 
   if (!fetching && !fetchError) return null;
   return (

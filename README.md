@@ -561,7 +561,7 @@ Four HTTP-triggered functions, all in `us-west1`.
 |---|---|---|
 | `ee-ndvi-tiles` | [`cloud-functions/ee-tiles/`](cloud-functions/ee-tiles/) | Computes Sentinel-2 NDVI tile URLs on demand. Public. See below. |
 | `hansen-forest-change` | [`cloud-functions/hansen-forest-change/`](cloud-functions/hansen-forest-change/) | Returns a tile URL visualizing UMD Hansen Global Forest Change loss-by-year for San Juan County. Public; no parameters. |
-| `opera-dist-alert` | [`cloud-functions/opera-dist-alert/`](cloud-functions/opera-dist-alert/) | Returns a tile URL for the OPERA L3 DIST-ALERT near-real-time vegetation disturbance product (GLAD mirror). Public; `?mode=recency\|status\|severity`. |
+| `opera-dist-alert` | [`cloud-functions/opera-dist-alert/`](cloud-functions/opera-dist-alert/) | Returns a tile URL for the OPERA L3 DIST-ALERT near-real-time vegetation disturbance product (GLAD mirror). Public; `?mode=recency\|status\|severity` for tiles, `?lat=&lng=` for per-pixel info. |
 | `admin-config` | [`cloud-functions/admin-config/`](cloud-functions/admin-config/) | Reads / writes the category tree. Writes require `X-Admin-Token`. See [Admin Tool](#admin-tool). |
 
 ### Sentinel-2 NDVI Tile Server
@@ -596,25 +596,50 @@ Four HTTP-triggered functions, all in `us-west1`.
 
 **Endpoint:** `GET https://us-west1-salish-sea-property-mapper.cloudfunctions.net/opera-dist-alert`
 
-**Query Parameters:**
+Two modes share the same endpoint, switched by query params:
+
+#### Tile-URL mode (no `lat`/`lng`)
 | Param | Values | Default | Description |
 |---|---|---|---|
 | `mode` | `recency`, `status`, `severity` | `recency` | Which DIST-ALERT band + palette to render. |
 
+**Response:** `{ "tileUrl": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}" }`
+
+#### Point-query mode (`?lat=<lat>&lng=<lng>`)
+Used by the click-to-info popup. Samples all three DIST-ALERT bands at the click point and computes the connected disturbed patch containing that point (8-neighbor, capped at 1024 pixels ≈ 230 acres).
+
 **Response:**
 ```json
-{ "tileUrl": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}" }
+{
+  "date": "2026-05-13",            // ISO date of the alert (null if no disturbance here)
+  "statusCode": 2,                  // raw VEG-DIST-STATUS code (0 if no disturbance)
+  "statusLabel": "Confirmed alert (first detection)",
+  "severity": 31,                   // percent vegetation loss
+  "pixelCount": 18,                 // size of the connected patch
+  "acres": 4.0,
+  "truncated": false,               // true if pixelCount hit the 1024 cap
+  "patchGeometry": { ... }          // GeoJSON polygon outlining the patch
+}
 ```
+For undisturbed pixels: returns `{ "date": null, "statusCode": 0, "statusLabel": null }`.
 
-**How it works:**
+**How it works (tile mode):**
 1. Lazily initializes Earth Engine with default credentials
-2. Mosaics the appropriate band ImageCollection from `projects/glad/HLSDIST/current/` over the San Juan County bbox, filtered from 2023-01-01
+2. Mosaics the appropriate band ImageCollection from `projects/glad/HLSDIST/current/` over the San Juan County bbox
    - `recency`  → `VEG-DIST-DATE` (days since 2020-12-31), painted dark-red → bright-red as recency increases
    - `status`   → `VEG-DIST-STATUS` (provisional vs. confirmed, first vs. ongoing) with a categorical 1–6 palette
    - `severity` → `VEG-ANOM-MAX` (0–100 % vegetation loss) with a yellow → red ramp
 3. Returns the visualized tile URL
 
-**Why a separate function from `hansen-forest-change`:** Hansen is an annual cumulative product (the "what's the historical loss footprint" view); DIST-ALERT is the near-real-time companion (continuously updated by GLAD since 2023). They're surfaced together in the **Ecological** category as complementary layers.
+GLAD's published collections expose their data as a single `b1` band per per-band collection and **carry no `system:time_start`** — `filterDate()` is intentionally absent from the mosaic. GLAD refreshes `current/` in place as new HLS scenes arrive, so freshness is handled upstream.
+
+**Frontend integration (click-to-info):**
+- `src/components/Map/DistAlertPopup.tsx` — map-level click listener; standalone InfoWindow with date / status / severity / acres
+- `src/components/Map/FeaturePopup.tsx → runDistAlertQuery()` — injects a "Disturbance alert" card into the property popup when the layer is visible
+- `src/components/Map/featureHighlight.ts` — shared orange polygon outline (used by both DIST-ALERT and Hansen)
+- Both standalone popups (`ForestLossPopup`, `DistAlertPopup`) draw a thin orange "neck" line via a `google.maps.Marker` SVG icon to connect the popup to the clicked pixel without obscuring it
+
+**Why a separate function from `hansen-forest-change`:** Hansen is an annual cumulative product (the "what's the historical loss footprint" view); DIST-ALERT is the near-real-time companion (continuously updated by GLAD since 2023). They're surfaced together in the **Ecological** category as complementary layers and use parallel click handlers so a user can have either or both on at once.
 
 **Source:** [GLAD viewer](https://glad.earthengine.app/view/dist-alert) (script source decompiled to resolve `projects/glad/HLSDIST/current/`). Upstream is [NASA OPERA L3 DIST-ALERT HLS V1](https://www.earthdata.nasa.gov/data/catalog/lpcloud-opera-l3-dist-alert-hls-v1-1). The GLAD mirror exposes one ImageCollection per band rather than a single multi-band collection.
 
