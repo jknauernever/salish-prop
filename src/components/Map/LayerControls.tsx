@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { LayerState } from '../../types';
+import type { LayerState, DateRange } from '../../types';
 import { useCategoryTree, flattenCategoryIds, type CategoryNode } from '../../services/categoryTree';
 import { Toggle } from '../common/Toggle';
 import { Badge } from '../common/Badge';
@@ -11,9 +11,10 @@ interface LayerControlsProps {
   onSetAllVisible: (layerIds: string[], visible: boolean) => void;
   onSetLayerOpacity?: (layerId: string, opacity: number) => void;
   onSetDynamicTileUrl?: (layerId: string, tileUrl: string) => void;
+  onSetLayerDateRange?: (layerId: string, dateRange: DateRange) => void;
 }
 
-export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl }: LayerControlsProps) {
+export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl, onSetLayerDateRange }: LayerControlsProps) {
   const { tree } = useCategoryTree();
   const layersById = useMemo(() => {
     const map = new Map<string, LayerState>();
@@ -101,6 +102,11 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
                         ? (tileUrl: string) => onSetDynamicTileUrl(layer.config.id, tileUrl)
                         : undefined
                     }
+                    onSetDateRange={
+                      layer.config.source === 'observations:multi' && onSetLayerDateRange
+                        ? (range: DateRange) => onSetLayerDateRange(layer.config.id, range)
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -122,11 +128,12 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
   );
 }
 
-function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
+function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSetDateRange }: {
   layer: LayerState;
   onToggle: () => void;
   onOpacityChange?: (opacity: number) => void;
   onSetDynamicTileUrl?: (tileUrl: string) => void;
+  onSetDateRange?: (range: DateRange) => void;
 }) {
   const { config, visible, loaded, loading, error, featureCount, opacity } = layer;
   const isPlaceholder = config.placeholder;
@@ -292,6 +299,15 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl }: {
         </div>
       )}
 
+      {/* Dual-handle date-range slider for multi-source observation layers. */}
+      {visible && loaded && onSetDateRange && layer.geojsonData && (
+        <TimeRangeSlider
+          features={layer.geojsonData.features}
+          value={layer.dateRange ?? { start: null, end: null }}
+          onChange={onSetDateRange}
+        />
+      )}
+
       {/* Tile URL fetcher for dynamic raster layers */}
       {isDynamic && visible && loaded && onSetDynamicTileUrl && (
         config.visualizationModes && config.visualizationModes.length > 0 ? (
@@ -433,6 +449,213 @@ function ModalTileFetcher({ apiEndpoint, mode, onTileUrl }: {
       {fetchError && (
         <p className="text-xs text-red-500">{fetchError}</p>
       )}
+    </div>
+  );
+}
+
+const DAY_MS = 86400000;
+
+function dayToDate(minDate: string, day: number): string {
+  const d = new Date(new Date(`${minDate}T12:00:00`).getTime() + day * DAY_MS);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateToDay(minDate: string, dateStr: string): number {
+  return Math.round(
+    (new Date(`${dateStr}T12:00:00`).getTime() - new Date(`${minDate}T12:00:00`).getTime()) /
+      DAY_MS,
+  );
+}
+
+function fmtDate(dateStr: string): string {
+  try {
+    return new Date(`${dateStr}T12:00:00`).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Dual-handle date-range slider with preset buttons. Mirrors EarthAtlas's
+ * TimeSlider (see /Users/jknauer/Projects/earthatlas/src/explore/components/
+ * TimeSlider.jsx). The min/max bounds come from the feature collection's
+ * actual obsDate values, not a fixed window — so a layer fetched with a
+ * year of data shows a year-wide slider.
+ *
+ * Filtering is client-side: all observations are already in `features`;
+ * onChange just updates the date constraints used by the Data layer's
+ * style function in useLayers.
+ */
+function TimeRangeSlider({ features, value, onChange }: {
+  features: GeoJSON.Feature[];
+  value: DateRange;
+  onChange: (range: DateRange) => void;
+}) {
+  const { minDate, maxDate, totalDays } = useMemo(() => {
+    if (features.length === 0) return { minDate: null, maxDate: null, totalDays: 0 };
+    let min: string | null = null;
+    let max: string | null = null;
+    for (const f of features) {
+      const d = f.properties?.obsDate as string | undefined;
+      if (!d) continue;
+      if (!min || d < min) min = d;
+      if (!max || d > max) max = d;
+    }
+    if (!min || !max) return { minDate: null, maxDate: null, totalDays: 0 };
+    const days = Math.round(
+      (new Date(`${max}T12:00:00`).getTime() - new Date(`${min}T12:00:00`).getTime()) / DAY_MS,
+    );
+    return { minDate: min, maxDate: max, totalDays: days };
+  }, [features]);
+
+  const loDay = value.start && minDate ? dateToDay(minDate, value.start) : 0;
+  const hiDay = value.end && minDate ? dateToDay(minDate, value.end) : totalDays;
+  const loPct = totalDays > 0 ? (loDay / totalDays) * 100 : 0;
+  const hiPct = totalDays > 0 ? (hiDay / totalDays) * 100 : 100;
+
+  const visibleCount = useMemo(() => {
+    if (!minDate) return features.length;
+    const startMs = value.start
+      ? new Date(`${value.start}T00:00:00`).getTime()
+      : -Infinity;
+    const endMs = value.end ? new Date(`${value.end}T23:59:59`).getTime() : Infinity;
+    let n = 0;
+    for (const f of features) {
+      const t = Number(f.properties?.obsTime ?? 0);
+      if (t >= startMs && t <= endMs) n++;
+    }
+    return n;
+  }, [features, minDate, value.start, value.end]);
+
+  const handleLo = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!minDate) return;
+      const day = Math.min(parseInt(e.target.value, 10), hiDay - 1);
+      onChange({ ...value, start: day <= 0 ? null : dayToDate(minDate, day) });
+    },
+    [hiDay, minDate, onChange, value],
+  );
+  const handleHi = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!minDate) return;
+      const day = Math.max(parseInt(e.target.value, 10), loDay + 1);
+      onChange({ ...value, end: day >= totalDays ? null : dayToDate(minDate, day) });
+    },
+    [loDay, totalDays, minDate, onChange, value],
+  );
+
+  const applyPreset = useCallback(
+    (days: number) => {
+      if (!maxDate || !minDate) return;
+      const end = new Date(`${maxDate}T12:00:00`);
+      const start = new Date(end.getTime() - days * DAY_MS).toISOString().slice(0, 10);
+      const clamped = start < minDate ? null : start;
+      onChange({ start: clamped, end: null });
+    },
+    [maxDate, minDate, onChange],
+  );
+
+  const isActivePreset = useCallback(
+    (days: number) => {
+      if (!value.start || value.end || !maxDate) return false;
+      const expected = new Date(new Date(`${maxDate}T12:00:00`).getTime() - days * DAY_MS)
+        .toISOString()
+        .slice(0, 10);
+      return value.start === expected;
+    },
+    [value.start, value.end, maxDate],
+  );
+
+  if (!minDate || !maxDate || totalDays < 1) {
+    return (
+      <p className="ml-5 px-2 pb-2 text-[10px] text-slate-blue/50">
+        Not enough date range to filter.
+      </p>
+    );
+  }
+
+  const startLabel = fmtDate(value.start ?? minDate);
+  const endLabel = fmtDate(value.end ?? maxDate);
+
+  return (
+    <div className="ml-5 mr-2 mb-2 px-2 pb-1 space-y-1">
+      <div className="flex items-center justify-between text-[11px] text-slate-blue/70">
+        <span>{startLabel}</span>
+        <span>→</span>
+        <span>{endLabel}</span>
+      </div>
+
+      {/* Track + dual handles */}
+      <div className="relative h-5">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded bg-fog-gray" />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-ocean-blue"
+          style={{ left: `${loPct}%`, right: `${100 - hiPct}%` }}
+        />
+        <input
+          type="range"
+          min={0}
+          max={totalDays}
+          step={1}
+          value={loDay}
+          onChange={handleLo}
+          aria-label="Range start"
+          className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-ocean-blue [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-ocean-blue [&::-moz-range-thumb]:cursor-pointer"
+        />
+        <input
+          type="range"
+          min={0}
+          max={totalDays}
+          step={1}
+          value={hiDay}
+          onChange={handleHi}
+          aria-label="Range end"
+          className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-ocean-blue [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-ocean-blue [&::-moz-range-thumb]:cursor-pointer"
+        />
+      </div>
+
+      {/* Presets — match EarthAtlas exactly, plus "Last year" since we fetch a year by default. */}
+      <div className="flex flex-wrap gap-1">
+        {[
+          { label: '24h', days: 1 },
+          { label: 'Week', days: 7 },
+          { label: 'Month', days: 30 },
+          { label: 'Year', days: 365 },
+        ].map(({ label, days }) => {
+          const active = isActivePreset(days);
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => applyPreset(days)}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                active
+                  ? 'bg-ocean-blue text-white'
+                  : 'bg-fog-gray/60 text-slate-blue/70 hover:bg-fog-gray'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        {(value.start || value.end) && (
+          <button
+            type="button"
+            onClick={() => onChange({ start: null, end: null })}
+            className="px-2 py-0.5 rounded text-[11px] font-medium text-slate-blue/60 hover:text-slate-blue underline-offset-2 hover:underline"
+          >
+            All
+          </button>
+        )}
+      </div>
+
+      <p className="text-[10px] text-slate-blue/50">
+        Showing {visibleCount.toLocaleString()} of {features.length.toLocaleString()} observations
+      </p>
     </div>
   );
 }

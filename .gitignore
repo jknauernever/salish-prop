@@ -31,6 +31,8 @@ dist-ssr
 *.gdb.zip
 public/data/Tax_Parcels.geojson
 public/data/friends-bull-kelp.json
+public/data/wdfw_psemp_strata.geojson
+public/data/mamu_psemp_density_by_stratum_year.geojson
 
 # Claude Code session state (worktrees, scheduled tasks, local settings)
 .claude/

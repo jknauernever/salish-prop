@@ -177,6 +177,8 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
       if (!layer.dataLayer) return;
       // eBird hotspots handle their own click (open eBird URL)
       if (layer.config.id === 'ebird-hotspots') return;
+      // Multi-source observation layers open their own rich InfoWindow.
+      if (layer.config.source === 'observations:multi') return;
       // tax-parcels is the property-details layer; skip click registration when disabled
       if (layer.config.id === 'tax-parcels' && !propertyClick) return;
 

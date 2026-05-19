@@ -3,6 +3,34 @@ import type { LayerConfig, LayerState } from '../types';
 import { layerConfigs } from '../config/layers';
 import { fetchGeoJSON } from '../utils/geojson';
 import { fetchHotspotsGeoJSON } from '../services/ebird';
+import {
+  fetchSpeciesObservationsGeoJSON,
+  type SpeciesObservationProperties,
+} from '../services/speciesObservations';
+import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
+import type { DateRange } from '../types';
+
+const DAY_MS = 86400000;
+const OBSERVATIONS_SOURCE = 'observations:multi';
+
+// EarthAtlas uses one species-level accent color for everything in a layer
+// (it varies per-species, not per-source). We match by using a single
+// `OBS_ACCENT` for the marker, popup accent, and link borders.
+const OBS_ACCENT = '#FF6A00';
+
+// Heatmap-vs-circles is a single-threshold swap rather than a smooth
+// crossfade. The previous interpolated approach forced both the canvas
+// overlay and every marker to re-style on every zoom tick, which caused
+// the map to thrash visibly at zoom 8 (mid-crossfade). The threshold is
+// the zoom at which individual dots stop overlapping enough for the
+// heatmap to add information.
+const HEATMAP_MAX_ZOOM = 9;
+const DEFAULT_FALLBACK_ZOOM = 10;
+
+type RenderTier = 'heatmap' | 'circles';
+function renderTier(zoom: number): RenderTier {
+  return zoom < HEATMAP_MAX_ZOOM ? 'heatmap' : 'circles';
+}
 
 /** Compute midpoint of a LineString coordinate array */
 function lineMidpoint(coords: number[][]): [number, number] {
@@ -130,12 +158,131 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
   const viewportIndexRef = useRef<Map<string, ViewportIndex>>(new Map());
   const viewportDataRef = useRef<Map<string, GeoJSON.FeatureCollection>>(new Map());
 
+  // Live filter state for multi-source observation layers. The visibility
+  // flag, date range, parallel HeatmapLayer, and InfoWindow live on one
+  // ref so slider moves and toggles can call the same recompute helpers
+  // without racing the React state update.
+  const speciesObsStateRef = useRef<
+    Map<
+      string,
+      {
+        visible: boolean;
+        dateRange: DateRange;
+        popup: google.maps.InfoWindow | null;
+        heatmap: HeatmapOverlay | null;
+        features: GeoJSON.Feature[];
+        // Tracks the most recent render tier so a zoom_changed handler
+        // can detect actual transitions (and skip the expensive
+        // setStyle/setMap when the user just panned/zoomed within a tier).
+        tier: RenderTier | null;
+      }
+    >
+  >(new Map());
+
+  function dateFilterBounds(range: DateRange): { startMs: number; endMs: number } {
+    const startMs = range.start ? new Date(`${range.start}T00:00:00`).getTime() : -Infinity;
+    const endMs = range.end ? new Date(`${range.end}T23:59:59`).getTime() : Infinity;
+    return { startMs, endMs };
+  }
+
+  /** Recompute the heatmap's point list from the cached features, filtered
+   *  by the current date range. Run after slider moves or initial load. */
+  const rebuildHeatmapData = useCallback((layerId: string) => {
+    const st = speciesObsStateRef.current.get(layerId);
+    if (!st || !st.heatmap) return;
+    const { startMs, endMs } = dateFilterBounds(st.dateRange);
+    const data: google.maps.LatLng[] = [];
+    for (const f of st.features) {
+      const t = Number(f.properties?.obsTime ?? 0);
+      if (t < startMs || t > endMs) continue;
+      const geom = f.geometry as GeoJSON.Point | null;
+      if (!geom || geom.type !== 'Point') continue;
+      const [lng, lat] = geom.coordinates;
+      data.push(new google.maps.LatLng(lat, lng));
+    }
+    st.heatmap.setData(data);
+  }, []);
+
+  /** Re-evaluate the Data layer's style fn so the time filter and visibility
+   *  toggle both take effect. Reads the latest values from speciesObsStateRef
+   *  to stay decoupled from the React state cycle. Recomputes the tier
+   *  and only touches Google Maps state that actually needs to change. */
+  const applySpeciesObsStyle = useCallback((layerId: string) => {
+    const dl = dataLayersRef.current.get(layerId);
+    const st = speciesObsStateRef.current.get(layerId);
+    if (!dl || !st) return;
+    const { startMs, endMs } = dateFilterBounds(st.dateRange);
+    const zoom = map?.getZoom() ?? DEFAULT_FALLBACK_ZOOM;
+    const tier = st.visible ? renderTier(zoom) : null;
+
+    // Circles: per-feature visibility from the date filter. Style only
+    // depends on the date range and the active tier — both of which are
+    // stable across most zoom changes — so this `setStyle` does not need
+    // to rerun for every zoom tick.
+    const showCircles = tier === 'circles';
+    dl.setStyle((feature: google.maps.Data.Feature) => {
+      const obsTime = Number(feature.getProperty('obsTime') ?? 0);
+      const inWindow = obsTime >= startMs && obsTime <= endMs;
+      const show = showCircles && inWindow;
+      return {
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: '#FF6A00',
+          fillOpacity: 0.9,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 1.5,
+          scale: 7,
+        },
+        clickable: show,
+        visible: show,
+      };
+    });
+
+    // Heatmap: attach or detach with the tier flip. setMap is idempotent
+    // when called with the same map twice in a row, so this is cheap.
+    if (st.heatmap) {
+      if (tier === 'heatmap') {
+        st.heatmap.setOpacity(1);
+        st.heatmap.setMap(map ?? null);
+      } else {
+        st.heatmap.setOpacity(0);
+        st.heatmap.setMap(null);
+      }
+    }
+    st.tier = tier;
+  }, [map]);
+
+  /** Light-touch zoom handler — checks if the render tier actually
+   *  changed. If not, skip the expensive setStyle/setMap calls entirely
+   *  (the heatmap canvas pans itself via the OverlayView pane). */
+  const handleZoomForSpeciesObs = useCallback(() => {
+    const zoom = map?.getZoom() ?? DEFAULT_FALLBACK_ZOOM;
+    for (const [layerId, st] of speciesObsStateRef.current.entries()) {
+      const newTier = st.visible ? renderTier(zoom) : null;
+      if (newTier !== st.tier) applySpeciesObsStyle(layerId);
+    }
+  }, [map, applySpeciesObsStyle]);
+
   // Toggle non-viewport-filtered vector layer visibility via style
   const setVectorVisible = useCallback((layerId: string, visible: boolean) => {
     const config = layerConfigs.find(c => c.id === layerId);
     if (!config || config.viewportFiltered) return; // viewport layers handled separately
     const dl = dataLayersRef.current.get(layerId);
     if (!dl) return;
+
+    // Multi-source observation layers carry a time filter alongside
+    // visibility — route both through the dedicated style applier so the
+    // date window survives toggling. Also close any open popup when the
+    // layer is hidden, since the popup's source feature may be filtered.
+    if (config.source === OBSERVATIONS_SOURCE) {
+      const st = speciesObsStateRef.current.get(layerId);
+      if (st) {
+        st.visible = visible;
+        if (!visible && st.popup) st.popup.close();
+        applySpeciesObsStyle(layerId);
+      }
+      return;
+    }
 
     // Layers with custom marker icons
     if (config.markerIcon) {
@@ -226,7 +373,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
         visible,
       });
     }
-  }, []);
+  }, [applySpeciesObsStyle]);
 
   // Update viewport-filtered layers: clear and re-add only features in current bounds
   const updateViewportLayers = useCallback(() => {
@@ -323,6 +470,109 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
             ? { ...l, loaded: true, opacity: config.defaultOpacity ?? 0.7 }
             : l
         ));
+        return;
+      }
+
+      // --- Multi-source species observations (GBIF + iNaturalist + eBird) ---
+      if (config.source === OBSERVATIONS_SOURCE && config.species) {
+        loadedRef.current.add(config.id);
+        setLayers(prev => prev.map(l =>
+          l.config.id === config.id ? { ...l, loading: true } : l
+        ));
+
+        const center = map.getCenter();
+        const lat = center?.lat() ?? 48.53;
+        const lng = center?.lng() ?? -123.02;
+        const radiusKm = config.species.defaultRadiusKm ?? 80;
+        const daysBack = config.species.defaultDaysBack ?? 365;
+        const today = new Date();
+        const startDate = new Date(today.getTime() - daysBack * DAY_MS)
+          .toISOString().slice(0, 10);
+
+        fetchSpeciesObservationsGeoJSON({
+          species: config.species,
+          lat,
+          lng,
+          radiusKm,
+          startDate,
+        }).then((data) => {
+          const dataLayer = new google.maps.Data({ map });
+          dataLayer.addGeoJson(data);
+          dataLayersRef.current.set(config.id, dataLayer);
+
+          // Build a parallel HeatmapOverlay for low-zoom density display.
+          // Custom 2D-canvas implementation (see HeatmapOverlay.ts) —
+          // Google's google.maps.visualization.HeatmapLayer was
+          // deprecated in May 2025 and stops working in May 2026, so we
+          // can't rely on it. Opacity is managed by
+          // applySpeciesObsStyle/crossfadeOpacities.
+          const heatmapPoints = data.features
+            .map((f) => {
+              const g = f.geometry as GeoJSON.Point | null;
+              if (!g || g.type !== 'Point') return null;
+              return new google.maps.LatLng(g.coordinates[1], g.coordinates[0]);
+            })
+            .filter((p): p is google.maps.LatLng => p !== null);
+          const heatmap = createHeatmapOverlay({
+            data: heatmapPoints,
+            radius: 32,
+            opacity: 0,
+          });
+
+          const initialVisible = isVisibleByDefault(config.id);
+          const initialRange: DateRange = { start: null, end: null };
+          speciesObsStateRef.current.set(config.id, {
+            visible: initialVisible,
+            dateRange: initialRange,
+            popup: null,
+            heatmap,
+            features: data.features,
+            tier: null,
+          });
+          applySpeciesObsStyle(config.id);
+
+          // Click → open a rich InfoWindow at the observation's coords.
+          // Mirrors the EarthAtlas popup (photo, place, date, observer,
+          // source badge, view-on-source link).
+          dataLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
+            const props: Record<string, unknown> = {};
+            event.feature.forEachProperty((value, key) => {
+              props[key] = value;
+            });
+            const html = buildObservationPopupHTML(
+              props as unknown as SpeciesObservationProperties,
+            );
+            const geom = event.feature.getGeometry() as google.maps.Data.Point;
+            const position = geom?.get?.();
+            const st = speciesObsStateRef.current.get(config.id);
+            if (!st) return;
+            if (!st.popup) st.popup = new google.maps.InfoWindow({ maxWidth: 300 });
+            st.popup.setContent(html);
+            if (position) st.popup.setPosition(position);
+            st.popup.open({ map });
+          });
+
+          setLayers(prev => prev.map(l =>
+            l.config.id === config.id
+              ? {
+                  ...l,
+                  loading: false,
+                  loaded: true,
+                  featureCount: data.features.length,
+                  geojsonData: data,
+                  dataLayer,
+                  dateRange: initialRange,
+                }
+              : l
+          ));
+        }).catch((err) => {
+          console.error('[observations] fetch failed', err);
+          setLayers(prev => prev.map(l =>
+            l.config.id === config.id
+              ? { ...l, loading: false, error: 'Failed to load observations' }
+              : l
+          ));
+        });
         return;
       }
 
@@ -551,7 +801,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
         }
       });
     });
-  }, [map, updateViewportLayers, isVisibleByDefault]);
+  }, [map, updateViewportLayers, isVisibleByDefault, applySpeciesObsStyle]);
 
   // Update viewport-filtered layers on map idle (after pan/zoom settles)
   useEffect(() => {
@@ -567,6 +817,13 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
 
     const listener = map.addListener('zoom_changed', () => {
       const zoom = map.getZoom() ?? 0;
+
+      // Cheap: only re-style observation layers when the heatmap↔circles
+      // tier actually changes. handleZoomForSpeciesObs compares the new
+      // tier against the cached one and no-ops when they match — which is
+      // the case for almost every zoom tick during a smooth zoom.
+      handleZoomForSpeciesObs();
+
       setLayers(prev => prev.map(layer => {
         const minZoom = layer.config.minZoom;
         if (minZoom == null) return layer;
@@ -590,7 +847,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
     });
 
     return () => google.maps.event.removeListener(listener);
-  }, [map, setVectorVisible]);
+  }, [map, setVectorVisible, handleZoomForSpeciesObs]);
 
   const toggleLayer = useCallback((layerId: string) => {
     setLayers(prev => prev.map(layer => {
@@ -736,5 +993,83 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
     return dataLayersRef.current.get(layerId) ?? null;
   }, []);
 
-  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, getDataLayer };
+  /** Update the date filter for a multi-source observation layer.
+   *  Refilters in place — no API call. `null` bounds clear that side
+   *  of the constraint (show everything earlier / later). Rebuilds the
+   *  heatmap point list too so the density blob reflects the filter. */
+  const setLayerDateRange = useCallback((layerId: string, dateRange: DateRange) => {
+    const st = speciesObsStateRef.current.get(layerId);
+    if (st) {
+      st.dateRange = dateRange;
+      rebuildHeatmapData(layerId);
+      applySpeciesObsStyle(layerId);
+    }
+    setLayers(prev => prev.map(l =>
+      l.config.id === layerId ? { ...l, dateRange } : l
+    ));
+  }, [applySpeciesObsStyle, rebuildHeatmapData]);
+
+  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, getDataLayer };
+}
+
+// ─── Observation popup HTML builder ─────────────────────────────────────
+// Mirrors the EarthAtlas popup style (src/explore/components/ExploreMap.jsx
+// buildPopupHTML): photo on top, common+scientific name, place/date/observer
+// metadata, source badge, "View observation ↗" external link.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatObsDate(dateStr: string, timeStr: string | null): string {
+  try {
+    const d = new Date(`${dateStr}T${timeStr || '12:00:00'}`);
+    const datePart = d.toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+    });
+    if (!timeStr) return datePart;
+    const timePart = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${datePart} at ${timePart}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+function buildObservationPopupHTML(p: SpeciesObservationProperties): string {
+  const accent = OBS_ACCENT;
+  const photo = p.photoUrl ? escapeHtml(p.photoUrl) : null;
+  return `
+    <div style="font-family: 'Source Sans 3', system-ui, sans-serif; color: #1a2332; width: 260px; line-height: 1.4;">
+      ${photo ? `
+        <div style="margin: -1px -1px 10px; height: 160px; overflow: hidden; border-radius: 4px 4px 0 0; position: relative;">
+          <img src="${photo}" alt="${escapeHtml(p.comName)}" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'" />
+          <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 40px; background: linear-gradient(transparent, #fff);"></div>
+        </div>
+      ` : ''}
+      <div style="padding: 0 2px;">
+        <div style="font-size: 16px; font-weight: 600; line-height: 1.2; margin-bottom: 2px;">${escapeHtml(p.comName)}</div>
+        ${p.sciName ? `<div style="font-style: italic; color: #5a6b7a; font-size: 12px; margin-bottom: 8px;">${escapeHtml(p.sciName)}</div>` : ''}
+        <div style="font-size: 12px; color: #3d4f5f; display: flex; flex-direction: column; gap: 3px;">
+          ${p.place ? `<div>📍 ${escapeHtml(p.place)}</div>` : ''}
+          <div>📅 ${escapeHtml(formatObsDate(p.obsDate, p.obsTimeStr))}</div>
+          ${p.observer ? `<div>👤 ${escapeHtml(p.observer)}</div>` : ''}
+          ${p.count != null ? `<div>🔢 Count: ${p.count}</div>` : ''}
+          <div style="margin-top: 6px; font-size: 10px; color: #7a8a96; text-transform: uppercase; letter-spacing: 0.05em;">
+            via ${escapeHtml(p.source)}
+          </div>
+        </div>
+        <a href="${escapeHtml(p.sourceUrl)}" target="_blank" rel="noopener noreferrer" style="
+          display: block; margin-top: 10px; text-align: center;
+          padding: 6px 8px; border-radius: 4px;
+          background: ${accent}18; color: ${accent};
+          border: 1px solid ${accent}40;
+          font-size: 12px; font-weight: 500;
+          text-decoration: none;
+        ">View observation ↗</a>
+      </div>
+    </div>
+  `;
 }

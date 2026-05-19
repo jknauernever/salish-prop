@@ -67,6 +67,34 @@ export interface LayerConfig {
   viewportFiltered?: boolean;
   markerIcon?: string;
   styleByProperty?: StyleByProperty;
+  /**
+   * Multi-source species lookup IDs for `source: 'observations:multi'`
+   * layers. Each provider has its own ID scheme; we keep all three so the
+   * fetcher can hit GBIF + iNaturalist + eBird in parallel (matches the
+   * EarthAtlas pattern). `scientificName` / `commonName` are fallbacks
+   * shown in the popup when a source row is missing them.
+   */
+  species?: {
+    gbifKey?: number;
+    inatTaxonId?: number;
+    ebirdCode?: string;
+    scientificName: string;
+    commonName: string;
+    /** Default search radius in km. */
+    defaultRadiusKm?: number;
+    /** Default lookback in days. The slider only narrows within this window. */
+    defaultDaysBack?: number;
+  };
+}
+
+/**
+ * Inclusive ISO date range (YYYY-MM-DD). Either bound may be `null`,
+ * meaning "no constraint on that end" — matches the EarthAtlas slider
+ * convention where dragging a handle to the edge clears the bound.
+ */
+export interface DateRange {
+  start: string | null;
+  end: string | null;
 }
 
 export interface LayerState {
@@ -79,6 +107,12 @@ export interface LayerState {
   geojsonData: GeoJSON.FeatureCollection | null;
   dataLayer: google.maps.Data | null;
   opacity?: number;
+  /**
+   * Active date filter for multi-source observation layers. Features whose
+   * `obsTime` property falls outside [start, end] are hidden via the Data
+   * layer's style function. `null` bounds mean "no constraint".
+   */
+  dateRange?: DateRange;
 }
 
 export interface SpatialQueryResult {

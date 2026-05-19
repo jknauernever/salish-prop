@@ -224,6 +224,78 @@ export const layerConfigs: LayerConfig[] = [
     standardMessage: 'Surf smelt spawn on mixed sand-gravel beaches in the upper intertidal zone. Like sand lance, their spawning habitat is directly threatened by shoreline hardening and development.',
   },
   {
+    // Marbled murrelet is a seabird, not a fish, but WDFW's at-sea boat surveys
+    // (MRB) and aerial surveys (PSEMP) produce stratum-level density estimates
+    // analogous in shape to the fish-habitat layers, so the layer is grouped
+    // with the marine wildlife datasets. Density values are stratum aggregates,
+    // not point observations; the 30m raster products cataloged in
+    // `public/data/wdfw_*_mosaic_catalog.json` are interpolated display
+    // surfaces and are not rendered here. Coverage is US Salish Sea only —
+    // does not extend into BC waters. Source: WDFW Wildlife Program; we will
+    // need separate attribution + use permission (Scott Pearson group) before
+    // public deployment.
+    id: 'marbled-murrelet-breeding',
+    name: 'Marbled Murrelet (Breeding Season)',
+    description:
+      'WDFW Marine Resident Seabird (MRB) boat-survey density estimates for marbled murrelet, May 15 – Jul 31. Stratum-aggregated; 3 strata × annual estimates 2001–2020.',
+    category: 'fish-habitat',
+    source: '/data/mamu_mrb_density_by_stratum_year.geojson',
+    visible: false,
+    style: {
+      fillColor: '#B45309',
+      fillOpacity: 0.25,
+      strokeColor: '#92400E',
+      strokeWeight: 1.5,
+    },
+    popupFields: [
+      { key: 'StrataName', label: 'Stratum' },
+      { key: 'latestYear', label: 'Latest Survey Year' },
+      { key: 'EstBirds_latest', label: 'Estimated Birds' },
+      { key: 'Lower_latest', label: '95% CI Lower' },
+      { key: 'Upper_latest', label: '95% CI Upper' },
+      { key: 'Density_latest', label: 'Density (birds/km²)' },
+      { key: 'Density_CV_latest', label: 'Density CV' },
+    ],
+    standardMessage:
+      'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. These values are spring/summer at-sea density estimates from WDFW boat surveys (MRB), aggregated to large biogeographic strata — they represent abundance for the stratum as a whole, not the point you clicked. The companion 30m raster surfaces published by WDFW are interpolated display products, not raw observations.',
+    sourceUrl:
+      'https://geodataservices.wdfw.wa.gov/arcgis/rest/services/WP_WildlifeSurveys/MRB/MapServer',
+  },
+  {
+    // Winter aerial counterpart to the MRB breeding layer. Same caveats:
+    // stratum-aggregated, US Salish Sea only, raster surfaces are
+    // interpolated. PSEMP Stats uses Median/Lower_90/Upper_90 (bootstrap CI)
+    // rather than MRB's EstBirds/Lower/Upper (normal-CL CI).
+    id: 'marbled-murrelet-winter',
+    name: 'Marbled Murrelet (Winter)',
+    description:
+      'WDFW Puget Sound Ecosystem Monitoring Program (PSEMP) winter aerial-survey density estimates for marbled murrelet. Stratum-aggregated; 36 basins × annual estimates 1996–2024.',
+    category: 'fish-habitat',
+    source:
+      'https://storage.googleapis.com/salish-ndvi-tiles/data/mamu_psemp_density_by_stratum_year.geojson',
+    visible: false,
+    style: {
+      fillColor: '#475569',
+      fillOpacity: 0.25,
+      strokeColor: '#1E293B',
+      strokeWeight: 1.5,
+    },
+    popupFields: [
+      { key: 'StrataName', label: 'Basin' },
+      { key: 'Depth_latest', label: 'Depth Stratum' },
+      { key: 'sqkm', label: 'Basin Area (km²)' },
+      { key: 'latestYear', label: 'Latest Survey Year' },
+      { key: 'Median_latest', label: 'Median Estimate (birds)' },
+      { key: 'Lower_90_latest', label: '90% CI Lower' },
+      { key: 'Upper_90_latest', label: '90% CI Upper' },
+      { key: 'Median_Density_latest', label: 'Median Density (birds/km²)' },
+    ],
+    standardMessage:
+      'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. These values are winter at-sea density estimates from PSEMP aerial surveys, aggregated to ~36 basins — they represent abundance for the basin as a whole, not the point you clicked. Confidence intervals are 90% bootstrap rather than 95% normal-CL, reflecting the distance-sampling methodology of the aerial program.',
+    sourceUrl:
+      'https://geodataservices.wdfw.wa.gov/arcgis/rest/services/WP_WildlifeSurveys/PSEMP/MapServer',
+  },
+  {
     id: 'lingcod-greenling',
     name: 'Lingcod & Greenling',
     description: 'Shoreline habitat relevance for Lingcod and Greenling (Hexagrammidae)',
@@ -866,6 +938,47 @@ export const layerConfigs: LayerConfig[] = [
   },
 
   // === Community Science Layers ===
+  {
+    // Multi-source point observations of marbled murrelet. The runtime
+    // category tree slots this under `species` (Species of Interest); the
+    // `community-science` category here is a code-side fallback the
+    // tree-fetch loader uses if the live tree is unreachable. The sentinel
+    // `source: 'observations:multi'` tells useLayers to dispatch to
+    // fetchSpeciesObservationsGeoJSON instead of treating the string as a
+    // URL. The fetcher pulls GBIF + iNaturalist + eBird in parallel,
+    // dedupes GBIF rows whose origin is iNaturalist, and returns Points
+    // with a unified property schema (see SpeciesObservationProperties).
+    // The popup is rendered by the layer-specific click handler, not the
+    // generic popupFields machinery — so popupFields is left empty.
+    id: 'marbled-murrelet-observations',
+    name: 'Marbled Murrelet Observations',
+    description: 'Photographed and checklist observations of marbled murrelet from GBIF, iNaturalist, and eBird — defaults to the last year.',
+    category: 'community-science',
+    source: 'observations:multi',
+    species: {
+      gbifKey: 5229281,
+      inatTaxonId: 4531,
+      ebirdCode: 'marmur',
+      scientificName: 'Brachyramphus marmoratus',
+      commonName: 'Marbled Murrelet',
+      // 200 km covers the full Salish Sea from Olympia to Vancouver to
+      // Sooke. iNat alone has ~235 MAMU records in this radius over the
+      // past year; the prior 80 km default dropped south Puget Sound.
+      defaultRadiusKm: 200,
+      defaultDaysBack: 365,
+    },
+    visible: false,
+    style: {
+      fillColor: '#FF6A00',
+      fillOpacity: 1,
+      strokeColor: '#FFFFFF',
+      strokeWeight: 1.5,
+    },
+    popupFields: [],
+    standardMessage:
+      'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. Markers combine three sources: GBIF (global biodiversity records), iNaturalist (photo-verified citizen science), and eBird (recent checklists, last 30 days only). GBIF rows whose origin is iNaturalist are filtered out to avoid duplicates. Click any marker for the source observation page and photo (when available); drag the slider handles to narrow the date window.',
+    sourceUrl: 'https://www.gbif.org/species/5229281',
+  },
   {
     id: 'ebird-hotspots',
     name: 'eBird Hotspots',

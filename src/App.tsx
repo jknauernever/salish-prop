@@ -100,7 +100,7 @@ interface AppContentProps {
 
 function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: AppContentProps) {
   const { map } = useMap();
-  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl } = useLayers(map, preset?.layers);
+  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange } = useLayers(map, preset?.layers);
 
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -144,6 +144,7 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
             onSetAllVisible={setAllVisible}
             onSetLayerOpacity={setLayerOpacity}
             onSetDynamicTileUrl={setDynamicRasterTileUrl}
+            onSetLayerDateRange={setLayerDateRange}
           />
         </Sidebar>
       )}
