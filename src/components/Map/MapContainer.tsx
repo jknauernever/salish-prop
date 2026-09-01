@@ -100,7 +100,7 @@ export function MapContainer({ header, children, initialView }: MapContainerProp
           )}
           {isLoaded && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-blue/80 text-white text-xs font-mono px-3 py-1 rounded-full z-10 pointer-events-none">
-              Zoom {zoom}
+              Zoom {Math.round(zoom * 10) / 10}
             </div>
           )}
           {isLoaded && children}
