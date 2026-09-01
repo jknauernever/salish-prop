@@ -9,6 +9,8 @@ import { layerConfigs } from './config/layers'
 import { AuthGate } from './components/Admin/AuthGate'
 import { AdminShell, AdminHome } from './components/Admin/AdminShell'
 import { CategoryTreeEditor } from './components/Admin/CategoryTreeEditor'
+import { LandingIntroEditor } from './components/Admin/LandingIntroEditor'
+import { fetchSiteContent } from './services/siteContent'
 
 // Kick off the category tree fetch at app start so it's likely cached
 // by the time the user opens the sidebar. Components reading the tree
@@ -19,6 +21,9 @@ fetchCategoryTree().then((tree) => {
     validateLayerCategories(tree.tree, layerConfigs)
   }
 })
+// Same idea for the landing intro text: warm the cache so the box appears
+// as soon as the map finishes loading.
+fetchSiteContent()
 
 function PresetView() {
   const { presetName } = useParams<{ presetName: string }>();
@@ -42,6 +47,7 @@ createRoot(document.getElementById('root')!).render(
         >
           <Route index element={<AdminHome />} />
           <Route path="categories" element={<CategoryTreeEditor />} />
+          <Route path="content" element={<LandingIntroEditor />} />
         </Route>
       </Routes>
     </BrowserRouter>

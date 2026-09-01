@@ -45,6 +45,21 @@ body {
   animation: slide-in-right 0.3s ease-out;
 }
 
+/* Rich text (admin-authored HTML: landing intro box + editor) */
+.rich-text p { margin: 0 0 0.6em; line-height: 1.5; }
+.rich-text p:last-child { margin-bottom: 0; }
+.rich-text h3 { font-size: 1.05rem; font-weight: 600; line-height: 1.3; margin: 0 0 0.4em; color: var(--color-deep-teal); }
+.rich-text h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.3; margin: 0.6em 0 0.3em; }
+.rich-text ul, .rich-text ol { margin: 0 0 0.6em; padding-left: 1.25rem; }
+.rich-text ul { list-style: disc; }
+.rich-text ol { list-style: decimal; }
+.rich-text li { margin: 0.15em 0; }
+.rich-text li p { margin: 0; }
+.rich-text a { color: var(--color-deep-teal); text-decoration: underline; text-underline-offset: 2px; }
+.rich-text a:hover { color: var(--color-deep-teal-light); }
+.rich-text strong { font-weight: 600; }
+.rich-text u { text-decoration: underline; }
+
 /* Google Maps autocomplete dropdown styling */
 .pac-container {
   border-radius: 0.75rem;

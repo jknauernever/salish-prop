@@ -9,6 +9,7 @@ interface ModuleEntry {
 
 const MODULES: ModuleEntry[] = [
   { to: '/admin/categories', label: 'Categories', enabled: true },
+  { to: '/admin/content', label: 'Landing page intro', enabled: true },
   // Future modules:
   // { to: '/admin/layers', label: 'Layers', enabled: false },
   // { to: '/admin/users', label: 'Users', enabled: false },

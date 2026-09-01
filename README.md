@@ -382,7 +382,7 @@ The solution is two pieces working together:
 
 ## Admin Tool
 
-A password-gated `/admin` area inside the same app, for content administrators to maintain runtime configuration without code changes. The first (and currently only) module is the **Category Tree Editor**, which controls how the public sidebar groups data layers.
+A password-gated `/admin` area inside the same app, for content administrators to maintain runtime configuration without code changes. Two modules so far: the **Category Tree Editor** (how the public sidebar groups data layers) and the **Landing Page Intro** editor (the welcome box shown on the map).
 
 ### URL pattern
 
@@ -390,7 +390,9 @@ A password-gated `/admin` area inside the same app, for content administrators t
 |---|---|
 | `/admin` | Sign-in screen, then admin home (module picker). |
 | `/admin/categories` | Category tree editor — the focus of v1. |
-| `/api/admin/categories` | Same-origin endpoint the editor calls (proxied to a Cloud Function — see Architecture below). Not for direct browser use. |
+| `/admin/content` | Landing page intro editor (rich text). |
+| `/api/admin/categories` | Same-origin endpoint the category editor calls (proxied to a Cloud Function — see Architecture below). Not for direct browser use. |
+| `/api/admin/content` | Same-origin endpoint the intro editor calls (same Cloud Function, `/content` sub-path). |
 
 ### Authentication
 
@@ -420,11 +422,12 @@ A password-gated `/admin` area inside the same app, for content administrators t
               ┌──────────────────────────────────────────┐
               │  gs://salish-ndvi-tiles/                 │
               │     config/category-tree.json            │
+              │     config/site-content.json             │
               │     (public read, function-only write)   │
               └──────────────────────────────────────────┘
 ```
 
-The public map and the admin tool **both** read the category tree from the same public GCS URL — no extra auth needed for reads, and changes flow to the map automatically on its next page load. Writes are funneled through the Cloud Function, which is the only writer to the file.
+The public map and the admin tool **both** read the category tree (and site content) from the same public GCS URLs — no extra auth needed for reads, and changes flow to the map automatically on its next page load. Writes are funneled through the Cloud Function, which is the only writer to the files.
 
 ### Category Tree data model
 
@@ -471,16 +474,49 @@ Lives at [`src/components/Admin/CategoryTreeEditor.tsx`](src/components/Admin/Ca
 - **Empty-category warning** at the top: categories with no layers (directly or via descendants). They also won't appear in the public sidebar.
 - **Concurrency model:** last-write-wins. Two admins editing the same tree simultaneously won't see a conflict warning; whoever saves second wins. Acceptable for v1's small admin team. The Cloud Function can be extended later to refuse a write whose `version` is stale.
 
+### Landing Page Intro editor
+
+Lives at [`src/components/Admin/LandingIntroEditor.tsx`](src/components/Admin/LandingIntroEditor.tsx). Built on [TipTap](https://tiptap.dev) (`@tiptap/react` + `@tiptap/starter-kit`).
+
+- Edits the **welcome box** that floats at the top center of the map on the landing page (`/` only — not on `/view/*` preset embeds). Rendered by [`src/components/Map/LandingIntro.tsx`](src/components/Map/LandingIntro.tsx).
+- **Light formatting only:** bold, italic, underline, one heading level, bulleted / numbered lists, links, undo / redo. The toolbar and the server allowlist are kept in lockstep — anything else is stripped on save.
+- **Live preview** on the right reuses the exact `LandingIntroCard` component the map renders, so what admins see is what visitors get.
+- **Dirty-state Save / Discard**, same pattern as the category editor. Empty content hides the box entirely.
+- Visitors can **dismiss** the box; the dismissal is remembered per browser tab (`sessionStorage`) and a small "About this map" pill brings it back.
+- Content is fetched by the map from the public GCS URL at startup (`src/services/siteContent.ts`, same cache/fallback pattern as `categoryTree.ts`). Saved changes appear on the map's next page load.
+
+**Data model** — `gs://salish-ndvi-tiles/config/site-content.json`:
+
+```json
+{
+  "version": 3,
+  "updated_at": "2026-09-01T18:02:11Z",
+  "landing_intro": { "html": "<h3>Welcome…</h3><p>…</p>" }
+}
+```
+
+`html` is sanitized server-side with [`nh3`](https://github.com/messense/nh3) to this allowlist: `p br strong b em i u s a ul ol li h3 h4`; `<a>` may carry `href` (http/https/mailto only), `title`, `target`, and always gets `rel="noopener noreferrer"`. Max 20,000 characters. The document is designed to grow — additional keyed blocks (e.g. a future `about_page`) can be added alongside `landing_intro`.
+
 ### Cloud Function spec — `admin-config`
 
 Code: [`cloud-functions/admin-config/main.py`](cloud-functions/admin-config/main.py)
 
+One function, two documents, switched on the request path (`/` = category tree, `/content` = site content). Both paths support the same method set:
+
 | Method | Behavior |
 |---|---|
-| `GET /` | Returns the current tree from GCS. Public; no auth. CORS for `salishsea.knauernever.com`, `localhost:5173`, `localhost:4173`. |
-| `POST /?verify=1` | Validates `X-Admin-Token`; returns `204` on match, `401` on mismatch. No write side effects. Used by `AuthGate`. |
-| `POST /` | Full save: validates token, JSON-schema-validates the payload, checks id uniqueness across the tree, server-bumps `version` and `updated_at`, writes the JSON to GCS with `Cache-Control: no-cache, max-age=0` and refreshes the public-read ACL. |
-| `OPTIONS /` | CORS preflight. |
+| `GET` | Returns the current document from GCS. Public; no auth. CORS for `salishsea.knauernever.com`, `localhost:5173`, `localhost:4173`. |
+| `POST ?verify=1` | Validates `X-Admin-Token`; returns `204` on match, `401` on mismatch. No write side effects. Used by `AuthGate`. |
+| `POST` | Full save: validates token, JSON-schema-validates the payload (tree: id uniqueness; content: HTML sanitization), server-bumps `version` and `updated_at`, writes the JSON to GCS with `Cache-Control: no-cache, max-age=0` and refreshes the public-read ACL. |
+| `OPTIONS` | CORS preflight. |
+
+Deploy (env vars `ADMIN_PASSWORD` / `GCS_BUCKET` persist across redeploys):
+
+```bash
+gcloud functions deploy admin-config --gen2 --region us-west1 --project salish-sea-property-mapper \
+  --runtime python311 --entry-point admin_config --trigger-http --allow-unauthenticated \
+  --source cloud-functions/admin-config --memory 256M
+```
 
 **Validation rules** (jsonschema + custom checks):
 - Each node: `{ id, label, layers, children }`, all required except `layers` (defaults to `[]` if missing).
@@ -499,13 +535,13 @@ The shell is built to grow. To add another admin module (say, "Layers"):
 1. Add a route under `/admin/*` in [`src/main.tsx`](src/main.tsx).
 2. Add an entry to the `MODULES` array in [`src/components/Admin/AdminShell.tsx`](src/components/Admin/AdminShell.tsx).
 3. Build the module component under `src/components/Admin/`.
-4. If it needs a backend, add the endpoint either as another Cloud Function with a matching Vercel rewrite (`/api/admin/<name>`) or extend the existing `admin-config` function with a sub-path.
+4. If it needs a backend, add the endpoint either as another Cloud Function with a matching Vercel rewrite (`/api/admin/<name>`) or extend the existing `admin-config` function with a sub-path — the `/content` route is the model: add a rewrite in `vercel.json`, a proxy entry in `vite.config.ts`, and a `_handle_<name>` branch in `main.py`.
 
 The pattern is intentional: each admin module is independent, all share the same auth gate, and all backend traffic goes through the same `/api/admin/*` namespace on the user's own domain.
 
 ### Local development
 
-The `dev` server proxies `/api/admin/categories` to the deployed Cloud Function automatically (configured in [`vite.config.ts`](vite.config.ts)). Query strings (e.g. `?verify=1`) survive the proxy. This means signing in to `/admin` locally hits the *real* deployed function — there's no separate local mock.
+The `dev` server proxies `/api/admin/categories` and `/api/admin/content` to the deployed Cloud Function automatically (configured in [`vite.config.ts`](vite.config.ts)). Query strings (e.g. `?verify=1`) survive the proxy. This means signing in to `/admin` locally hits the *real* deployed function — there's no separate local mock.
 
 If you want to test against a different password, deploy the function with a new `ADMIN_PASSWORD` env var (`gcloud functions deploy admin-config --update-env-vars ADMIN_PASSWORD=...`). The function and the admin UI both read it from the same place: the deployed env.
 

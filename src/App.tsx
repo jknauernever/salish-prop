@@ -7,11 +7,13 @@ import { ForestLossPopup } from './components/Map/ForestLossPopup';
 import { DistAlertPopup } from './components/Map/DistAlertPopup';
 import type { ParcelSearchDetail, OpenParcelPopupDetail } from './components/Map/FeaturePopup';
 import { RadiusOverlay } from './components/Map/RadiusOverlay';
+import { LandingIntro } from './components/Map/LandingIntro';
 import { AddressSearch } from './components/Search/AddressSearch';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { useMap } from './hooks/useMap';
 import { useLayers } from './hooks/useLayers';
+import { useSiteContent } from './services/siteContent';
 import type { GeocodingResult } from './types';
 import type { LockableControl, Preset } from './config/presets';
 
@@ -103,6 +105,7 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
   const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange } = useLayers(map, preset?.layers);
 
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const { content: siteContent } = useSiteContent();
 
   const handlePlaceSelected = useCallback((result: GeocodingResult) => {
     setSearchCenter({ lat: result.lat, lng: result.lng });
@@ -135,6 +138,9 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
       <FeaturePopup layers={layers} propertyClick={preset?.features.propertyClick ?? true} />
       <ForestLossPopup layers={layers} />
       <DistAlertPopup layers={layers} />
+
+      {/* Admin-editable welcome box (only on the main landing view, not preset embeds) */}
+      {!preset && <LandingIntro html={siteContent.landing_intro.html} />}
 
       {!layersLocked && (
         <Sidebar open={sidebarOpen}>
