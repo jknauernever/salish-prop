@@ -9,6 +9,7 @@ import type { ParcelSearchDetail, OpenParcelPopupDetail, ParcelPopupStateDetail 
 import { RadiusOverlay } from './components/Map/RadiusOverlay';
 import { LandingIntro } from './components/Map/LandingIntro';
 import { MapLegend } from './components/Map/MapLegend';
+import { useLayersInView } from './hooks/useLayersInView';
 import { AddressSearch } from './components/Search/AddressSearch';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -117,6 +118,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
   const { map, zoom } = useMap();
   const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi } =
     useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi);
+  const layersInView = useLayersInView(map, layers);
 
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(initialUrlState.search);
   const { content: siteContent } = useSiteContent();
@@ -211,7 +213,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
 
       {/* Floating legend: only what's on the map, plus the door to the full picker */}
       {!layersLocked && !sidebarOpen && (
-        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} />
+        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} inView={layersInView} />
       )}
 
       {!layersLocked && (

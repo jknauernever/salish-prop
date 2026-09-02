@@ -8,6 +8,8 @@ interface MapLegendProps {
   onExplore: () => void;
   /** Current map zoom, used to flag layers gated behind a minZoom. */
   zoom: number;
+  /** Ids of visible layers that have something drawn inside the current map frame. */
+  inView: Set<string>;
 }
 
 function hasInfo(config: LayerConfig): boolean {
@@ -16,6 +18,16 @@ function hasInfo(config: LayerConfig): boolean {
 
 /** Small swatch that mirrors how the layer draws on the map. */
 function Swatch({ config }: { config: LayerConfig }) {
+  if (config.renderer === 'kelp-squiggle') {
+    // Cream wash with the nautical kelp squiggle, as drawn by KelpOverlay
+    return (
+      <span className="inline-flex items-center justify-center w-4 h-3 rounded-sm shrink-0" style={{ background: '#FFF4CC', boxShadow: 'inset 0 0 0 1px #D9C87A' }}>
+        <svg width="12" height="6" viewBox="0 0 12 6" aria-hidden="true">
+          <path d="M0.5 3c1.5-2.5 3-2.5 4.5 0s3 2.5 4.5 0" fill="none" stroke="#B89A3A" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
   if (config.markerIcon) {
     return <img src={config.markerIcon} alt="" className="w-4 h-[18px] shrink-0 object-contain" />;
   }
@@ -200,11 +212,12 @@ function SourcingModal({ layers, zoom, onClose }: { layers: LayerState[]; zoom: 
  * footer opens the full dataset picker, and "How this is sourced" opens a
  * modal describing every visible dataset.
  */
-export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendProps) {
+export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView }: MapLegendProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [openInfo, setOpenInfo] = useState<string | null>(null);
   const [showSourcing, setShowSourcing] = useState(false);
   const on = layers.filter(l => l.visible && !l.config.placeholder);
+  const inViewCount = on.filter(l => inView.has(l.config.id)).length;
 
   return (
     <>
@@ -216,7 +229,12 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
           aria-expanded={!collapsed}
         >
           <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-blue/60">
-            On the map{on.length > 0 ? ` · ${on.length}` : ''}
+            On the map
+            {on.length > 0 && (
+              <span className="ml-1.5 normal-case tracking-normal font-normal text-slate-blue/50">
+                {inViewCount} of {on.length} in view
+              </span>
+            )}
           </span>
           <svg className={`w-3.5 h-3.5 text-slate-blue/50 transition-transform ${collapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -231,17 +249,36 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
             {on.map(layer => {
               const { config } = layer;
               const gated = config.minZoom != null && zoom < config.minZoom;
+              const visibleNow = inView.has(config.id);
               const infoOpen = openInfo === config.id;
+              const accent = config.style.strokeColor || config.style.fillColor || '#0D4F4F';
               return (
-                <div key={config.id} className={`rounded-md px-2 py-1.5 ${gated && !infoOpen ? 'opacity-60' : ''}`}>
+                <div
+                  key={config.id}
+                  className={`relative rounded-md px-2 py-1.5 transition-colors ${
+                    visibleNow ? 'bg-teal-50/80' : infoOpen ? '' : 'opacity-55'
+                  }`}
+                >
+                  {visibleNow && (
+                    <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: accent }} />
+                  )}
                   <div className="flex items-center gap-2">
                     <Swatch config={config} />
-                    <span className="flex-1 min-w-0 text-xs leading-tight truncate" title={config.name}>{config.name}</span>
-                    {gated && (
+                    <span
+                      className={`flex-1 min-w-0 text-xs leading-tight truncate ${visibleNow ? 'font-semibold text-slate-blue' : 'text-slate-blue/80'}`}
+                      title={config.name}
+                    >
+                      {config.name}
+                    </span>
+                    {gated ? (
                       <span className="text-[10px] text-slate-blue/50 whitespace-nowrap" title={`Drawn at zoom ${config.minZoom} and closer`}>
                         zoom in
                       </span>
-                    )}
+                    ) : !visibleNow ? (
+                      <span className="text-[10px] text-slate-blue/50 whitespace-nowrap" title="Nothing from this layer is inside the current map frame">
+                        not in view
+                      </span>
+                    ) : null}
                     {hasInfo(config) && (
                       <button
                         type="button"
