@@ -113,6 +113,10 @@ export interface LayerState {
    * layer's style function. `null` bounds mean "no constraint".
    */
   dateRange?: DateRange;
+  /** Selected visualization mode id for dynamic-raster layers with `visualizationModes`. */
+  vizMode?: string;
+  /** Selected Sentinel-2 season slug (e.g. "summer-2024") for the seasonal NDVI layer. */
+  season?: string;
 }
 
 export interface SpatialQueryResult {

@@ -12,9 +12,10 @@ interface LayerControlsProps {
   onSetLayerOpacity?: (layerId: string, opacity: number) => void;
   onSetDynamicTileUrl?: (layerId: string, tileUrl: string) => void;
   onSetLayerDateRange?: (layerId: string, dateRange: DateRange) => void;
+  onSetLayerUi?: (layerId: string, patch: { vizMode?: string; season?: string }) => void;
 }
 
-export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl, onSetLayerDateRange }: LayerControlsProps) {
+export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLayerOpacity, onSetDynamicTileUrl, onSetLayerDateRange, onSetLayerUi }: LayerControlsProps) {
   const { tree } = useCategoryTree();
   const layersById = useMemo(() => {
     const map = new Map<string, LayerState>();
@@ -107,6 +108,11 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
                         ? (range: DateRange) => onSetLayerDateRange(layer.config.id, range)
                         : undefined
                     }
+                    onSetUi={
+                      onSetLayerUi
+                        ? (patch) => onSetLayerUi(layer.config.id, patch)
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -128,12 +134,13 @@ export function LayerControls({ layers, onToggleLayer, onSetAllVisible, onSetLay
   );
 }
 
-function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSetDateRange }: {
+function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSetDateRange, onSetUi }: {
   layer: LayerState;
   onToggle: () => void;
   onOpacityChange?: (opacity: number) => void;
   onSetDynamicTileUrl?: (tileUrl: string) => void;
   onSetDateRange?: (range: DateRange) => void;
+  onSetUi?: (patch: { vizMode?: string; season?: string }) => void;
 }) {
   const { config, visible, loaded, loading, error, featureCount, opacity } = layer;
   const isPlaceholder = config.placeholder;
@@ -142,11 +149,11 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
   const hasInfo = !!config.standardMessage || !!config.sourceUrl;
   const [showInfo, setShowInfo] = useState(false);
 
-  // For dynamic-raster layers with multiple visualization modes, track the
-  // selected mode here so the legend and the tile fetcher both see it.
-  const [vizMode, setVizMode] = useState<string>(
-    () => config.visualizationModes?.[0]?.id ?? ''
-  );
+  // For dynamic-raster layers with multiple visualization modes, the selected
+  // mode lives on the layer state (so it can round-trip through the URL);
+  // the legend and the tile fetcher both read it from there.
+  const vizMode = layer.vizMode ?? config.visualizationModes?.[0]?.id ?? '';
+  const setVizMode = (id: string) => onSetUi?.({ vizMode: id });
   const activeMode = config.visualizationModes?.find(m => m.id === vizMode);
   const legend = activeMode?.legend ?? config.legend;
 
@@ -325,6 +332,8 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
           <DynamicRasterDatePicker
             apiEndpoint={config.apiEndpoint ?? ''}
             onTileUrl={onSetDynamicTileUrl}
+            initialSeason={layer.season}
+            onSeasonChange={onSetUi ? (slug) => onSetUi({ season: slug }) : undefined}
           />
         )
       )}
@@ -335,6 +344,8 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
 // Seasonal time steps for Sentinel-2 (Spring 2017 → Fall 2025)
 interface SeasonStep {
   label: string;
+  /** URL-safe id, e.g. "summer-2024" */
+  slug: string;
   start: string;
   end: string;
 }
@@ -350,6 +361,7 @@ const SEASONS: SeasonStep[] = (() => {
     for (const [name, startMD, endMD] of defs) {
       steps.push({
         label: `${name} ${year}`,
+        slug: `${name.toLowerCase()}-${year}`,
         start: `${year}-${startMD}`,
         end: `${year}-${endMD}`,
       });
@@ -660,14 +672,23 @@ function TimeRangeSlider({ features, value, onChange }: {
   );
 }
 
-function DynamicRasterDatePicker({ apiEndpoint, onTileUrl }: {
+function DynamicRasterDatePicker({ apiEndpoint, onTileUrl, initialSeason, onSeasonChange }: {
   apiEndpoint: string;
   onTileUrl: (tileUrl: string) => void;
+  /** Initial season slug (from the URL); falls back to Summer 2024. */
+  initialSeason?: string;
+  onSeasonChange?: (slug: string) => void;
 }) {
-  const [index, setIndex] = useState(DEFAULT_INDEX);
+  const [index, setIndex] = useState(() => {
+    const i = initialSeason ? SEASONS.findIndex(s => s.slug === initialSeason) : -1;
+    return i >= 0 ? i : DEFAULT_INDEX;
+  });
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loadedIndex, setLoadedIndex] = useState(-1);
+
+  const onSeasonChangeRef = useRef(onSeasonChange);
+  useEffect(() => { onSeasonChangeRef.current = onSeasonChange; }, [onSeasonChange]);
 
   const fetchTiles = useCallback(async (seasonIndex: number) => {
     if (!apiEndpoint) {
@@ -689,6 +710,7 @@ function DynamicRasterDatePicker({ apiEndpoint, onTileUrl }: {
       if (data.tileUrl) {
         onTileUrl(data.tileUrl);
         setLoadedIndex(seasonIndex);
+        onSeasonChangeRef.current?.(season.slug);
       } else {
         throw new Error('No tileUrl in response');
       }
@@ -699,10 +721,10 @@ function DynamicRasterDatePicker({ apiEndpoint, onTileUrl }: {
     }
   }, [apiEndpoint, onTileUrl]);
 
-  // Auto-fetch default season on mount
+  // Auto-fetch the initial season on mount (URL-provided or the default)
   useEffect(() => {
     if (loadedIndex === -1 && apiEndpoint) {
-      fetchTiles(DEFAULT_INDEX);
+      fetchTiles(index);
     }
   }, [apiEndpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -9,6 +9,7 @@ import {
 } from '../services/speciesObservations';
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import type { DateRange } from '../types';
+import type { UrlLayerUi } from '../services/urlState';
 
 const DAY_MS = 86400000;
 const OBSERVATIONS_SOURCE = 'observations:multi';
@@ -87,11 +88,14 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.Feature
   return { type: 'FeatureCollection', features };
 }
 
-function createInitialState(config: LayerConfig, initialLayerIds?: string[]): LayerState {
+function createInitialState(config: LayerConfig, initialLayerIds?: string[], ui?: UrlLayerUi): LayerState {
   const visible = initialLayerIds
     ? initialLayerIds.includes(config.id)
     : config.visible;
   return {
+    vizMode: ui?.vizMode,
+    season: ui?.season,
+    dateRange: ui?.dateRange,
     config,
     visible,
     loaded: false,
@@ -100,7 +104,7 @@ function createInitialState(config: LayerConfig, initialLayerIds?: string[]): La
     featureCount: 0,
     geojsonData: null,
     dataLayer: null,
-    opacity: config.defaultOpacity ?? 1,
+    opacity: ui?.opacity ?? config.defaultOpacity ?? 1,
   };
 }
 
@@ -138,7 +142,17 @@ function computeFeatureBbox(feature: GeoJSON.Feature): [number, number, number, 
   return [minLng, minLat, maxLng, maxLat];
 }
 
-export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[]) {
+/**
+ * @param initialLayerIds  Visible layer ids to start with (from a preset or the URL).
+ *                         Undefined = use each layer's `visible` default.
+ * @param initialUi        Per-layer opacity / viz mode / season / date range to
+ *                         start with (from the URL).
+ */
+export function useLayers(
+  map: google.maps.Map | null,
+  initialLayerIds?: string[],
+  initialUi?: Record<string, UrlLayerUi>,
+) {
   const isVisibleByDefault = useCallback((layerId: string): boolean => {
     if (initialLayerIds) return initialLayerIds.includes(layerId);
     const cfg = layerConfigs.find(c => c.id === layerId);
@@ -146,7 +160,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
   }, [initialLayerIds]);
 
   const [layers, setLayers] = useState<LayerState[]>(() =>
-    layerConfigs.map(c => createInitialState(c, initialLayerIds))
+    layerConfigs.map(c => createInitialState(c, initialLayerIds, initialUi?.[c.id]))
   );
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
@@ -448,7 +462,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
           tileSize: new google.maps.Size(256, 256),
           maxZoom: tileMaxZoom,
           name: config.id,
-          opacity: visibleByDefault ? (config.defaultOpacity ?? 0.7) : 0,
+          opacity: visibleByDefault ? (initialUi?.[config.id]?.opacity ?? config.defaultOpacity ?? 0.7) : 0,
         });
 
         rasterLayersRef.current.set(config.id, imageMapType);
@@ -456,7 +470,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
 
         setLayers(prev => prev.map(l =>
           l.config.id === config.id
-            ? { ...l, loaded: true, opacity: config.defaultOpacity ?? 0.7 }
+            ? { ...l, loaded: true, opacity: l.opacity ?? config.defaultOpacity ?? 0.7 }
             : l
         ));
         return;
@@ -467,7 +481,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
         loadedRef.current.add(config.id);
         setLayers(prev => prev.map(l =>
           l.config.id === config.id
-            ? { ...l, loaded: true, opacity: config.defaultOpacity ?? 0.7 }
+            ? { ...l, loaded: true, opacity: l.opacity ?? config.defaultOpacity ?? 0.7 }
             : l
         ));
         return;
@@ -520,7 +534,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
           });
 
           const initialVisible = isVisibleByDefault(config.id);
-          const initialRange: DateRange = { start: null, end: null };
+          const initialRange: DateRange = initialUi?.[config.id]?.dateRange ?? { start: null, end: null };
           speciesObsStateRef.current.set(config.id, {
             visible: initialVisible,
             dateRange: initialRange,
@@ -801,7 +815,7 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
         }
       });
     });
-  }, [map, updateViewportLayers, isVisibleByDefault, applySpeciesObsStyle]);
+  }, [map, updateViewportLayers, isVisibleByDefault, applySpeciesObsStyle, initialUi]);
 
   // Update viewport-filtered layers on map idle (after pan/zoom settles)
   useEffect(() => {
@@ -1009,7 +1023,12 @@ export function useLayers(map: google.maps.Map | null, initialLayerIds?: string[
     ));
   }, [applySpeciesObsStyle, rebuildHeatmapData]);
 
-  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, getDataLayer };
+  /** Update UI-only layer state (viz mode, season) that the URL mirrors. */
+  const setLayerUi = useCallback((layerId: string, patch: { vizMode?: string; season?: string }) => {
+    setLayers(prev => prev.map(l => (l.config.id === layerId ? { ...l, ...patch } : l)));
+  }, []);
+
+  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi, getDataLayer };
 }
 
 // ─── Observation popup HTML builder ─────────────────────────────────────

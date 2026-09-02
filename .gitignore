@@ -36,3 +36,5 @@ public/data/mamu_psemp_density_by_stratum_year.geojson
 
 # Claude Code session state (worktrees, scheduled tasks, local settings)
 .claude/
+.vercel
+.env*

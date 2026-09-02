@@ -14,6 +14,11 @@ export default defineConfig({
         // Strip just the route prefix so query strings (e.g. ?verify=1) survive
         rewrite: (path) => path.replace(/^\/api\/admin\/categories/, ''),
       },
+      '/api/og': {
+        target: 'https://us-west1-salish-sea-property-mapper.cloudfunctions.net/og-image',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/og/, ''),
+      },
       '/api/admin/content': {
         target: ADMIN_CONFIG_FN,
         changeOrigin: true,

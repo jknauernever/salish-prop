@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { MapContext } from '../../hooks/useMap';
 import { Footer } from '../Layout/Footer';
+import { setUrlParams, fmtLatLng } from '../../services/urlState';
 import type { ReactNode } from 'react';
 
 const SAN_JUAN_CENTER = { lat: 48.605, lng: -123.0 };
@@ -20,9 +21,11 @@ interface MapContainerProps {
     center: { lat: number; lng: number };
     zoom: number;
   };
+  /** Basemap to start on (roadmap | satellite | hybrid | terrain). Defaults to hybrid. */
+  initialMapTypeId?: string;
 }
 
-export function MapContainer({ header, children, initialView }: MapContainerProps) {
+export function MapContainer({ header, children, initialView, initialMapTypeId }: MapContainerProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -42,7 +45,7 @@ export function MapContainer({ header, children, initialView }: MapContainerProp
         center: startCenter,
         zoom: startZoom,
         mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
-        mapTypeId: google.maps.MapTypeId.HYBRID,
+        mapTypeId: initialMapTypeId ?? google.maps.MapTypeId.HYBRID,
         disableDefaultUI: false,
         zoomControl: true,
         mapTypeControl: true,
@@ -58,6 +61,19 @@ export function MapContainer({ header, children, initialView }: MapContainerProp
 
       mapInstance.addListener('zoom_changed', () => {
         setZoom(mapInstance.getZoom() ?? DEFAULT_ZOOM);
+      });
+
+      // Mirror the viewport + basemap into the URL so the address bar is
+      // always a shareable link to exactly this view.
+      mapInstance.addListener('idle', () => {
+        const c = mapInstance.getCenter();
+        const z = mapInstance.getZoom();
+        if (!c || z == null) return;
+        setUrlParams({ c: fmtLatLng(c.lat(), c.lng()), z: (Math.round(z * 100) / 100).toString() });
+      });
+      mapInstance.addListener('maptypeid_changed', () => {
+        const t = mapInstance.getMapTypeId();
+        setUrlParams({ b: t && t !== google.maps.MapTypeId.HYBRID ? String(t) : null });
       });
 
       setMap(mapInstance);

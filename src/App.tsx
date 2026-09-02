@@ -2,10 +2,10 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MapContainer } from './components/Map/MapContainer';
 import { LayerControls } from './components/Map/LayerControls';
-import { FeaturePopup, PARCEL_SEARCH_EVENT, OPEN_PARCEL_POPUP_EVENT } from './components/Map/FeaturePopup';
+import { FeaturePopup, PARCEL_SEARCH_EVENT, OPEN_PARCEL_POPUP_EVENT, PARCEL_POPUP_STATE_EVENT } from './components/Map/FeaturePopup';
 import { ForestLossPopup } from './components/Map/ForestLossPopup';
 import { DistAlertPopup } from './components/Map/DistAlertPopup';
-import type { ParcelSearchDetail, OpenParcelPopupDetail } from './components/Map/FeaturePopup';
+import type { ParcelSearchDetail, OpenParcelPopupDetail, ParcelPopupStateDetail } from './components/Map/FeaturePopup';
 import { RadiusOverlay } from './components/Map/RadiusOverlay';
 import { LandingIntro } from './components/Map/LandingIntro';
 import { AddressSearch } from './components/Search/AddressSearch';
@@ -14,6 +14,8 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { useMap } from './hooks/useMap';
 import { useLayers } from './hooks/useLayers';
 import { useSiteContent } from './services/siteContent';
+import { initialUrlState, setUrlParams, fmtLatLng, fmtPairs } from './services/urlState';
+import { layerConfigs } from './config/layers';
 import type { GeocodingResult } from './types';
 import type { LockableControl, Preset } from './config/presets';
 
@@ -52,7 +54,7 @@ export default function App({ preset = null }: AppProps) {
  * Uses a ref to bridge the search callback to the inner content.
  */
 function AppShell({ preset }: { preset: Preset | null }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(initialUrlState.sidebar);
   const placeSelectedRef = useRef<(result: GeocodingResult) => void>(() => {});
   const location = useLocation();
   const onPresetRoute = location.pathname.startsWith('/view/');
@@ -60,6 +62,10 @@ function AppShell({ preset }: { preset: Preset | null }) {
   const lockedSet = useMemo(() => computeLockedSet(preset), [preset]);
   const layersLocked = lockedSet.has('layers');
   const searchLocked = lockedSet.has('search');
+
+  useEffect(() => {
+    setUrlParams({ sb: sidebarOpen ? '1' : null });
+  }, [sidebarOpen]);
 
   const headerEl = (
     <Header
@@ -79,7 +85,11 @@ function AppShell({ preset }: { preset: Preset | null }) {
   );
 
   return (
-    <MapContainer header={headerEl} initialView={preset?.initialView}>
+    <MapContainer
+      header={headerEl}
+      initialView={initialUrlState.view ?? preset?.initialView}
+      initialMapTypeId={initialUrlState.basemap ?? undefined}
+    >
       <AppContent
         sidebarOpen={sidebarOpen}
         placeSelectedRef={placeSelectedRef}
@@ -102,13 +112,67 @@ interface AppContentProps {
 
 function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: AppContentProps) {
   const { map } = useMap();
-  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange } = useLayers(map, preset?.layers);
+  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi } =
+    useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi);
 
-  const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(initialUrlState.search);
   const { content: siteContent } = useSiteContent();
+
+  // --- URL mirroring: layer visibility + per-layer settings ---
+  useEffect(() => {
+    const visibleIds = layers.filter(l => l.visible && !l.config.placeholder).map(l => l.config.id);
+    // Omit `l` when it matches the defaults (config, or the preset's list) —
+    // keeps plain links short; the server treats "absent" the same way.
+    const defaultIds = preset?.layers ?? layerConfigs.filter(c => c.visible && !c.placeholder).map(c => c.id);
+    const isDefault =
+      visibleIds.length === defaultIds.length && visibleIds.every(id => defaultIds.includes(id));
+    const rasterIds = new Set(
+      layers.filter(l => l.config.layerType === 'raster' || l.config.layerType === 'dynamic-raster').map(l => l.config.id),
+    );
+    setUrlParams({
+      l: isDefault ? null : visibleIds.join(','),
+      o: fmtPairs(
+        layers
+          .filter(l => rasterIds.has(l.config.id) && l.opacity != null && l.opacity !== (l.config.defaultOpacity ?? 0.7))
+          .map(l => [l.config.id, String(Math.round((l.opacity ?? 0) * 100) / 100)]),
+      ),
+      m: fmtPairs(
+        layers
+          .filter(l => l.vizMode && l.vizMode !== l.config.visualizationModes?.[0]?.id)
+          .map(l => [l.config.id, l.vizMode]),
+      ),
+      s: fmtPairs(layers.filter(l => l.season).map(l => [l.config.id, l.season])),
+      d: fmtPairs(
+        layers
+          .filter(l => l.dateRange && (l.dateRange.start || l.dateRange.end))
+          .map(l => [l.config.id, `${l.dateRange!.start ?? ''}..${l.dateRange!.end ?? ''}`]),
+      ),
+    });
+  }, [layers, preset]);
+
+  // --- URL mirroring: which parcel popup is open ---
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent<ParcelPopupStateDetail>).detail;
+      setUrlParams({ p: d ? fmtLatLng(d.lat, d.lng) : null });
+    };
+    window.addEventListener(PARCEL_POPUP_STATE_EVENT, handler);
+    return () => window.removeEventListener(PARCEL_POPUP_STATE_EVENT, handler);
+  }, []);
+
+  // --- Restore a parcel popup from the URL once parcel data is available ---
+  const restoredParcelRef = useRef(false);
+  const parcelsLoaded = layers.some(l => l.config.id === 'tax-parcels' && l.loaded);
+  useEffect(() => {
+    const target = initialUrlState.parcel ?? initialUrlState.search;
+    if (restoredParcelRef.current || !parcelsLoaded || !target) return;
+    restoredParcelRef.current = true;
+    window.dispatchEvent(new CustomEvent<OpenParcelPopupDetail>(OPEN_PARCEL_POPUP_EVENT, { detail: target }));
+  }, [parcelsLoaded]);
 
   const handlePlaceSelected = useCallback((result: GeocodingResult) => {
     setSearchCenter({ lat: result.lat, lng: result.lng });
+    setUrlParams({ q: fmtLatLng(result.lat, result.lng) });
     // Open the tabbed parcel popup (same as clicking a parcel on the map)
     window.dispatchEvent(new CustomEvent<OpenParcelPopupDetail>(OPEN_PARCEL_POPUP_EVENT, {
       detail: { lat: result.lat, lng: result.lng },
@@ -140,7 +204,7 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
       <DistAlertPopup layers={layers} />
 
       {/* Admin-editable welcome box (only on the main landing view, not preset embeds) */}
-      {!preset && <LandingIntro html={siteContent.landing_intro.html} />}
+      {!preset && <LandingIntro html={siteContent.landing_intro.html} defaultDismissed={initialUrlState.hasState} />}
 
       {!layersLocked && (
         <Sidebar open={sidebarOpen}>
@@ -151,6 +215,7 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
             onSetLayerOpacity={setLayerOpacity}
             onSetDynamicTileUrl={setDynamicRasterTileUrl}
             onSetLayerDateRange={setLayerDateRange}
+            onSetLayerUi={setLayerUi}
           />
         </Sidebar>
       )}

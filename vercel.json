@@ -1,13 +1,48 @@
 {
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/admin/categories",
-      "destination": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config"
+      "src": "/api/admin/categories",
+      "dest": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config"
     },
     {
-      "source": "/api/admin/content",
-      "destination": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config/content"
+      "src": "/api/admin/content",
+      "dest": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config/content"
     },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    {
+      "src": "/api/og",
+      "dest": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/og-image"
+    },
+    {
+      "src": "/",
+      "has": [
+        {
+          "type": "query",
+          "key": "c"
+        }
+      ],
+      "dest": "/api/share?path=/"
+    },
+    {
+      "src": "/view/([^/]+)",
+      "has": [
+        {
+          "type": "query",
+          "key": "c"
+        }
+      ],
+      "dest": "/api/share?path=/view/$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/share.ts": {
+      "includeFiles": "dist/**/*.html"
+    }
+  }
 }

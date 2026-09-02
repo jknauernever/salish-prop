@@ -69,6 +69,8 @@ export function LandingIntroCard({ html, onClose, className = '' }: LandingIntro
 
 interface LandingIntroProps {
   html: string;
+  /** Start collapsed to the pill (e.g. when the visitor arrived via a shared link). */
+  defaultDismissed?: boolean;
 }
 
 /**
@@ -77,8 +79,8 @@ interface LandingIntroProps {
  * for the browser tab (sessionStorage) and a small "About this map" pill lets
  * visitors bring it back.
  */
-export function LandingIntro({ html }: LandingIntroProps) {
-  const [dismissed, setDismissed] = useState<boolean>(readDismissed);
+export function LandingIntro({ html, defaultDismissed = false }: LandingIntroProps) {
+  const [dismissed, setDismissed] = useState<boolean>(() => defaultDismissed || readDismissed());
 
   if (isBlankHtml(html)) return null;
 

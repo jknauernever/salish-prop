@@ -13,6 +13,7 @@
 - [Spatial Query System](#spatial-query-system)
 - [Property Popup (FeaturePopup)](#property-popup-featurepopup)
 - [Preset Views](#preset-views)
+- [Shareable URLs & Link Previews](#shareable-urls--link-previews)
 - [Admin Tool](#admin-tool)
 - [NDVI / Vegetation Analysis](#ndvi--vegetation-analysis)
 - [Cloud Functions](#cloud-functions)
@@ -377,6 +378,51 @@ The solution is two pieces working together:
 2. Add an entry to the `presets` record. Use layer IDs from [`src/config/layers.ts`](src/config/layers.ts).
 3. `npm run build` to verify the preset HTML generates correctly under `dist/view/{name}/index.html`.
 4. Deploy. The route `https://your-domain/view/{name}` immediately works.
+
+---
+
+## Shareable URLs & Link Previews
+
+Everything a visitor can change on the map is mirrored into the query string, so the address bar is always a link to exactly that view. The header **Share** button copies it (or opens the OS share sheet on phones). Implemented in [`src/services/urlState.ts`](src/services/urlState.ts); writes are debounced and use `history.replaceState`, so the back button is untouched.
+
+| Param | Meaning | Example |
+|---|---|---|
+| `c` | center `lat,lng` | `c=48.60500,-123.00000` |
+| `z` | zoom | `z=10.8` |
+| `b` | basemap (omitted when hybrid) | `b=roadmap` |
+| `l` | visible layer ids, comma-separated (`l=` = none; absent = defaults, or the preset's layers on `/view/*`). Omitted while the selection equals the defaults. | `l=tax-parcels,friends-bull-kelp` |
+| `o` | raster opacity overrides | `o=ndvi-naip:0.5` |
+| `m` | visualization mode for multi-mode rasters | `m=opera-dist-alert:status` |
+| `s` | Sentinel-2 season | `s=ndvi-sentinel:summer-2024` |
+| `d` | date filter for observation layers (`start..end`, either side optional) | `d=marbled-murrelet-obs:2025-01-01..` |
+| `p` | open parcel popup at `lat,lng` (restored once parcel data loads) | `p=48.53470,-123.01730` |
+| `q` | address-search center (draws the ¼-mile radius) | `q=48.53470,-123.01730` |
+| `sb` | sidebar open | `sb=1` |
+
+Works on `/` and on `/view/:preset` (URL params override the preset's initial view and layers). When a visitor arrives via a link that carries map state, the landing intro box starts collapsed to its pill so the shared view is unobstructed.
+
+### Link previews (Open Graph)
+
+Pasting a share link into iMessage, Slack, Facebook, etc. unfurls with a preview of *that* view:
+
+- **`api/share.ts`** (Vercel Node function) — `vercel.json` uses `routes` (not `rewrites`, which run after the static filesystem check and so never fire for `/`) to send `/` and `/view/:preset` **only when the request carries a `c` param** to this function, ahead of the filesystem handler. It fetches the built SPA shell, injects `og:*` / `twitter:*` tags (title, description listing the visible layers, `og:url`, and an `og:image` pointing at `/api/og` with the view params) and returns the HTML. Plain visits are still served statically.
+- **`/api/og`** → rewritten to the **`og-image` Cloud Function** ([`cloud-functions/og-image/main.py`](cloud-functions/og-image/main.py), Python + Pillow). Renders a 1200×630 PNG: Google **Static Maps** at the shared center/zoom/basemap using the same Map ID (so the cloud style — hidden commercial POI labels — matches the live map), a marker on the shared property, the Friends of the San Juans logo top-right, and a small "Salish Sea Explorer" label bottom-left. Data layers themselves are not drawn (Static Maps can't render our GeoJSON); the `og:description` names them instead. Cached for a week per unique query. (An `@vercel/og` edge version was tried first; Vercel's edge bundler rejects it in this ESM project.)
+- **`api/_shareState.ts`** — server-side parser for the same query keys (imports `src/config/layers.ts` for layer names).
+- **Abuse guard (signed image URLs):** `api/share.ts` signs the image params (HMAC-SHA256 over the sorted `k=v` pairs, hex, first 32 chars → `sig`) with `OG_SIGNING_SECRET`; the `og-image` function rejects any request carrying view params without a valid `sig` (HTTP 403). The bare default image (no params, used by `index.html`) stays unsigned. So crawlers can fetch minted URLs, copied URLs only replay a cached image, and nobody can burn Static Maps quota with made-up coordinates. The secret lives on Vercel (`OG_SIGNING_SECRET`, all envs) and on the function (`--update-env-vars OG_SIGNING_SECRET=…`).
+- **Cost guards:** Static Maps is free for the first 10,000 requests/month, then $2 per 1,000. A per-day quota cap on the Static Maps API in the GCP project bounds worst-case spend, and a $10/month billing budget on the project emails at 50% and 100%. When the cap is hit, Google refuses the map and the function falls back to the branded gradient card — the shared link itself keeps working.
+- **Key:** `GOOGLE_STATIC_MAPS_KEY` is an env var on the `og-image` function only (server-side; restricted to the Static Maps API, no referrer restriction since it's never exposed to browsers). Created in the `salish-sea-property-mapper` GCP project as "Static Maps (server, OG previews)". Without it the image falls back to a branded gradient card. (The same value is also stored on Vercel as `GOOGLE_STATIC_MAPS_KEY`, unused by the current code but kept for a future Vercel-side renderer.)
+
+Deploy the image function:
+
+```bash
+gcloud functions deploy og-image --gen2 --region us-west1 --project salish-sea-property-mapper \
+  --runtime python311 --entry-point og_image --trigger-http --allow-unauthenticated \
+  --source cloud-functions/og-image --memory 512M --set-env-vars GOOGLE_STATIC_MAPS_KEY=<key>
+```
+
+- `index.html` carries default OG tags for the bare landing page (`/api/og` with no params = default view).
+
+Test a preview with e.g. `https://salishsea.knauernever.com/api/og?c=48.5347,-123.0173&z=15&l=friends-bull-kelp&p=48.5347,-123.0173`, or paste a share link into [opengraph.xyz](https://www.opengraph.xyz/).
 
 ---
 

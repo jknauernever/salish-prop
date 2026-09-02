@@ -148,6 +148,14 @@ export interface OpenParcelPopupDetail {
   lng: number;
 }
 
+// Fired whenever the parcel popup opens (with its anchor) or is closed (null),
+// so the URL can mirror which property is being viewed.
+export const PARCEL_POPUP_STATE_EVENT = 'parcel-popup-state';
+export type ParcelPopupStateDetail = { lat: number; lng: number } | null;
+function emitParcelPopupState(detail: ParcelPopupStateDetail) {
+  window.dispatchEvent(new CustomEvent<ParcelPopupStateDetail>(PARCEL_POPUP_STATE_EVENT, { detail }));
+}
+
 interface FeaturePopupProps {
   layers: LayerState[];
   propertyClick?: boolean;
@@ -163,13 +171,32 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
   const layersRef = useRef(layers);
   layersRef.current = layers;
 
+  // The InfoWindow lives for the lifetime of the map. It must NOT be torn
+  // down when `layers` changes — layer loads and toggles happen constantly
+  // (including right after a popup is restored from a shared URL), and
+  // closing the window on every change made popups vanish.
   useEffect(() => {
     if (!map) return;
 
-    infoWindowRef.current = new google.maps.InfoWindow();
+    const iw = new google.maps.InfoWindow();
+    infoWindowRef.current = iw;
 
     // Clear parcel highlight when popup is closed
-    infoWindowRef.current.addListener('closeclick', clearFeatureHighlight);
+    iw.addListener('closeclick', () => {
+      clearFeatureHighlight();
+      emitParcelPopupState(null);
+    });
+
+    return () => {
+      iw.close();
+      clearFeatureHighlight();
+      if (infoWindowRef.current === iw) infoWindowRef.current = null;
+    };
+  }, [map]);
+
+  // Click handlers are re-registered whenever the set of Data layers changes.
+  useEffect(() => {
+    if (!map) return;
 
     const listeners: google.maps.MapsEventListener[] = [];
 
@@ -237,8 +264,6 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
 
     return () => {
       listeners.forEach(l => google.maps.event.removeListener(l));
-      infoWindowRef.current?.close();
-      clearFeatureHighlight();
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
       delete (window as unknown as Record<string, unknown>).__openNdviInfo;
       if (popupHandler) {
@@ -783,6 +808,7 @@ function handleParcelClick(
   infoWindowRef.current?.setContent(content);
   infoWindowRef.current?.setPosition(event.latLng!);
   infoWindowRef.current?.open(map);
+  if (event.latLng) emitParcelPopupState({ lat: event.latLng.lat(), lng: event.latLng.lng() });
 
   const domReadyListener = google.maps.event.addListener(
     infoWindowRef.current!, 'domready', () => {

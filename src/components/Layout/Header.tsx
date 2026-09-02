@@ -1,4 +1,5 @@
 import { type ReactNode, useState, useRef, useEffect } from 'react';
+import { ShareButton } from './ShareButton';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -70,6 +71,7 @@ export function Header({ onToggleSidebar, sidebarOpen, searchBar, hideSidebarTog
 
       <div className="ml-auto flex items-center gap-4 shrink-0">
         {extraAction}
+        <ShareButton />
         {/* Resources dropdown */}
         <div ref={menuRef} className="relative">
           <button
