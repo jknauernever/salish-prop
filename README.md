@@ -12,6 +12,7 @@
 - [Map Layers](#map-layers)
 - [Spatial Query System](#spatial-query-system)
 - [Property Popup (FeaturePopup)](#property-popup-featurepopup)
+- [Nearshore Habitat in Property Popups](#nearshore-habitat-in-property-popups)
 - [Preset Views](#preset-views)
 - [Shareable URLs & Link Previews](#shareable-urls--link-previews)
 - [Admin Tool](#admin-tool)
@@ -284,6 +285,27 @@ Building count and total footprint sq ft. Lists individual buildings with their 
 - **Percentile circle** — compares parcel greenness to all other parcels on the same island (Tax_Area field)
 - **Rating label** — Well Below Average (0–9%), Below Average (10–24%), Average (25–49%), Above Average (50–74%), Well Above Average (75–89%), Among the Greenest (90–100%)
 - **Land cover breakdown** — stacked bar chart: Water (blue), Bare/Paved (red), Grass/Low Plants (orange), Shrubs/Garden (yellow-green), Trees (green), Dense Forest (dark green)
+
+---
+
+## Nearshore Habitat in Property Popups
+
+The property popup's **Nearshore Habitat** card (Summary tab) and the **Shoreline** tab report bull kelp, eelgrass, forage fish spawning beaches, and herring spawning grounds near the parcel. These come from a **precomputed per-parcel file**, not live spatial queries, so they appear for every property regardless of which layers are switched on (the old live query only worked if the 400 MB kelp layer happened to be loaded, and used a 100 ft buffer that missed offshore beds).
+
+| Dataset | Rule | Reported |
+|---|---|---|
+| Bull kelp | within **500 ft** of the parcel | grid-cell count, acres (from geometry), nearest distance |
+| Eelgrass deep-water edge | within **500 ft** | segment count, length, mean/max depth, nearest distance, survey sites |
+| Documented forage fish spawning beaches | within **100 ft** | beach names, species (surf smelt / sand lance), distance |
+| Potential forage fish spawning beaches | within **100 ft** | count |
+| Herring spawning grounds | **adjacent** (touching, 10 ft tolerance) | ground names |
+| Friends geomorphic shoreform | nearest segment within **50 ft** | shore type (`PIAT_shoreforms`), forage fish habitat flag, PIAT protection/restoration priority, SMP designation, public ownership |
+
+- **Bull kelp geometry:** the Friends/DNR 2007 kelp file is a raster converted to vectors — 228,964 polygons with a median size of **one square foot** (400 MB). Drawn as-is it is invisible at every zoom. [`scripts/build-kelp-patches.py`](scripts/build-kelp-patches.py) buffers the cells 20 ft, dissolves, shrinks 12 ft, simplifies, and writes `public/data/friends-bull-kelp-patches.geojson` (patches with `acres`), which is what the Bull Kelp layer and the stats script now use. Re-run it only if Friends supply new kelp data.
+- **Script:** [`scripts/compute-nearshore-stats.py`](scripts/compute-nearshore-stats.py) (shapely + pyproj; ~2 min). Reprojects everything to EPSG:2926 (feet), runs STRtree lookups, writes `public/data/nearshore_parcel_stats.json` keyed by parcel **FID** (same key as the NDVI stats). Only parcels with at least one hit are stored (~5,900 of 19,020; ~700 KB). Distances live in the file's `meta` and the popup copy reads them from there, so changing the constants at the top of the script and re-running is all that's needed to retune.
+- **Shoreforms:** `src/config/shoreforms.ts` holds the twelve shore-type codes with labels, colors, and the handout descriptions. It drives the Shoreline Geology layer's per-type symbology and legend and the popup's **Shoreline Type** card (which replaces the Beamer geo-unit description whenever a Friends shoreform lies within 50 ft; the Beamer text remains as fallback). Codes HFB / HFBE / PFB are not in the handout and are labeled per Coastal Geologic Services convention — confirm with Friends.
+- **Client code:** `src/services/nearshoreStats.ts` (fetch + cache), `nearshoreFromStats()` in `src/services/popupSpatial.ts`, and the card builders in `FeaturePopup.tsx`. The explanatory kelp / eelgrass sentences are the client's wording from the Sept 2026 revision doc.
+- Re-run the script whenever `Tax_Parcels.geojson` or any of the five Friends files change.
 
 ---
 
@@ -573,6 +595,10 @@ gcloud functions deploy admin-config --gen2 --region us-west1 --project salish-s
 - All `id` values across the entire tree must be unique. Duplicates are rejected with a descriptive `400` listing them.
 
 **Service account:** the function runs as `643709945717-compute@developer.gserviceaccount.com` with `roles/storage.objectAdmin` scoped to `gs://salish-ndvi-tiles`. This is the only identity allowed to write to the tree file.
+
+### Layer info panels & legends
+
+Every layer row has an **ⓘ** button. The panel it opens shows the layer **title**, a plain-language description (`standardMessage` — for the Friends layers this is the text from the Friends "Shoreline Map Set Descriptions" handout), a **Source:** line (`sourceCredit`), and an optional "Learn more" link (`sourceUrl`). Layers styled by attribute can declare a categorical `legend` (`{ type: 'categories', items: [{ label, color, shape? }] }`) that renders as swatches under the row while the layer is on; raster layers use the existing `gradient` legend. All of this lives in [`src/config/layers.ts`](src/config/layers.ts).
 
 ### Adding a new admin module (future)
 

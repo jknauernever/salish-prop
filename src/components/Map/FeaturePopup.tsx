@@ -4,7 +4,9 @@ import { useMap } from '../../hooks/useMap';
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
-import { countIntersectingBuildings, queryShorelineHabitat, queryNearshoreVegetation } from '../../services/popupSpatial';
+import { countIntersectingBuildings, queryShorelineHabitat, nearshoreFromStats } from '../../services/popupSpatial';
+import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
+import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
 import { fetchNearbyBirdSummary } from '../../services/ebird';
 import type { BirdSpeciesSummary } from '../../services/ebird';
@@ -689,6 +691,21 @@ function fmtAcres(value: unknown): string {
   return n % 1 === 0 ? String(n) : n.toFixed(2);
 }
 
+const URL_RE = /\b((?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,;:)\]])/gi;
+
+/**
+ * Escape a value for HTML, then turn any http(s):// or www. URLs inside it
+ * into links that open in a new tab. Used for every property value we
+ * print in a popup — e.g. the Friends restoration projects' LINK field.
+ */
+function linkify(value: string): string {
+  const escaped = esc(value);
+  return escaped.replace(URL_RE, (url) => {
+    const href = url.startsWith('www.') ? `https://${url}` : url;
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#0D4F4F;text-decoration:underline;word-break:break-all;">${url}</a>`;
+  });
+}
+
 function esc(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
@@ -876,27 +893,37 @@ function handleParcelClick(
   if (parcelGeoFeature) {
     requestAnimationFrame(() => {
       const buildingResult = runBuildingQuery(parcelGeoFeature, allLayers, popupId);
-      const { shorelineResult, vegResult } = runShorelineQuery(parcelGeoFeature, allLayers, popupId);
-      // Initial render without NDVI or address data
-      renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
-
       const fid = String(props.FID ?? '');
-      // Load NDVI stats and address data in parallel
+      const sEl = document.getElementById(`${popupId}-shoreline`);
+      if (sEl) sEl.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Checking nearshore habitat…</p></div>`;
+      // Initial render without nearshore, NDVI or address data
+      renderSummary(popupId, props, buildingResult, null, null, null, null, null);
+
+      // Nearshore habitat comes from the precomputed per-parcel stats file, so
+      // it works whether or not the kelp / eelgrass / forage layers are on.
+      const nearshorePromise = getNearshoreStats().then(stats =>
+        nearshoreFromStats(fid ? stats?.parcels[fid] : undefined, stats?.meta ?? DEFAULT_NEARSHORE_META),
+      );
       const ndviPromise = fid ? getNdviStats() : Promise.resolve({} as Record<string, NdviStats>);
       const addrPromise = pin ? getAddressLookup() : Promise.resolve({} as Record<string, AddressEntry[]>);
 
-      Promise.all([ndviPromise, addrPromise]).then(([stats, addrLookup]) => {
-        const ndvi = fid ? (stats[fid] ?? null) : null;
-        let island: IslandPercentile | null = null;
-        if (fid) {
-          const parcelLayer = allLayers.find(l => l.config.id === 'tax-parcels');
-          if (parcelLayer?.geojsonData) {
-            const index = buildIslandIndex(stats, parcelLayer.geojsonData);
-            island = index.get(fid) ?? null;
+      nearshorePromise.then(vegResult => {
+        const { shorelineResult } = runShorelineQuery(parcelGeoFeature, allLayers, popupId, vegResult);
+        renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
+
+        Promise.all([ndviPromise, addrPromise]).then(([stats, addrLookup]) => {
+          const ndvi = fid ? (stats[fid] ?? null) : null;
+          let island: IslandPercentile | null = null;
+          if (fid) {
+            const parcelLayer = allLayers.find(l => l.config.id === 'tax-parcels');
+            if (parcelLayer?.geojsonData) {
+              const index = buildIslandIndex(stats, parcelLayer.geojsonData);
+              island = index.get(fid) ?? null;
+            }
           }
-        }
-        const addrEntries = pin ? (addrLookup[pin] || null) : null;
-        renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries);
+          const addrEntries = pin ? (addrLookup[pin] || null) : null;
+          renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries);
+        });
       });
     });
   } else {
@@ -949,31 +976,25 @@ function runShorelineQuery(
   parcel: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
   layers: LayerState[],
   popupId: string,
+  vegResult: NearshoreVegetationResult,
 ): ShorelineAndVegResult {
   const el = document.getElementById(`${popupId}-shoreline`);
   const hasFishLayer = layers.some(l => l.config.category === 'fish-habitat' && l.loaded && l.geojsonData);
 
-  // Always query nearshore vegetation (independent of fish layers)
-  const vegResult = queryNearshoreVegetation(parcel, layers);
-  const hasVegData = vegResult.bullKelp.present || vegResult.eelgrass.present;
+  // Nearshore habitat always renders (it comes from the precomputed stats)
+  const vegHtml = (vegResult.shoreform ? buildShoreformCard(vegResult.shoreform) : '') + buildNearshoreVegetationHtml(vegResult);
 
   if (!hasFishLayer) {
     if (el) {
-      const vegHtml = hasVegData ? buildNearshoreVegetationHtml(vegResult) : '';
-      el.innerHTML = vegHtml + `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Turn on a Fish Habitat layer in the sidebar to see shoreline analysis for this property.</p></div>`;
+      el.innerHTML = vegHtml + `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Turn on a Fish Habitat layer in the sidebar to see fish use scores for this shoreline.</p></div>`;
     }
     return { shorelineResult: null, vegResult };
   }
 
   const result = queryShorelineHabitat(parcel, layers);
   if (el) {
-    if (result.species.length === 0 && !hasVegData) {
-      el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">No shoreline adjacent to this property.</p></div>`;
-    } else {
-      const vegHtml = hasVegData ? buildNearshoreVegetationHtml(vegResult) : '';
-      const shorelineHtml = result.species.length > 0 ? buildShorelineTab(result) : '';
-      el.innerHTML = vegHtml + shorelineHtml;
-    }
+    const shorelineHtml = result.species.length > 0 ? buildShorelineTab(result) : '';
+    el.innerHTML = vegHtml + shorelineHtml;
   }
   return { shorelineResult: result, vegResult };
 }
@@ -1464,7 +1485,7 @@ function buildPropertyTab(fields: { label: string; value: string }[], addressRow
         ${fields.map(f => `
           <tr>
             <td style="color:${COLOR.mid};padding:5px 12px 5px 0;vertical-align:top;white-space:nowrap;">${esc(f.label)}</td>
-            <td style="color:${COLOR.dark};padding:5px 0;word-break:break-word;">${esc(f.value)}</td>
+            <td style="color:${COLOR.dark};padding:5px 0;word-break:break-word;">${linkify(f.value)}</td>
           </tr>
         `).join('')}
       </table>
@@ -1498,8 +1519,10 @@ function renderSummary(
 
   const cards: string[] = [];
 
-  // --- Shoreline Description ---
-  if (shorelineResult?.shorelineDescription) {
+  // --- Shoreline Description: Friends geomorphic shoreform first, Beamer geo-unit as fallback ---
+  if (vegResult?.shoreform) {
+    cards.push(buildShoreformCard(vegResult.shoreform));
+  } else if (shorelineResult?.shorelineDescription) {
     cards.push(buildShorelineDescriptionCard(shorelineResult.shorelineDescription));
   }
 
@@ -1600,6 +1623,45 @@ function buildAtAGlanceCard(
   `;
 }
 
+const HML: Record<string, string> = { H: 'High', M: 'Medium', L: 'Low', None: 'None', Y: 'Yes', N: 'No', P: 'Potential' };
+// San Juan County Shoreline Master Program environment designations
+const SHORE_DESIG: Record<string, string> = { N: 'Natural', C: 'Conservancy', R: 'Rural', U: 'Urban', A: 'Aquatic' };
+
+/** Friends of the San Juans geomorphic shoreform for the shoreline nearest this parcel. */
+function buildShoreformCard(sf: NonNullable<NearshoreVegetationResult['shoreform']>): string {
+  const type = SHOREFORM_TYPES[sf.code];
+  const label = type?.label ?? sf.code ?? 'Unclassified';
+  const color = type?.color ?? COLOR.teal;
+  const description = type?.description ?? '';
+
+  const chip = (k: string, v: string) => v
+    ? `<span style="display:inline-flex;align-items:baseline;gap:4px;padding:3px 8px;background:white;border:1px solid ${COLOR.border};border-radius:999px;font-size:12px;color:${COLOR.mid};"><span>${k}</span><strong style="color:${COLOR.dark};">${esc(v)}</strong></span>`
+    : '';
+  const chips = [
+    chip('Forage fish habitat', HML[sf.ffhab] ?? sf.ffhab),
+    chip('Protection priority', HML[sf.protection] ?? sf.protection),
+    chip('Restoration priority', HML[sf.restoration] ?? sf.restoration),
+    chip('SMP designation', SHORE_DESIG[sf.shoreDesig] ?? sf.shoreDesig),
+    sf.publicOwnership ? chip('Ownership', 'Some public') : '',
+  ].filter(Boolean).join(' ');
+
+  return `
+    <div style="${CARD}">
+      ${sectionHeading('Shoreline Type')}
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="display:inline-block;width:26px;height:6px;border-radius:3px;background:${color};flex-shrink:0;"></span>
+        <span style="font-size:17px;font-weight:700;color:${COLOR.dark};">${esc(label)}</span>
+        ${sf.distFt > 0 ? `<span style="font-size:12px;color:${COLOR.light};">${sf.distFt} ft from parcel line</span>` : ''}
+      </div>
+      ${description ? `<p style="${BODY};margin-bottom:10px;">${esc(description)}</p>` : ''}
+      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">${chips}</div>` : ''}
+      <p style="font-size:12px;color:${COLOR.mid};margin:6px 0 0;line-height:1.4;">
+        Geomorphic shoreform mapping by Friends of the San Juans (Coastal Geologic Services, 2012). Coastal processes affect each shore form differently, resulting in different management concerns and priorities.
+      </p>
+    </div>
+  `;
+}
+
 function buildShorelineDescriptionCard(desc: NonNullable<ShorelineQueryResult['shorelineDescription']>): string {
   const name = desc.name.trim();
   const geoUnit = desc.geoUnit.trim();
@@ -1650,160 +1712,106 @@ function buildShorelineDescriptionCard(desc: NonNullable<ShorelineQueryResult['s
   `;
 }
 
+const KELP_TEXT = `Bull (canopy) kelp is a highly productive macroalgae that grows on rocky substrates in relatively high energy environments. Bull kelp absorbs carbon, mitigates wave energy and provides vital nursery habitat for coastal marine species.`;
+const EELGRASS_TEXT = `Eelgrass, a flowering marine plant, requires sandy substrate, clear, clean and relatively protected waters and plenty of light to grow. Eelgrass provides habitat for a range of invertebrates, fish and wildlife, including rearing out-migrating juvenile salmon and spawning Pacific herring. It also sequesters carbon and helps buffer the impacts of waves and coastal erosion.`;
+const FORAGE_TEXT = `Surf smelt and Pacific sand lance lay their eggs in the upper beach on sand and fine gravel. These small fish feed salmon, seabirds and marine mammals, so spawning beaches are among the most important — and most easily damaged — shoreline habitats.`;
+const HERRING_TEXT = `Pacific herring spawn on eelgrass and algae in sheltered bays. Herring are a keystone forage fish, a primary food for salmon, seabirds and marine mammals.`;
+
+function forageSummary(f: NearshoreVegetationResult['forage']): string {
+  const docs = f.documented;
+  if (docs.length > 0) {
+    const species = new Set<string>();
+    for (const d of docs) {
+      if (d.smelt) species.add('surf smelt');
+      if (d.sandLance) species.add('Pacific sand lance');
+      if (!d.smelt && !d.sandLance && d.species) species.add(d.species.toLowerCase());
+    }
+    const names = docs.map(d => d.name).filter(Boolean);
+    const sp = species.size > 0 ? ` (${Array.from(species).join(', ')})` : '';
+    return `Documented spawning beach${docs.length > 1 ? 'es' : ''}${names.length ? `: ${esc(names.slice(0, 3).join(', '))}` : ''}${esc(sp)}`;
+  }
+  if (f.potentialCount > 0) return 'Potential spawning beach — substrate suitable for surf smelt or sand lance';
+  return '';
+}
+
 function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
-  const { bullKelp, eelgrass } = veg;
+  const { bullKelp, eelgrass, forage, herring, distances } = veg;
   const hasKelp = bullKelp.present;
   const hasEelgrass = eelgrass.present;
+  const anyVeg = hasKelp || hasEelgrass;
 
   const dot = (color: string) =>
-    `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;"></span>`;
+    `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;flex-shrink:0;"></span>`;
   const greenDot = dot('#22C55E');
   const grayDot = dot(COLOR.border);
+
+  const row = (present: boolean, label: string, detail?: string) => `
+    <div style="display:flex;align-items:flex-start;padding:8px 10px;background:${present ? '#F0FDF4' : COLOR.bg};border-radius:6px;border:1px solid ${present ? '#BBF7D0' : 'transparent'};">
+      <span style="margin-top:4px;">${present ? greenDot : grayDot}</span>
+      <span style="font-size:13px;color:${present ? '#166534' : COLOR.mid};line-height:1.4;">
+        <strong>${label}</strong>${detail ? ` &mdash; ${detail}` : ''}
+      </span>
+    </div>`;
+
+  const kelpDetail = hasKelp
+    ? `${describeKelpExtent(bullKelp.totalAcres).toLowerCase().replace(/ kelp /, ' ')} within ${distances.kelpFt} ft${bullKelp.distFt !== null ? ` (nearest ${bullKelp.distFt} ft)` : ''}`
+    : `none mapped within ${distances.kelpFt} ft`;
+  const eelDetail = hasEelgrass
+    ? `${describeEelgrassExtent(eelgrass.segmentCount, eelgrass.totalLengthFt).toLowerCase().replace(/^eelgrass /, '')} within ${distances.eelgrassFt} ft${eelgrass.distFt !== null ? ` (nearest ${eelgrass.distFt} ft)` : ''}`
+    : `deep-water edge not mapped within ${distances.eelgrassFt} ft`;
+  const forageDetail = forage.present ? forageSummary(forage) : `none mapped within ${distances.forageFt} ft`;
+  const herringDetail = herring.present
+    ? `adjacent to ${esc(herring.names.join(', '))}`
+    : 'not adjacent to a mapped spawning ground';
+
+  const rows = `
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+      ${row(hasKelp, 'Bull kelp', kelpDetail)}
+      ${row(hasEelgrass, 'Eelgrass', eelDetail)}
+      ${row(forage.present, 'Forage fish spawning beach', forageDetail)}
+      ${row(herring.present, 'Herring spawning ground', herringDetail)}
+    </div>`;
+
+  const paragraphs: string[] = [];
+  if (hasKelp) paragraphs.push(`<p style="${BODY};line-height:1.5;margin-bottom:8px;"><strong style="color:${COLOR.teal};">Bull kelp.</strong> ${KELP_TEXT}</p>`);
+  if (hasEelgrass) paragraphs.push(`<p style="${BODY};line-height:1.5;margin-bottom:8px;"><strong style="color:${COLOR.teal};">Eelgrass.</strong> ${EELGRASS_TEXT}</p>`);
+  if (forage.present) paragraphs.push(`<p style="${BODY};line-height:1.5;margin-bottom:8px;"><strong style="color:${COLOR.teal};">Forage fish.</strong> ${FORAGE_TEXT}</p>`);
+  if (herring.present) paragraphs.push(`<p style="${BODY};line-height:1.5;margin-bottom:8px;"><strong style="color:${COLOR.teal};">Herring.</strong> ${HERRING_TEXT}</p>`);
+  if (!anyVeg) {
+    paragraphs.push(`<p style="${BODY};line-height:1.5;color:${COLOR.mid};margin-bottom:8px;">
+      No bull kelp or eelgrass beds were identified within ${distances.kelpFt} ft of this property in Friends of the San Juans survey data.
+      This does not necessarily indicate poor condition &mdash; these marine plants require specific substrate, depth, and light conditions.
+      Kelp needs rocky substrate and higher energy environments and eelgrass needs soft sediment in protected, shallow waters.
+    </p>`);
+  }
+
+  const significance = anyVeg ? `
+    <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#F0FDFA 0%,#ECFDF5 100%);border-radius:10px;border:1px solid #99F6E4;border-left:4px solid ${COLOR.teal};">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
+      <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
+        ${hasEelgrass ? `Eelgrass is protected under <strong>Washington State law</strong> and San Juan County's <strong>Environmentally Sensitive Areas</strong> code. ` : ''}
+        ${hasKelp ? `Bull kelp is a <strong>priority habitat</strong> for the Washington Department of Fish &amp; Wildlife and is protected under <strong>San Juan County code</strong>. ` : ''}
+        Activities that increase sedimentation, shading, or nutrient runoff near this property can affect these habitats.
+      </p>
+    </div>` : '';
 
   const learnMoreBlock = `
     <div style="margin-top:14px;padding:12px 14px;background:#F8FAFC;border-radius:8px;border:1px solid ${COLOR.border};">
       <p style="font-size:13px;color:${COLOR.dark};line-height:1.6;margin:0;">
         Want to know how you can help protect the shoreline around your property?
-        <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">Read our guide for shoreline property owners</a>
+        <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">Read the guide for shoreline property owners</a>
         &mdash; it's full of practical ideas from your neighbors in the San Juans. You can also
         <a href="/reports/kelp-habitat-value-and-threats.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">learn more about kelp</a>
         and why these underwater forests matter so much to the health of our islands.
       </p>
-    </div>
-  `;
+    </div>`;
 
-  // --- Both present ---
-  if (hasKelp && hasEelgrass) {
-    return `
-      <div style="${CARD}">
-        ${sectionHeading('Nearshore Ecology')}
-        <div style="padding:10px 12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
-          <p style="font-size:13px;font-weight:600;color:#166534;margin:0 0 6px;">
-            ${greenDot}Bull Kelp &amp; Eelgrass Present
-          </p>
-          <p style="${BODY};color:#15803D;line-height:1.5;">
-            Both bull kelp and eelgrass beds are found within 100 ft of this property, indicating a
-            <strong>high-quality nearshore environment</strong> that supports diverse marine life.
-          </p>
-        </div>
-        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
-          <strong style="color:${COLOR.teal};">Eelgrass</strong> provides essential nursery habitat for juvenile salmon,
-          forage fish, and Dungeness crab. Eelgrass meadows help stabilize sediments, improve water clarity by filtering
-          nutrients and pollutants, and sequester carbon at rates comparable to terrestrial forests. They also buffer
-          shorelines from wave energy and erosion.
-        </p>
-        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
-          <strong style="color:${COLOR.teal};">Bull kelp</strong> forests are a critical component of the San Juan Islands
-          marine ecosystem. Kelp provides physical habitat structure for rockfish, lingcod, greenling, and
-          invertebrates, and serves as nursery habitat for juvenile fish including salmon. Kelp-derived carbon fuels
-          nearshore food webs, and kelp canopies dampen wave energy, influencing beach sediment composition and habitat
-          suitability for beach-spawning forage fish like surf smelt and sand lance.
-        </p>
-        <div style="position:relative;margin-top:12px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#ECFDF5 0%,#F0FDFA 100%);border-radius:10px;border:1px solid #A7F3D0;border-left:4px solid ${COLOR.teal};">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
-          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
-            The co-occurrence of kelp and eelgrass near this property suggests <strong style="color:${COLOR.teal};">productive waters</strong> with suitable substrate,
-            water clarity, and nutrient conditions. These habitats are protected under San Juan County's <strong>Environmentally
-            Sensitive Areas</strong> code and Washington State's <strong>Priority Habitats and Species Program</strong>.
-          </p>
-        </div>
-        ${learnMoreBlock}
-      </div>
-    `;
-  }
-
-  // --- Only eelgrass ---
-  if (hasEelgrass) {
-    return `
-      <div style="${CARD}">
-        ${sectionHeading('Nearshore Ecology')}
-        <div style="padding:10px 12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;margin-bottom:10px;">
-          <p style="font-size:13px;font-weight:600;color:#115E59;margin:0 0 6px;">
-            ${greenDot}Eelgrass Present
-          </p>
-          <p style="${BODY};color:#0F766E;line-height:1.5;">
-            Eelgrass beds are found within 100 ft of this property.
-          </p>
-        </div>
-        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
-          Eelgrass (<em>Zostera marina</em>) meadows are among the most ecologically valuable habitats in the
-          Salish Sea. They serve as essential nursery grounds for juvenile salmon, Pacific herring, surf smelt, and
-          Dungeness crab. Eelgrass improves water quality by filtering nutrients and trapping sediments, and sequesters
-          carbon at rates up to 35 times faster than tropical rainforests per unit area. These beds also buffer
-          shorelines from wave energy and reduce erosion.
-        </p>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
-          <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;flex:1;">
-            ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
-          </div>
-        </div>
-        <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#F0FDFA 0%,#ECFDF5 100%);border-radius:10px;border:1px solid #99F6E4;border-left:4px solid ${COLOR.teal};">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
-          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
-            Eelgrass is protected under <strong>Washington State law</strong> and San Juan County's <strong>Environmentally Sensitive Areas</strong> code.
-            Activities that increase sedimentation, shading, or nutrient runoff near this property could impact these beds.
-          </p>
-        </div>
-        ${learnMoreBlock}
-      </div>
-    `;
-  }
-
-  // --- Only kelp ---
-  if (hasKelp) {
-    return `
-      <div style="${CARD}">
-        ${sectionHeading('Nearshore Ecology')}
-        <div style="padding:10px 12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
-          <p style="font-size:13px;font-weight:600;color:#166534;margin:0 0 6px;">
-            ${greenDot}Bull Kelp Present
-          </p>
-          <p style="${BODY};color:#15803D;line-height:1.5;">
-            Bull kelp beds are found within 100 ft of this property.
-          </p>
-        </div>
-        <p style="${BODY};line-height:1.5;margin-bottom:8px;">
-          Bull kelp (<em>Nereocystis luetkeana</em>) forests are a cornerstone of the San Juan Islands nearshore
-          ecosystem. They provide essential habitat for rockfish, lingcod, greenling, and numerous invertebrates,
-          and serve as nursery areas for juvenile salmon including chinook, coho, and chum. Kelp-derived carbon is a
-          major driver of nearshore food web productivity, and kelp canopies dampen waves, influencing beach sediment
-          composition and suitability for spawning by forage fish like surf smelt and Pacific sand lance.
-        </p>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
-          <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;flex:1;">
-            ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No eelgrass mapped within 100 ft</span>
-          </div>
-        </div>
-        <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#ECFDF5 0%,#F0FDF4 100%);border-radius:10px;border:1px solid #BBF7D0;border-left:4px solid ${COLOR.teal};">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
-          <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
-            Bull kelp is listed as a <strong>priority habitat</strong> by Washington's Department of Fish &amp; Wildlife and is protected
-            under <strong>San Juan County code</strong>. Threats include sedimentation from land use, boat wake erosion, and climate change.
-          </p>
-        </div>
-        ${learnMoreBlock}
-      </div>
-    `;
-  }
-
-  // --- Neither present ---
   return `
     <div style="${CARD}">
-      ${sectionHeading('Nearshore Ecology')}
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
-        <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;">
-          ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
-        </div>
-        <div style="padding:8px 10px;background:${COLOR.bg};border-radius:6px;">
-          ${grayDot}<span style="font-size:12px;color:${COLOR.mid};">No eelgrass mapped within 100 ft</span>
-        </div>
-      </div>
-      <p style="${BODY};line-height:1.5;color:${COLOR.mid};">
-        No bull kelp or eelgrass beds were identified within 100 ft of this property in Friends of the San Juans
-        survey data. This does not necessarily indicate poor water quality &mdash; these marine plants require specific
-        substrate, depth, and light conditions. Kelp needs rocky substrate and eelgrass needs soft sediment in
-        protected, shallow waters.
-      </p>
+      ${sectionHeading('Nearshore Habitat')}
+      ${rows}
+      ${paragraphs.join('')}
+      ${significance}
       ${learnMoreBlock}
     </div>
   `;
@@ -1969,10 +1977,10 @@ function buildFishCard(result: ShorelineQueryResult): string {
   const topPct = Math.round(top.hrmValue * 100);
 
   const intro = count === 1
-    ? `The shoreline near this property is habitat for ${pill(top.species)}.`
-    : `The shoreline near this property is habitat for ${pill(String(count) + ' fish species')}. ${esc(top.species)} has the highest habitat relevance at ${pill(topPct + '%')}.`;
+    ? `Survey data shows ${pill(top.species)} using the shallow-water habitat along this shoreline.`
+    : `Survey data shows ${pill(String(count) + ' fish species')} using the shallow-water habitat along this shoreline. ${esc(top.species)} scores highest at ${pill(topPct + '%')}.`;
 
-  const hrmDesc = `Scores show the probability of finding each species during sampling, based on beach seine surveys at 82 sites across the San Juan Islands in 2008\u20132009.`;
+  const hrmDesc = `The shorelines of the San Juans are critical rearing, resting and feeding habitat for out-migrating juvenile salmon from rivers across Puget Sound and southern British Columbia, as well as other fish species that support marine food webs. These scores show what species of fish are using the shallow water habitats in this region of the county. Higher scores mean higher fish presence and abundance for that species, relative to other places in the county.`;
 
   const BAR_COLORS = ['#0D4F4F', '#1A7A7A', '#2A9D8F', '#4DB8A4', '#76C7B7', '#9DD6CB', '#C4E5DF'];
 
@@ -1994,7 +2002,7 @@ function buildFishCard(result: ShorelineQueryResult): string {
 
   return `
     <div style="${CARD}">
-      ${sectionHeading('Fish & Wildlife Habitat')}
+      ${sectionHeading('Fish Utilization')}
       <p style="${BODY};margin-bottom:8px;">${intro}</p>
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">${hrmDesc} ${moreInfoLink}</p>
       <div style="font-size:14px;color:${COLOR.dark};margin-bottom:6px;">Habitat relevance score</div>
@@ -2015,10 +2023,7 @@ function describeKelpExtent(acres: number): string {
 }
 
 function describeKelpDensity(featureCount: number): string {
-  if (featureCount >= 50) return 'densely distributed';
-  if (featureCount >= 15) return 'moderately distributed';
-  if (featureCount >= 5) return 'sparsely distributed';
-  return 'in isolated patches';
+  return featureCount === 1 ? 'one mapped patch' : `${featureCount} mapped patches`;
 }
 
 function describeEelgrassExtent(segmentCount: number, totalLengthFt: number): string {
@@ -2029,13 +2034,25 @@ function describeEelgrassExtent(segmentCount: number, totalLengthFt: number): st
 }
 
 function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
-  const { bullKelp, eelgrass } = veg;
+  const { bullKelp, eelgrass, forage, herring, distances } = veg;
 
   const vegIcon = (present: boolean) => present
     ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22C55E;margin-right:6px;vertical-align:middle;"></span>`
     : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${COLOR.border};margin-right:6px;vertical-align:middle;"></span>`;
 
-  // --- Bull Kelp section ---
+  const stat = (value: string, label: string, color: string) => `
+    <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
+      <div style="font-size:18px;font-weight:700;color:${color};">${value}</div>
+      <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+    </div>`;
+
+  const absent = (label: string) => `
+    <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
+      ${vegIcon(false)}
+      <span style="font-size:13px;color:${COLOR.mid};">${label}</span>
+    </div>`;
+
+  // --- Bull Kelp ---
   let kelpHtml = '';
   if (bullKelp.present) {
     const extent = describeKelpExtent(bullKelp.totalAcres);
@@ -2048,23 +2065,21 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
           <span style="font-size:14px;font-weight:700;color:#166534;">Bull Kelp Present</span>
         </div>
         <p style="${BODY};color:#15803D;margin-bottom:8px;">
-          ${extent}, ${density} within 100 ft of this property.
+          ${extent}, ${density} within ${distances.kelpFt} ft of this property.
         </p>
-        <div style="display:flex;gap:16px;">
-          <div style="text-align:center;flex:1;padding:8px;background:white;border-radius:6px;">
-            <div style="font-size:20px;font-weight:700;color:#166534;">${acresStr}</div>
-            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Acres</div>
-          </div>
-          <div style="text-align:center;flex:1;padding:8px;background:white;border-radius:6px;">
-            <div style="font-size:20px;font-weight:700;color:#166534;">${bullKelp.featureCount.toLocaleString()}</div>
-            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Grid cells</div>
-          </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${stat(acresStr, 'Acres (approx.)', '#166534')}
+          ${bullKelp.distFt !== null ? stat(String(bullKelp.distFt), 'Nearest (ft)', '#166534') : ''}
+          ${stat(bullKelp.featureCount.toLocaleString(), bullKelp.featureCount === 1 ? 'Patch' : 'Patches', '#166534')}
         </div>
+        <p style="font-size:13px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${KELP_TEXT}</p>
       </div>
     `;
+  } else {
+    kelpHtml = absent(`No bull kelp mapped within ${distances.kelpFt} ft`);
   }
 
-  // --- Eelgrass section ---
+  // --- Eelgrass ---
   let eelgrassHtml = '';
   if (eelgrass.present) {
     const extent = describeEelgrassExtent(eelgrass.segmentCount, eelgrass.totalLengthFt);
@@ -2072,67 +2087,82 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
     const depthStr = eelgrass.meanDepth !== null ? eelgrass.meanDepth.toFixed(1) : '—';
     const maxDepthStr = eelgrass.maxDepth !== null ? eelgrass.maxDepth.toFixed(1) : '—';
     const sitesStr = eelgrass.sites.length > 0 ? eelgrass.sites.slice(0, 3).join(', ') : '';
-
     eelgrassHtml = `
       <div style="padding:12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#115E59;">Deepwater Eelgrass Present</span>
+          <span style="font-size:14px;font-weight:700;color:#115E59;">Eelgrass Present</span>
         </div>
         <p style="${BODY};color:#0F766E;margin-bottom:8px;">
-          ${extent} within 100 ft of this property${eelgrass.segmentCount > 1 ? ` across ${eelgrass.segmentCount} survey transects` : ''}.
+          ${extent} within ${distances.eelgrassFt} ft of this property${eelgrass.segmentCount > 1 ? ` across ${eelgrass.segmentCount} survey transects` : ''}.
+          The mapped line is the deep-water edge of the meadow; the meadow extends from there toward shore.
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          ${lengthStr !== '—' ? `
-          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
-            <div style="font-size:18px;font-weight:700;color:#115E59;">${lengthStr}</div>
-            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Length (ft)</div>
-          </div>` : ''}
-          ${depthStr !== '—' ? `
-          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
-            <div style="font-size:18px;font-weight:700;color:#115E59;">${depthStr}</div>
-            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Avg depth</div>
-          </div>` : ''}
-          ${maxDepthStr !== '—' ? `
-          <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
-            <div style="font-size:18px;font-weight:700;color:#115E59;">${maxDepthStr}</div>
-            <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">Max depth</div>
-          </div>` : ''}
+          ${eelgrass.distFt !== null ? stat(String(eelgrass.distFt), 'Nearest (ft)', '#115E59') : ''}
+          ${lengthStr !== '—' ? stat(lengthStr, 'Length (ft)', '#115E59') : ''}
+          ${depthStr !== '—' ? stat(depthStr, 'Avg depth', '#115E59') : ''}
+          ${maxDepthStr !== '—' ? stat(maxDepthStr, 'Max depth', '#115E59') : ''}
         </div>
         ${sitesStr ? `<p style="font-size:12px;color:${COLOR.mid};margin-top:8px;">Survey sites: ${esc(sitesStr)}</p>` : ''}
+        <p style="font-size:13px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${EELGRASS_TEXT}</p>
       </div>
     `;
+  } else {
+    eelgrassHtml = absent(`No eelgrass deep-water edge mapped within ${distances.eelgrassFt} ft`);
   }
 
-  // Summary sentence
-  const both = bullKelp.present && eelgrass.present;
-  const summaryNote = both
-    ? 'The presence of both kelp and eelgrass indicates a high-quality nearshore environment that supports diverse marine life.'
-    : bullKelp.present
-      ? 'Bull kelp forests provide essential habitat for rockfish, lingcod, invertebrates, and serve as nurseries for juvenile fish.'
-      : 'Eelgrass beds are critical nursery habitat for salmon, forage fish, and Dungeness crab. They also sequester carbon and stabilize sediments.';
+  // --- Forage fish spawning beaches ---
+  let forageHtml = '';
+  if (forage.present) {
+    const beachRows = forage.documented.map(d => {
+      const sp = [d.smelt ? 'surf smelt' : '', d.sandLance ? 'Pacific sand lance' : ''].filter(Boolean).join(', ') || d.species;
+      return `<li style="margin:2px 0;">${esc(d.name || 'Unnamed beach')}${sp ? ` &mdash; ${esc(sp)}` : ''}${d.distFt > 0 ? ` <span style="color:${COLOR.light};">(${d.distFt} ft)</span>` : ''}</li>`;
+    }).join('');
+    forageHtml = `
+      <div style="padding:12px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;margin-bottom:6px;">
+          ${vegIcon(true)}
+          <span style="font-size:14px;font-weight:700;color:#9A3412;">Forage Fish Spawning Beach</span>
+        </div>
+        ${forage.documented.length > 0 ? `
+          <p style="${BODY};color:#C2410C;margin-bottom:6px;">Documented spawning within ${distances.forageFt} ft of this property:</p>
+          <ul style="margin:0 0 8px 18px;padding:0;font-size:14px;color:${COLOR.dark};">${beachRows}</ul>` : `
+          <p style="${BODY};color:#C2410C;margin-bottom:6px;">Potential spawning habitat within ${distances.forageFt} ft &mdash; beach substrate suitable for surf smelt or Pacific sand lance.</p>`}
+        ${forage.documented.length > 0 && forage.potentialCount > 0 ? `<p style="font-size:12px;color:${COLOR.mid};margin:0 0 6px;">Also mapped as potential spawning habitat.</p>` : ''}
+        <p style="font-size:13px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${FORAGE_TEXT}</p>
+      </div>
+    `;
+  } else {
+    forageHtml = absent(`No forage fish spawning beach mapped within ${distances.forageFt} ft`);
+  }
+
+  // --- Herring spawning grounds ---
+  let herringHtml = '';
+  if (herring.present) {
+    herringHtml = `
+      <div style="padding:12px;background:#EFF6FF;border-radius:8px;border:1px solid #BFDBFE;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;margin-bottom:6px;">
+          ${vegIcon(true)}
+          <span style="font-size:14px;font-weight:700;color:#1E40AF;">Herring Spawning Ground</span>
+        </div>
+        <p style="${BODY};color:#1D4ED8;margin-bottom:6px;">This property is adjacent to ${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic).</p>
+        <p style="font-size:13px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${HERRING_TEXT}</p>
+      </div>
+    `;
+  } else {
+    herringHtml = absent('Not adjacent to a mapped herring spawning ground');
+  }
 
   return `
     <div style="${CARD}">
-      ${sectionHeading('Nearshore Vegetation')}
+      ${sectionHeading('Nearshore Habitat')}
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
-        Marine vegetation within 100 ft of this property, based on Friends of the San Juans survey data.
+        Friends of the San Juans survey data: bull kelp and eelgrass within ${distances.kelpFt} ft of the property, forage fish spawning beaches within ${distances.forageFt} ft, and adjacent herring spawning grounds.
       </p>
       ${kelpHtml}
       ${eelgrassHtml}
-      ${!bullKelp.present ? `
-        <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
-          ${vegIcon(false)}
-          <span style="font-size:13px;color:${COLOR.mid};">No bull kelp mapped within 100 ft</span>
-        </div>` : ''}
-      ${!eelgrass.present ? `
-        <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
-          ${vegIcon(false)}
-          <span style="font-size:13px;color:${COLOR.mid};">No deepwater eelgrass mapped within 100 ft</span>
-        </div>` : ''}
-      <p style="font-size:12px;color:${COLOR.mid};margin-top:10px;line-height:1.4;font-style:italic;">
-        ${summaryNote}
-      </p>
+      ${forageHtml}
+      ${herringHtml}
     </div>
   `;
 }
@@ -2265,7 +2295,7 @@ function buildPopupHtml(
           ${fields.map(f => `
             <tr>
               <td style="color:${COLOR.mid};padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap;">${esc(f.label)}</td>
-              <td style="color:${COLOR.dark};padding:5px 0;word-break:break-word;">${esc(f.value)}</td>
+              <td style="color:${COLOR.dark};padding:5px 0;word-break:break-word;">${linkify(f.value)}</td>
             </tr>
           `).join('')}
         </table>

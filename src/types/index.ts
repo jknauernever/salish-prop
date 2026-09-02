@@ -30,6 +30,14 @@ export interface GradientLegend {
   maxLabel: string;
 }
 
+/** Swatch list legend for vector layers styled by category (e.g. armor change year). */
+export interface CategoryLegend {
+  type: 'categories';
+  items: { label: string; color: string; shape?: 'line' | 'fill' | 'point' }[];
+}
+
+export type LayerLegend = GradientLegend | CategoryLegend;
+
 export interface LayerConfig {
   id: string;
   name: string;
@@ -62,7 +70,12 @@ export interface LayerConfig {
   /** Link to the canonical data source. Surfaces as a "Learn more" link in the info panel. */
   sourceUrl?: string;
   /** Visual legend rendered under the row when the layer is visible. */
-  legend?: GradientLegend;
+  legend?: LayerLegend;
+  /**
+   * Who produced the data (shown as "Source: …" in the layer's info panel).
+   * Keep it short — organisation names and a year, not a paragraph.
+   */
+  sourceCredit?: string;
   defaultOpacity?: number;
   viewportFiltered?: boolean;
   markerIcon?: string;

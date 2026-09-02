@@ -62,9 +62,26 @@ function lineMidpoint(coords: number[][]): [number, number] {
   return [last[0], last[1]];
 }
 
-/** Create a GeoJSON FeatureCollection of midpoints from LineString features */
+/** Planar length of a coordinate array (degrees) — only used for relative ranking. */
+function lineLength(coords: number[][]): number {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const dx = (coords[i][0] - coords[i - 1][0]) * Math.cos((coords[i][1] * Math.PI) / 180);
+    const dy = coords[i][1] - coords[i - 1][1];
+    total += Math.sqrt(dx * dx + dy * dy);
+  }
+  return total;
+}
+
+/**
+ * Create a GeoJSON FeatureCollection of midpoints from LineString features.
+ * Each point carries `lengthRank` in [0, 1): 0 = the longest line. The marker
+ * style uses it to show only the biggest features when zoomed out (see
+ * markerVisibleAtZoom), so a layer with hundreds of icons doesn't carpet the
+ * county at low zoom.
+ */
 function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
-  const features: GeoJSON.Feature[] = [];
+  const points: { lng: number; lat: number; len: number }[] = [];
   for (const f of data.features) {
     const geom = f.geometry;
     if (!geom) continue;
@@ -78,14 +95,74 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.Feature
     }
     for (const coords of coordArrays) {
       const [lng, lat] = lineMidpoint(coords);
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [lng, lat] },
-        properties: {},
-      });
+      points.push({ lng, lat, len: lineLength(coords) });
     }
   }
-  return { type: 'FeatureCollection', features };
+  const order = points.map((p, i) => [p.len, i] as const).sort((a, b) => b[0] - a[0]);
+  const rank = new Array<number>(points.length);
+  order.forEach(([, i], pos) => { rank[i] = points.length > 1 ? pos / (points.length - 1) : 0; });
+  return {
+    type: 'FeatureCollection',
+    features: points.map((p, i) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+      properties: { mid: i, lengthRank: rank[i] },
+    })),
+  };
+}
+
+/**
+ * Screen-grid thinning for midpoint markers. Below zoom 16, only one marker
+ * is shown per GRID_PX × GRID_PX cell of the (world-pixel) map, and it's the
+ * one whose line is longest. Cells are in absolute Mercator pixel space, so
+ * the selection only changes with zoom, not with panning. At zoom 16+ every
+ * marker shows.
+ */
+const MARKER_GRID_PX = 72;
+const MARKER_SHOW_ALL_ZOOM = 16;
+
+function worldPixel(lng: number, lat: number, zoom: number): [number, number] {
+  const scale = 256 * Math.pow(2, zoom);
+  const x = ((lng + 180) / 360) * scale;
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale;
+  return [x, y];
+}
+
+/** Ids (the `mid` property) of the markers to show at this zoom. null = show all. */
+function selectMarkersForZoom(ml: google.maps.Data, zoom: number): Set<number> | null {
+  if (zoom >= MARKER_SHOW_ALL_ZOOM) return null;
+  const best = new Map<string, { id: number; rank: number }>();
+  ml.forEach((feature) => {
+    const g = feature.getGeometry();
+    if (!g || g.getType() !== 'Point') return;
+    const ll = (g as google.maps.Data.Point).get();
+    const [x, y] = worldPixel(ll.lng(), ll.lat(), zoom);
+    const key = `${Math.floor(x / MARKER_GRID_PX)}:${Math.floor(y / MARKER_GRID_PX)}`;
+    const id = Number(feature.getProperty('mid'));
+    const rank = Number(feature.getProperty('lengthRank') ?? 1);
+    const cur = best.get(key);
+    if (!cur || rank < cur.rank) best.set(key, { id, rank });
+  });
+  return new Set(Array.from(best.values(), v => v.id));
+}
+
+function midpointMarkerStyle(
+  ml: google.maps.Data,
+  iconUrl: string,
+  visible: boolean,
+  zoom: number,
+): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
+  const chosen = visible ? selectMarkersForZoom(ml, zoom) : null;
+  return (feature) => ({
+    icon: {
+      url: iconUrl,
+      scaledSize: new google.maps.Size(22, 22),
+      anchor: new google.maps.Point(11, 11),
+    },
+    clickable: false,
+    visible: visible && (chosen === null || chosen.has(Number(feature.getProperty('mid')))),
+  });
 }
 
 function createInitialState(config: LayerConfig, initialLayerIds?: string[], ui?: UrlLayerUi): LayerState {
@@ -312,15 +389,7 @@ export function useLayers(
           clickable: visible,
           visible,
         });
-        ml.setStyle(() => ({
-          icon: {
-            url: config.markerIcon!,
-            scaledSize: new google.maps.Size(22, 22),
-            anchor: new google.maps.Point(11, 11),
-          },
-          clickable: false,
-          visible,
-        }));
+        ml.setStyle(midpointMarkerStyle(ml, config.markerIcon, visible, map?.getZoom() ?? 0));
       } else {
         // Point layer: use icon directly
         dl.setStyle(() => ({
@@ -387,7 +456,7 @@ export function useLayers(
         visible,
       });
     }
-  }, [applySpeciesObsStyle]);
+  }, [applySpeciesObsStyle, map]);
 
   // Update viewport-filtered layers: clear and re-add only features in current bounds
   const updateViewportLayers = useCallback(() => {
@@ -787,15 +856,7 @@ export function useLayers(
               const midpoints = createMidpointMarkers(data);
               const markerLayer = new google.maps.Data({ map });
               markerLayer.addGeoJson(midpoints);
-              markerLayer.setStyle(() => ({
-                icon: {
-                  url: config.markerIcon!,
-                  scaledSize: new google.maps.Size(22, 22),
-                  anchor: new google.maps.Point(11, 11),
-                },
-                clickable: false,
-                visible: shouldShow,
-              }));
+              markerLayer.setStyle(midpointMarkerStyle(markerLayer, config.markerIcon, shouldShow, map.getZoom() ?? 0));
               markerLayersRef.current.set(config.id, markerLayer);
             }
           }
@@ -839,6 +900,12 @@ export function useLayers(
       handleZoomForSpeciesObs();
 
       setLayers(prev => prev.map(layer => {
+        // Midpoint-marker layers thin out with zoom — re-style on every change
+        const ml = layer.config.markerIcon ? markerLayersRef.current.get(layer.config.id) : undefined;
+        if (ml && layer.loaded) {
+          ml.setStyle(midpointMarkerStyle(ml, layer.config.markerIcon!, layer.visible, zoom));
+        }
+
         const minZoom = layer.config.minZoom;
         if (minZoom == null) return layer;
         // Viewport-filtered layers are handled by the idle listener

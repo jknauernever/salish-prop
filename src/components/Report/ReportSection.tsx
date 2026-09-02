@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { linkifyText } from '../../utils/linkify';
 import type { SpatialQueryResult } from '../../types';
 import { layerConfigs } from '../../config/layers';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
@@ -103,7 +104,7 @@ function FeatureItem({
               {fields.map((f, i) => (
                 <tr key={i}>
                   <td className="text-slate-blue/50 pr-2 py-0.5 align-top whitespace-nowrap">{f.label}</td>
-                  <td className="text-slate-blue py-0.5 break-words">{f.value}</td>
+                  <td className="text-slate-blue py-0.5 break-words">{linkifyText(f.value)}</td>
                 </tr>
               ))}
             </tbody>

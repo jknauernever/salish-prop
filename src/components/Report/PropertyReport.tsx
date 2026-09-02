@@ -1,4 +1,5 @@
 import type { SpatialQueryResult } from '../../types';
+import { linkifyText } from '../../utils/linkify';
 import { layerConfigs } from '../../config/layers';
 import { extractAllFeatureProperties } from '../../utils/geojson';
 import { ReportSection } from './ReportSection';
@@ -122,7 +123,7 @@ export function PropertyReport({
                 {parcelFields.map((f, i) => (
                   <tr key={i}>
                     <td className="text-slate-blue/50 pr-3 py-0.5 align-top whitespace-nowrap">{f.label}</td>
-                    <td className="text-slate-blue py-0.5 break-words">{f.value}</td>
+                    <td className="text-slate-blue py-0.5 break-words">{linkifyText(f.value)}</td>
                   </tr>
                 ))}
               </tbody>

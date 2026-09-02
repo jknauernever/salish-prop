@@ -1,5 +1,6 @@
 import * as turf from '@turf/turf';
 import type { LayerState } from '../types';
+import type { NearshoreParcelRecord, NearshoreStatsMeta } from './nearshoreStats';
 
 export interface BuildingProperties {
   address?: string;
@@ -92,17 +93,18 @@ export function countIntersectingBuildings(
 }
 
 // ---------------------------------------------------------------------------
-// Nearshore vegetation query (Bull Kelp + Deepwater Eelgrass within 1000 ft)
+// Nearshore habitat (kelp, eelgrass, forage fish, herring) — from the
+// precomputed per-parcel stats file (see services/nearshoreStats.ts).
 // ---------------------------------------------------------------------------
 
-const VEGETATION_BUFFER_FT = 100;
-const VEGETATION_BUFFER_KM = VEGETATION_BUFFER_FT * 0.0003048;
-
 export interface NearshoreVegetationResult {
+  /** Search distances the numbers were computed with (feet). */
+  distances: { kelpFt: number; eelgrassFt: number; forageFt: number };
   bullKelp: {
     present: boolean;
     featureCount: number;
     totalAcres: number;
+    distFt: number | null;
   };
   eelgrass: {
     present: boolean;
@@ -111,83 +113,54 @@ export interface NearshoreVegetationResult {
     sites: string[];
     meanDepth: number | null;
     maxDepth: number | null;
+    distFt: number | null;
   };
+  forage: {
+    present: boolean;
+    documented: { name: string; species: string; smelt: boolean; sandLance: boolean; distFt: number }[];
+    potentialCount: number;
+  };
+  herring: {
+    present: boolean;
+    names: string[];
+  };
+  /** Nearest Friends geomorphic shoreform segment, if one lies within meta.shoreformFt. */
+  shoreform: NearshoreParcelRecord['shoreform'] | null;
 }
 
-export function queryNearshoreVegetation(
-  parcelFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-  layers: LayerState[],
+export function nearshoreFromStats(
+  rec: NearshoreParcelRecord | undefined,
+  meta: NearshoreStatsMeta,
 ): NearshoreVegetationResult {
-  const result: NearshoreVegetationResult = {
-    bullKelp: { present: false, featureCount: 0, totalAcres: 0 },
-    eelgrass: { present: false, segmentCount: 0, totalLengthFt: 0, sites: [], meanDepth: null, maxDepth: null },
+  const k = rec?.kelp;
+  const e = rec?.eelgrass;
+  const f = rec?.forage;
+  const h = rec?.herring ?? [];
+  return {
+    distances: { kelpFt: meta.kelpFt, eelgrassFt: meta.eelgrassFt, forageFt: meta.forageFt },
+    bullKelp: {
+      present: !!k && k.n > 0,
+      featureCount: k?.n ?? 0,
+      totalAcres: k?.acres ?? 0,
+      distFt: k?.distFt ?? null,
+    },
+    eelgrass: {
+      present: !!e && e.n > 0,
+      segmentCount: e?.n ?? 0,
+      totalLengthFt: e?.lengthFt ?? 0,
+      sites: e?.sites ?? [],
+      meanDepth: e?.meanDepth ?? null,
+      maxDepth: e?.maxDepth ?? null,
+      distFt: e?.distFt ?? null,
+    },
+    forage: {
+      present: !!f && (f.documented.length > 0 || f.potentialN > 0),
+      documented: f?.documented ?? [],
+      potentialCount: f?.potentialN ?? 0,
+    },
+    herring: { present: h.length > 0, names: h },
+    shoreform: rec?.shoreform ?? null,
   };
-
-  const buffered = turf.buffer(parcelFeature, VEGETATION_BUFFER_KM, { units: 'kilometers' });
-  if (!buffered) return result;
-  const searchBbox = turf.bbox(buffered);
-
-  // --- Bull Kelp ---
-  const kelpLayer = layers.find(l => l.config.id === 'friends-bull-kelp' && l.loaded && l.geojsonData);
-  if (kelpLayer?.geojsonData) {
-    let totalAcres = 0;
-    let count = 0;
-    for (const feat of kelpLayer.geojsonData.features) {
-      if (!feat.geometry) continue;
-      try {
-        const fb = turf.bbox(feat);
-        if (!bboxesOverlap(searchBbox, fb)) continue;
-        if (turf.booleanIntersects(feat, buffered)) {
-          count++;
-          totalAcres += Number(feat.properties?.Acres) || 0;
-        }
-      } catch { continue; }
-    }
-    result.bullKelp = { present: count > 0, featureCount: count, totalAcres };
-  }
-
-  // --- Deepwater/Edge Eelgrass ---
-  const eelgrassLayer = layers.find(l => l.config.id === 'friends-deepwater-eelgrass' && l.loaded && l.geojsonData);
-  if (eelgrassLayer?.geojsonData) {
-    let segmentCount = 0;
-    let totalLengthFt = 0;
-    const sites = new Set<string>();
-    const depths: number[] = [];
-    let maxDepth: number | null = null;
-
-    for (const feat of eelgrassLayer.geojsonData.features) {
-      if (!feat.geometry) continue;
-      try {
-        const fb = turf.bbox(feat);
-        if (!bboxesOverlap(searchBbox, fb)) continue;
-        if (turf.booleanIntersects(feat, buffered)) {
-          segmentCount++;
-          const p = feat.properties || {};
-          totalLengthFt += Number(p.LENGTH) || 0;
-          const site = String(p.SITE || '').trim();
-          if (site) sites.add(site);
-          const mean = Number(p.MEAN);
-          if (!isNaN(mean) && mean !== 0) depths.push(mean);
-          const mx = Number(p.MAX_);
-          if (!isNaN(mx) && mx !== 0) {
-            maxDepth = maxDepth === null ? mx : Math.max(maxDepth, mx);
-          }
-        }
-      } catch { continue; }
-    }
-
-    const meanDepth = depths.length > 0 ? depths.reduce((a, b) => a + b, 0) / depths.length : null;
-    result.eelgrass = {
-      present: segmentCount > 0,
-      segmentCount,
-      totalLengthFt,
-      sites: Array.from(sites),
-      meanDepth,
-      maxDepth,
-    };
-  }
-
-  return result;
 }
 
 // 50 ft buffer in kilometers for shoreline search

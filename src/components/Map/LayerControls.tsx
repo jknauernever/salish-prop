@@ -146,7 +146,7 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
   const isPlaceholder = config.placeholder;
   const isRaster = config.layerType === 'raster' || config.layerType === 'dynamic-raster';
   const isDynamic = config.layerType === 'dynamic-raster';
-  const hasInfo = !!config.standardMessage || !!config.sourceUrl;
+  const hasInfo = !!config.standardMessage || !!config.sourceUrl || !!config.sourceCredit;
   const [showInfo, setShowInfo] = useState(false);
 
   // For dynamic-raster layers with multiple visualization modes, the selected
@@ -232,7 +232,13 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
       {/* Info panel */}
       {showInfo && hasInfo && (
         <div className="ml-5 mr-2 mb-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/80">
+          <p className="m-0 mb-1 font-semibold text-slate-blue">{config.name}</p>
           {config.standardMessage && <p className="m-0">{config.standardMessage}</p>}
+          {config.sourceCredit && (
+            <p className="m-0 mt-1.5 text-slate-blue/60">
+              <span className="font-semibold">Source:</span> {config.sourceCredit}
+            </p>
+          )}
           {config.sourceUrl && (
             <p className="m-0 mt-1.5">
               <a
@@ -245,6 +251,28 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
               </a>
             </p>
           )}
+        </div>
+      )}
+
+      {/* Category legend (vector layers styled by attribute) */}
+      {visible && loaded && legend?.type === 'categories' && (
+        <div className="ml-5 mr-2 mb-1.5 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+          {legend.items.map(item => (
+            <span key={item.label} className="inline-flex items-center gap-1 text-[10px] text-slate-blue/60">
+              <span
+                aria-hidden="true"
+                className={
+                  item.shape === 'point'
+                    ? 'inline-block w-2 h-2 rounded-full'
+                    : item.shape === 'fill'
+                      ? 'inline-block w-3 h-2 rounded-sm'
+                      : 'inline-block w-3 h-0.5 rounded'
+                }
+                style={{ backgroundColor: item.color }}
+              />
+              {item.label}
+            </span>
+          ))}
         </div>
       )}
 
