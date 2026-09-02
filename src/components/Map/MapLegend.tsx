@@ -208,11 +208,11 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
 
   return (
     <>
-      <div className="absolute top-3 left-3 z-30 w-64 max-w-[calc(100%-1.5rem)] bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-fog-gray-dark/40 text-slate-blue">
+      <div className="absolute top-3 left-3 z-30 w-64 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-1.5rem)] flex flex-col bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-fog-gray-dark/40 text-slate-blue">
         <button
           type="button"
           onClick={() => setCollapsed(c => !c)}
-          className="w-full flex items-center justify-between px-3 py-2 text-left"
+          className="w-full shrink-0 flex items-center justify-between px-3 py-2 text-left"
           aria-expanded={!collapsed}
         >
           <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-blue/60">
@@ -224,7 +224,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
         </button>
 
         {!collapsed && (
-          <div className="px-1.5 pb-1.5 max-h-[50vh] overflow-y-auto">
+          <div className="px-1.5 pb-1.5 flex-1 min-h-0 overflow-y-auto">
             {on.length === 0 && (
               <p className="px-2 py-2 text-xs text-slate-blue/60">No data layers are turned on.</p>
             )}
@@ -281,7 +281,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
         <button
           type="button"
           onClick={onExplore}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-t border-fog-gray-dark/40 text-xs font-semibold text-deep-teal hover:bg-teal-50 transition-colors"
+          className="w-full shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 border-t border-fog-gray-dark/40 text-xs font-semibold text-deep-teal hover:bg-teal-50 transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -292,7 +292,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom }: MapLegendP
         <button
           type="button"
           onClick={() => setShowSourcing(true)}
-          className="w-full flex items-center justify-center gap-1 px-3 py-1.5 border-t border-fog-gray-dark/40 text-[11px] text-ocean-blue hover:text-ocean-blue-light hover:bg-fog-gray/60 rounded-b-lg transition-colors"
+          className="w-full shrink-0 flex items-center justify-center gap-1 px-3 py-1.5 border-t border-fog-gray-dark/40 text-[11px] text-ocean-blue hover:text-ocean-blue-light hover:bg-fog-gray/60 rounded-b-lg transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" strokeWidth={1.8} />
