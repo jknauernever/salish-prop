@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useMap } from '../../hooks/useMap';
 import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighlight';
 import type { LayerState } from '../../types';
+import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT } from './popupFrame';
+import { LAYER_PHOTOS } from '../../config/popups';
 
 interface ForestLossPopupProps {
   layers: LayerState[];
@@ -18,6 +20,29 @@ interface ForestLossPopupProps {
 // pixel and the InfoWindow's tail. Matched with `pixelOffset` so the line and
 // the InfoWindow tail share an endpoint.
 const NECK_PX = 55;
+
+const LAYER_ID = 'forest-loss';
+const ACCENT = '#D9480F';
+
+function rasterFrame(layer: LayerState | undefined, title: string, subtitle: string, opts: {
+  stats?: { value: string; unit?: string; label: string }[];
+  story?: { kicker: string; html: string };
+  chips?: { label: string; tone?: 'default' | 'on' | 'warn' | 'teal' }[];
+} = {}): string {
+  return buildPopupFrame({
+    id: `${LAYER_ID}-${Date.now()}`,
+    accent: ACCENT,
+    layerName: layer?.config.name ?? 'Forest Loss (2001–2025)',
+    swatch: 'fill',
+    title,
+    subtitle,
+    photos: LAYER_PHOTOS[LAYER_ID] ? [LAYER_PHOTOS[LAYER_ID]] : [],
+    stats: opts.stats,
+    chips: opts.chips,
+    story: opts.story,
+    source: { credit: layer?.config.sourceCredit, url: layer?.config.sourceUrl },
+  });
+}
 
 export function ForestLossPopup({ layers }: ForestLossPopupProps) {
   const { map } = useMap();
@@ -46,11 +71,14 @@ export function ForestLossPopup({ layers }: ForestLossPopupProps) {
     neckRef.current.setMap(m);
   };
 
-  const forestLayer = layers.find((l) => l.config.id === 'forest-loss');
-  const visible = !!forestLayer?.visible;
-  const endpoint = forestLayer?.config.apiEndpoint;
+  const layer = layers.find((l) => l.config.id === 'forest-loss');
+  const visible = !!layer?.visible;
+  const endpoint = layer?.config.apiEndpoint;
 
   // Refs so the persistent click listener reads current values without re-attaching.
+  const layerRef = useRef(layer);
+  layerRef.current = layer;
+  const layerNow = () => layerRef.current;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const endpointRef = useRef(endpoint);
@@ -70,7 +98,16 @@ export function ForestLossPopup({ layers }: ForestLossPopupProps) {
         clearFeatureHighlight();
         hideNeck();
       });
+      installPopupFrameHandlers();
     }
+    const iwForClose = infoWindowRef.current;
+    const onFrameClose = () => {
+      if (!iwForClose.isOpen) return;
+      iwForClose.close();
+      clearFeatureHighlight();
+      hideNeck();
+    };
+    window.addEventListener(POPUP_CLOSE_EVENT, onFrameClose);
 
     const handler = async (event: google.maps.MapMouseEvent) => {
       if (!visibleRef.current || !endpointRef.current || !event.latLng) return;
@@ -80,9 +117,7 @@ export function ForestLossPopup({ layers }: ForestLossPopupProps) {
       const lat = event.latLng.lat();
       const lng = event.latLng.lng();
 
-      iw.setContent(
-        '<div style="padding:6px 10px;font-size:12px;color:#2C3E50;">Looking up forest loss…</div>',
-      );
+      iw.setContent(rasterFrame(layerNow(), 'Forest loss', 'Looking up this location…'));
       iw.setPosition(event.latLng);
       iw.open(map);
       showNeck(map, event.latLng);
@@ -101,9 +136,7 @@ export function ForestLossPopup({ layers }: ForestLossPopupProps) {
 
         if (!data.year) {
           clearFeatureHighlight();
-          iw.setContent(
-            '<div style="padding:6px 10px;font-size:12px;color:#2C3E50;">No forest loss recorded at this location.</div>',
-          );
+          iw.setContent(rasterFrame(layerNow(), 'No forest loss recorded here', `${lat.toFixed(4)}, ${lng.toFixed(4)}`));
           return;
         }
 
@@ -117,23 +150,25 @@ export function ForestLossPopup({ layers }: ForestLossPopupProps) {
         const truncatedNote = data.truncated
           ? ' <span style="color:#8B6914;">(very large patch &mdash; area underestimated)</span>'
           : '';
-        iw.setContent(
-          `<div style="padding:6px 10px;font-size:12px;color:#2C3E50;line-height:1.5;min-width:180px;">
-             <div style="font-weight:600;margin-bottom:2px;">Forest loss in ${data.year}</div>
-             <div>${acresStr} in this connected patch${truncatedNote}</div>
-           </div>`,
-        );
+        void acresStr; void truncatedNote;
+        iw.setContent(rasterFrame(layerNow(), `Forest loss in ${data.year}`, `${lat.toFixed(4)}, ${lng.toFixed(4)}`, {
+          stats: [
+            { value: String(data.year), label: 'Year of loss' },
+            { value: data.acres >= 0.01 ? data.acres.toFixed(2) : '< 0.01', unit: 'ac', label: 'Connected patch' },
+          ],
+          chips: data.truncated ? [{ label: 'Very large patch — area underestimated', tone: 'warn' }] : [],
+          story: { kicker: 'What this is', html: 'Tree cover lost in this year according to Landsat, from the Hansen Global Forest Change dataset. It records clearing, fire, and storm damage alike; it cannot tell a permitted harvest from anything else.' },
+        }));
       } catch (err) {
         console.error('Forest loss lookup failed:', err);
-        iw.setContent(
-          '<div style="padding:6px 10px;font-size:12px;color:#B91C1C;">Failed to look up forest loss data.</div>',
-        );
+        iw.setContent(rasterFrame(layerNow(), 'Lookup failed', 'Could not reach the forest-loss service.'));
       }
     };
 
     const listener = map.addListener('click', handler);
     return () => {
       google.maps.event.removeListener(listener);
+      window.removeEventListener(POPUP_CLOSE_EVENT, onFrameClose);
     };
   }, [map]);
 

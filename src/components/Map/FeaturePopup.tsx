@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import * as turf from '@turf/turf';
 import { useMap } from '../../hooks/useMap';
+import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHtml as escHtml } from './popupFrame';
+import type { PopupPhoto, PopupStat } from './popupFrame';
+import { POPUP_SPECS, LAYER_PHOTOS, fallbackTitle, fmtAcresValue } from '../../config/popups';
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
@@ -182,14 +185,24 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
 
     const iw = new google.maps.InfoWindow();
     infoWindowRef.current = iw;
+    installPopupFrameHandlers();
 
     // Clear parcel highlight when popup is closed
-    iw.addListener('closeclick', () => {
+    const onClosed = () => {
       clearFeatureHighlight();
       emitParcelPopupState(null);
-    });
+    };
+    iw.addListener('closeclick', onClosed);
+    // The frame draws its own close button (Google's is hidden by CSS)
+    const onFrameClose = () => {
+      if (!iw.isOpen) return;
+      iw.close();
+      onClosed();
+    };
+    window.addEventListener(POPUP_CLOSE_EVENT, onFrameClose);
 
     return () => {
+      window.removeEventListener(POPUP_CLOSE_EVENT, onFrameClose);
       iw.close();
       clearFeatureHighlight();
       if (infoWindowRef.current === iw) infoWindowRef.current = null;
@@ -239,7 +252,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
           feature.toGeoJson((json) => {
             highlightFeatureGeometry(json as GeoJSON.Feature, map);
           });
-          const content = buildPopupHtml(label, layer, fields, null);
+          const content = buildFeaturePopupHtml(layer, props, fields, label);
           infoWindowRef.current?.setContent(content);
           infoWindowRef.current?.setPosition(event.latLng!);
           infoWindowRef.current?.open(map);
@@ -645,14 +658,15 @@ function openNdviInfoWindow() {
 // Shared styles
 // ---------------------------------------------------------------------------
 
-const FONT = "'Source Sans 3', system-ui, sans-serif";
-const COLOR = { dark: '#1A2530', mid: '#3D4F5F', light: '#ADB5BD', teal: '#0D4F4F', bg: '#F8F9FA', border: '#E5E7EB' };
+const FONT = "'Montserrat', system-ui, sans-serif";
+// Friends of the San Juans palette (see index.css .ssx-*): ink, warm grays, sea blue, sand
+const COLOR = { dark: '#1A1A1A', mid: '#33302A', light: '#7A746B', teal: '#036E88', bg: '#F1E8D6', border: '#E0D6C4' };
 
 const CARD = `background:${COLOR.bg};border-radius:8px;padding:14px 16px;margin-bottom:12px;`;
-const HEADING = `font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${COLOR.dark};margin:0 0 10px 0;`;
-const BODY = `font-size:16px;color:${COLOR.dark};line-height:1.55;margin:0;`;
-const PILL = `display:inline;color:${COLOR.teal};font-weight:700;font-size:16px;`;
-const BIG_NUM = `font-size:32px;font-weight:700;color:${COLOR.teal};line-height:1;`;
+const HEADING = `font-family:'Montserrat',system-ui,sans-serif;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6A5324;margin:0 0 10px 0;`;
+const BODY = `font-size:14.5px;color:${COLOR.dark};line-height:1.55;margin:0;`;
+const PILL = `display:inline;color:${COLOR.teal};font-weight:700;font-size:14.5px;`;
+const BIG_NUM = `font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:700;color:${COLOR.teal};line-height:1;`;
 
 function pill(text: string): string {
   return `<span style="${PILL}">${esc(text)}</span>`;
@@ -821,7 +835,7 @@ function handleParcelClick(
   // Highlight selected parcel on the map
   highlightFeatureGeometry(parcelGeoFeature, map);
 
-  const content = buildTabbedPopupHtml(label, layer, fields, addressRowId, popupId);
+  const content = buildTabbedPopupHtml(label, layer, fields, addressRowId, popupId, props);
   infoWindowRef.current?.setContent(content);
   infoWindowRef.current?.setPosition(event.latLng!);
   infoWindowRef.current?.open(map);
@@ -1273,17 +1287,13 @@ function attachTabHandlers(popupId: string, accentColor: string) {
   const buttons = tabBar.querySelectorAll<HTMLButtonElement>('button[data-tab]');
   const panels = popupEl.querySelectorAll<HTMLDivElement>('[data-panel]');
 
+  void accentColor; // tabs take their color from the frame CSS now
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-tab');
-      buttons.forEach(b => {
-        b.style.color = COLOR.mid;
-        b.style.borderBottomColor = 'transparent';
-      });
-      btn.style.color = COLOR.dark;
-      btn.style.borderBottomColor = accentColor;
+      buttons.forEach(b => b.classList.toggle('on', b === btn));
       panels.forEach(p => {
-        p.style.display = p.getAttribute('data-panel') === target ? 'block' : 'none';
+        p.hidden = p.getAttribute('data-panel') !== target;
       });
     });
   });
@@ -1396,32 +1406,27 @@ function buildTabbedPopupHtml(
   fields: { label: string; value: string }[],
   addressRowId: string,
   popupId: string,
+  props: Record<string, unknown> = {},
 ): string {
-  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
+  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0297BA';
 
-  const tabBtn = (name: string, dataTab: string, active: boolean) => `
-    <button data-tab="${dataTab}" style="
-      padding:8px 14px; font-size:15px; font-weight:600; cursor:pointer;
-      border:none; background:none;
-      color:${active ? COLOR.dark : COLOR.mid};
-      border-bottom:2px solid ${active ? accentColor : 'transparent'};
-      transition:all 0.15s;
-    ">${esc(name)}</button>
-  `;
+  const tabBtn = (name: string, dataTab: string, active: boolean) =>
+    `<button type="button" class="ssx-tab${active ? ' on' : ''}" data-tab="${dataTab}">${esc(name)}</button>`;
 
   const propertyContent = buildPropertyTab(fields, addressRowId);
-  const panelStyle = 'min-height:520px;max-height:520px;overflow-y:auto;padding:8px 4px;';
+  const panelStyle = 'min-height:520px;max-height:520px;overflow-y:auto;';
 
-  return `
-    <div id="${popupId}" style="font-family:${FONT};width:580px;">
-      <div id="${popupId}-title" style="font-weight:700;font-size:18px;color:${COLOR.dark};margin-bottom:2px;">
-        Loading address...
-      </div>
-      <div style="font-size:14px;color:${COLOR.mid};margin-bottom:8px;">
-        Overview Report
-      </div>
+  // Key facts from the assessor record; waterfront only when present
+  const acres = Number(props.Acres || props.Legal_Acre) || 0;
+  const wf = Number(props.WF_LGTH) || 0;
+  const appraised = Number(props.Appraised_) || 0;
+  const stats: PopupStat[] = [];
+  if (acres > 0) stats.push({ value: fmtAcresValue(acres), unit: 'ac', label: 'Parcel' });
+  if (wf > 0) stats.push({ value: Math.round(wf).toLocaleString('en-US'), unit: 'ft', label: 'Waterfront' });
+  if (appraised > 0) stats.push({ value: fmtCurrency(appraised).replace(/\.\d+([KM])$/, '$1'), label: 'Appraised' });
 
-      <div style="display:flex;border-bottom:1px solid ${COLOR.border};margin-bottom:8px;" id="${popupId}-tabs">
+  const body = `
+      <div class="ssx-tabs" id="${popupId}-tabs">
         ${tabBtn('Summary', 'summary', true)}
         ${tabBtn('Property', 'property', false)}
         ${tabBtn('Buildings', 'buildings', false)}
@@ -1429,12 +1434,12 @@ function buildTabbedPopupHtml(
         ${tabBtn('Birds', 'birds', false)}
       </div>
 
-      <div data-panel="summary" style="display:block;${panelStyle}">
+      <div class="ssx-panel" data-panel="summary" style="${panelStyle}">
         <div style="display:flex;gap:12px;margin-bottom:12px;align-items:stretch;">
           <div id="${popupId}-at-a-glance" style="flex:1;min-width:0;">
             <div style="${CARD};height:100%;box-sizing:border-box;margin-bottom:0;"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading overview...</p></div>
           </div>
-          <div id="${popupId}-snapshot" style="width:200px;height:200px;min-width:200px;border-radius:8px;overflow:hidden;background:${COLOR.bg};display:flex;align-items:center;justify-content:center;">
+          <div id="${popupId}-snapshot" class="ssx-minimap" style="width:200px;height:200px;min-width:200px;border-radius:8px;overflow:hidden;background:${COLOR.bg};display:flex;align-items:center;justify-content:center;">
             <span style="font-size:12px;color:${COLOR.light};font-style:italic;">Loading map...</span>
           </div>
         </div>
@@ -1444,26 +1449,40 @@ function buildTabbedPopupHtml(
         <div id="${popupId}-forest-loss"></div>
         <div id="${popupId}-dist-alert"></div>
       </div>
-      <div data-panel="property" style="display:none;${panelStyle}">
+      <div class="ssx-panel" data-panel="property" hidden style="${panelStyle}">
         ${propertyContent}
       </div>
-      <div data-panel="buildings" style="display:none;${panelStyle}">
+      <div class="ssx-panel" data-panel="buildings" hidden style="${panelStyle}">
         <div id="${popupId}-buildings">
           <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Checking for buildings...</p></div>
         </div>
       </div>
-      <div data-panel="shoreline" style="display:none;${panelStyle}">
+      <div class="ssx-panel" data-panel="shoreline" hidden style="${panelStyle}">
         <div id="${popupId}-shoreline">
           <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Analyzing nearby shoreline...</p></div>
         </div>
       </div>
-      <div data-panel="birds" style="display:none;${panelStyle}">
+      <div class="ssx-panel" data-panel="birds" hidden style="${panelStyle}">
         <div id="${popupId}-birds">
           <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>
         </div>
-      </div>
-    </div>
-  `;
+      </div>`;
+
+  return buildPopupFrame({
+    id: popupId,
+    width: 600,
+    accent: accentColor,
+    layerName: layer.config.name,
+    swatch: 'fill',
+    swatchColor: layer.config.style.fillColor,
+    title: 'Loading address...',
+    titleId: `${popupId}-title`,
+    subtitle: [String(props.PIN || '').trim() ? `PIN ${String(props.PIN).trim()}` : '', 'Property report'].filter(Boolean).join(' · '),
+    stats,
+    chipsId: `${popupId}-chips`,
+    body,
+    source: { credit: layer.config.sourceCredit || 'San Juan County Assessor', url: layer.config.sourceUrl },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1529,6 +1548,7 @@ function renderSummary(
   // --- Nearshore Ecology (Eelgrass & Kelp) ---
   if (vegResult) {
     cards.push(buildNearshoreEcologyCard(vegResult));
+    renderLivingShorelineChips(popupId, vegResult);
   }
 
   // --- Fish & Wildlife ---
@@ -1542,6 +1562,66 @@ function renderSummary(
   }
 
   cardsEl.innerHTML = cards.join('');
+}
+
+/** Header chips: what living shoreline is near this parcel, lit when present. */
+function renderLivingShorelineChips(popupId: string, veg: NearshoreVegetationResult) {
+  const el = document.getElementById(`${popupId}-chips`);
+  if (!el) return;
+  const chip = (present: boolean, label: string) =>
+    `<span class="ssx-chip${present ? ' ssx-chip-on' : ''}">${present ? '' : 'No '}${label}</span>`;
+  el.innerHTML = [
+    chip(veg.bullKelp.present, veg.bullKelp.present && veg.bullKelp.distFt != null ? `Bull kelp ${veg.bullKelp.distFt} ft` : 'bull kelp'),
+    chip(veg.eelgrass.present, veg.eelgrass.present && veg.eelgrass.distFt != null ? `Eelgrass ${veg.eelgrass.distFt} ft` : 'eelgrass'),
+    chip(veg.forage.present, veg.forage.present ? 'Forage fish beach' : 'forage fish beach'),
+    chip(veg.herring.present, veg.herring.present ? 'Herring ground' : 'herring ground'),
+  ].join('');
+  el.hidden = false;
+}
+
+/**
+ * Every non-parcel feature renders through the shared frame. A layer's
+ * POPUP_SPECS entry decides the title, facts, chips, story, and action;
+ * everything else comes from the layer config and the feature's fields.
+ */
+function buildFeaturePopupHtml(
+  layer: LayerState,
+  props: Record<string, unknown>,
+  fields: { label: string; value: string }[],
+  label: string,
+): string {
+  const { config } = layer;
+  const spec = POPUP_SPECS[config.id];
+  const accent = config.style.strokeColor || config.style.fillColor || '#0297BA';
+  const swatch = config.markerIcon ? 'point' : (config.style.fillOpacity ?? 0) > 0.05 ? 'fill' : 'line';
+
+  const title = spec?.title?.(props) || (label && label !== 'Feature' ? label : fallbackTitle(config, props));
+  const subtitle = spec?.subtitle?.(props);
+  const photos: PopupPhoto[] = spec?.photos?.(props) ?? [];
+  if (!photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
+
+  const story = spec?.story?.(props)
+    ?? (config.standardMessage ? { kicker: 'Why it matters', html: escHtml(config.standardMessage) } : undefined);
+  const link = spec?.link?.(props);
+  const footerButtons = link ? [{ label: link.label, href: link.href }] : [];
+
+  return buildPopupFrame({
+    id: `feature-${Date.now()}`,
+    accent,
+    layerName: config.name,
+    swatch,
+    swatchColor: config.style.fillColor,
+    title,
+    subtitle,
+    photos,
+    stats: spec?.stats?.(props),
+    chips: spec?.chips?.(props),
+    story,
+    action: spec?.action,
+    fields: spec?.noDetails ? [] : fields,
+    source: { credit: config.sourceCredit, url: config.sourceUrl },
+    footerButtons,
+  });
 }
 
 function buildAtAGlanceCard(
@@ -1559,8 +1639,8 @@ function buildAtAGlanceCard(
   // Compact stat rows (label: value)
   const compactStat = (value: string, label: string) =>
     `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;">
-      <span style="font-size:12px;color:${COLOR.mid};font-weight:600;">${esc(label)}</span>
-      <span style="font-size:14px;font-weight:700;color:${COLOR.teal};">${esc(value)}</span>
+      <span style="font-size:14px;color:${COLOR.mid};font-weight:600;">${esc(label)}</span>
+      <span style="font-size:16px;font-weight:700;color:${COLOR.teal};">${esc(value)}</span>
     </div>`;
 
   const statRows: string[] = [];
@@ -1573,8 +1653,8 @@ function buildAtAGlanceCard(
   const statsBlock = `<div style="margin-bottom:8px;border-bottom:1px solid ${COLOR.border};padding-bottom:6px;">${statRows.join('')}</div>`;
 
   // Quick details
-  const COMPACT_BODY = `font-size:13px;color:${COLOR.dark};line-height:1.45;margin:0;`;
-  const compactPill = (text: string) => `<span style="color:${COLOR.teal};font-weight:700;font-size:13px;">${esc(text)}</span>`;
+  const COMPACT_BODY = `font-size:15px;color:${COLOR.dark};line-height:1.45;margin:0;`;
+  const compactPill = (text: string) => `<span style="color:${COLOR.teal};font-weight:700;font-size:15px;">${esc(text)}</span>`;
 
   const details: string[] = [];
   if (taxArea) details.push(`Located in ${compactPill(taxArea)}`);
@@ -1616,7 +1696,7 @@ function buildAtAGlanceCard(
 
   return `
     <div style="${CARD};height:100%;box-sizing:border-box;margin-bottom:0;">
-      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${COLOR.dark};margin:0 0 6px 0;">At a Glance</div>
+      <div style="${HEADING};margin-bottom:6px;">At a Glance</div>
       ${statsBlock}
       ${detailText}
     </div>
@@ -1635,7 +1715,7 @@ function buildShoreformCard(sf: NonNullable<NearshoreVegetationResult['shoreform
   const description = type?.description ?? '';
 
   const chip = (k: string, v: string) => v
-    ? `<span style="display:inline-flex;align-items:baseline;gap:4px;padding:3px 8px;background:white;border:1px solid ${COLOR.border};border-radius:999px;font-size:12px;color:${COLOR.mid};"><span>${k}</span><strong style="color:${COLOR.dark};">${esc(v)}</strong></span>`
+    ? `<span style="display:inline-flex;align-items:baseline;gap:4px;padding:3px 10px;background:#EFE9DD;border-radius:999px;font-size:13.5px;color:${COLOR.mid};font-weight:600;"><span>${k}</span><strong style="color:${COLOR.dark};">${esc(v)}</strong></span>`
     : '';
   const chips = [
     chip('Forage fish habitat', HML[sf.ffhab] ?? sf.ffhab),
@@ -1651,11 +1731,11 @@ function buildShoreformCard(sf: NonNullable<NearshoreVegetationResult['shoreform
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <span style="display:inline-block;width:26px;height:6px;border-radius:3px;background:${color};flex-shrink:0;"></span>
         <span style="font-size:17px;font-weight:700;color:${COLOR.dark};">${esc(label)}</span>
-        ${sf.distFt > 0 ? `<span style="font-size:12px;color:${COLOR.light};">${sf.distFt} ft from parcel line</span>` : ''}
+        ${sf.distFt > 0 ? `<span style="font-size:14px;color:${COLOR.mid};">${sf.distFt} ft from parcel line</span>` : ''}
       </div>
       ${description ? `<p style="${BODY};margin-bottom:10px;">${esc(description)}</p>` : ''}
       ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">${chips}</div>` : ''}
-      <p style="font-size:12px;color:${COLOR.mid};margin:6px 0 0;line-height:1.4;">
+      <p style="font-size:14px;color:${COLOR.mid};margin:8px 0 0;line-height:1.45;">
         Geomorphic shoreform mapping by Friends of the San Juans (Coastal Geologic Services, 2012). Coastal processes affect each shore form differently, resulting in different management concerns and priorities.
       </p>
     </div>
@@ -1742,13 +1822,13 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
 
   const dot = (color: string) =>
     `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;flex-shrink:0;"></span>`;
-  const greenDot = dot('#22C55E');
+  const greenDot = dot('#5E8A1E');
   const grayDot = dot(COLOR.border);
 
   const row = (present: boolean, label: string, detail?: string) => `
-    <div style="display:flex;align-items:flex-start;padding:8px 10px;background:${present ? '#F0FDF4' : COLOR.bg};border-radius:6px;border:1px solid ${present ? '#BBF7D0' : 'transparent'};">
+    <div style="display:flex;align-items:flex-start;padding:8px 10px;background:${present ? '#E3F1C8' : '#FBF7EF'};border-radius:6px;border:1px solid ${present ? '#B7D98A' : '#E0D6C4'};">
       <span style="margin-top:4px;">${present ? greenDot : grayDot}</span>
-      <span style="font-size:13px;color:${present ? '#166534' : COLOR.mid};line-height:1.4;">
+      <span style="font-size:15px;color:${present ? '#1F3A08' : COLOR.mid};line-height:1.4;">
         <strong>${label}</strong>${detail ? ` &mdash; ${detail}` : ''}
       </span>
     </div>`;
@@ -1786,8 +1866,8 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
   }
 
   const significance = anyVeg ? `
-    <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:linear-gradient(135deg,#F0FDFA 0%,#ECFDF5 100%);border-radius:10px;border:1px solid #99F6E4;border-left:4px solid ${COLOR.teal};">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${COLOR.teal};margin-bottom:6px;">Ecological Significance</div>
+    <div style="position:relative;margin-top:4px;padding:14px 16px 14px 20px;background:#EBE1CC;border-radius:10px;border-left:4px solid #B69866;">
+      <div style="font-family:'Montserrat',system-ui,sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6A5324;margin-bottom:6px;">Ecological Significance</div>
       <p style="font-size:14px;color:${COLOR.dark};line-height:1.6;margin:0;">
         ${hasEelgrass ? `Eelgrass is protected under <strong>Washington State law</strong> and San Juan County's <strong>Environmentally Sensitive Areas</strong> code. ` : ''}
         ${hasKelp ? `Bull kelp is a <strong>priority habitat</strong> for the Washington Department of Fish &amp; Wildlife and is protected under <strong>San Juan County code</strong>. ` : ''}
@@ -1796,8 +1876,8 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
     </div>` : '';
 
   const learnMoreBlock = `
-    <div style="margin-top:14px;padding:12px 14px;background:#F8FAFC;border-radius:8px;border:1px solid ${COLOR.border};">
-      <p style="font-size:13px;color:${COLOR.dark};line-height:1.6;margin:0;">
+    <div style="margin-top:14px;padding:12px 14px 12px 16px;background:#F1F7E3;border-radius:10px;border-left:4px solid #92C642;">
+      <p style="font-size:15px;color:${COLOR.dark};line-height:1.6;margin:0;">
         Want to know how you can help protect the shoreline around your property?
         <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:underline;">Read the guide for shoreline property owners</a>
         &mdash; it's full of practical ideas from your neighbors in the San Juans. You can also
@@ -1882,8 +1962,7 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
       <div style="width:64px;height:64px;border-radius:50%;border:4px solid ${scoreColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <div style="text-align:center;">
-          <span style="font-size:22px;font-weight:700;color:${COLOR.teal};">${displayValue}</span>
-          ${pct != null ? `<div style="font-size:12px;color:${COLOR.mid};margin-top:-2px;">percentile</div>` : ''}
+          <span style="font-size:22px;font-weight:700;color:${COLOR.teal};">${displayValue}${pct != null ? '<span style="font-size:13px;font-weight:700;color:' + COLOR.mid + ';margin-left:1px;">%</span>' : ''}</span>
         </div>
       </div>
       <div>
@@ -2043,13 +2122,13 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
   const stat = (value: string, label: string, color: string) => `
     <div style="text-align:center;flex:1;min-width:70px;padding:8px;background:white;border-radius:6px;">
       <div style="font-size:18px;font-weight:700;color:${color};">${value}</div>
-      <div style="font-size:11px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+      <div style="font-size:14px;color:${COLOR.mid};text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
     </div>`;
 
   const absent = (label: string) => `
     <div style="display:flex;align-items:center;padding:8px 12px;background:${COLOR.bg};border-radius:6px;margin-bottom:8px;">
       ${vegIcon(false)}
-      <span style="font-size:13px;color:${COLOR.mid};">${label}</span>
+      <span style="font-size:14.5px;color:${COLOR.mid};">${label}</span>
     </div>`;
 
   // --- Bull Kelp ---
@@ -2062,17 +2141,17 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
       <div style="padding:12px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#166534;">Bull Kelp Present</span>
+          <span style="font-size:14px;font-weight:700;color:#1F3A08;">Bull Kelp Present</span>
         </div>
-        <p style="${BODY};color:#15803D;margin-bottom:8px;">
+        <p style="${BODY};color:#3D6410;margin-bottom:8px;">
           ${extent}, ${density} within ${distances.kelpFt} ft of this property.
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          ${stat(acresStr, 'Acres (approx.)', '#166534')}
-          ${bullKelp.distFt !== null ? stat(String(bullKelp.distFt), 'Nearest (ft)', '#166534') : ''}
-          ${stat(bullKelp.featureCount.toLocaleString(), bullKelp.featureCount === 1 ? 'Patch' : 'Patches', '#166534')}
+          ${stat(acresStr, 'Acres (approx.)', '#1F3A08')}
+          ${bullKelp.distFt !== null ? stat(String(bullKelp.distFt), 'Nearest (ft)', '#1F3A08') : ''}
+          ${stat(bullKelp.featureCount.toLocaleString(), bullKelp.featureCount === 1 ? 'Patch' : 'Patches', '#1F3A08')}
         </div>
-        <p style="font-size:13px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${KELP_TEXT}</p>
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${KELP_TEXT}</p>
       </div>
     `;
   } else {
@@ -2091,20 +2170,20 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
       <div style="padding:12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#115E59;">Eelgrass Present</span>
+          <span style="font-size:14px;font-weight:700;color:#1F3A08;">Eelgrass Present</span>
         </div>
-        <p style="${BODY};color:#0F766E;margin-bottom:8px;">
+        <p style="${BODY};color:#3D6410;margin-bottom:8px;">
           ${extent} within ${distances.eelgrassFt} ft of this property${eelgrass.segmentCount > 1 ? ` across ${eelgrass.segmentCount} survey transects` : ''}.
           The mapped line is the deep-water edge of the meadow; the meadow extends from there toward shore.
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          ${eelgrass.distFt !== null ? stat(String(eelgrass.distFt), 'Nearest (ft)', '#115E59') : ''}
-          ${lengthStr !== '—' ? stat(lengthStr, 'Length (ft)', '#115E59') : ''}
-          ${depthStr !== '—' ? stat(depthStr, 'Avg depth', '#115E59') : ''}
-          ${maxDepthStr !== '—' ? stat(maxDepthStr, 'Max depth', '#115E59') : ''}
+          ${eelgrass.distFt !== null ? stat(String(eelgrass.distFt), 'Nearest (ft)', '#1F3A08') : ''}
+          ${lengthStr !== '—' ? stat(lengthStr, 'Length (ft)', '#1F3A08') : ''}
+          ${depthStr !== '—' ? stat(depthStr, 'Avg depth', '#1F3A08') : ''}
+          ${maxDepthStr !== '—' ? stat(maxDepthStr, 'Max depth', '#1F3A08') : ''}
         </div>
-        ${sitesStr ? `<p style="font-size:12px;color:${COLOR.mid};margin-top:8px;">Survey sites: ${esc(sitesStr)}</p>` : ''}
-        <p style="font-size:13px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${EELGRASS_TEXT}</p>
+        ${sitesStr ? `<p style="font-size:14px;color:${COLOR.mid};margin-top:8px;">Survey sites: ${esc(sitesStr)}</p>` : ''}
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:8px;line-height:1.45;">${EELGRASS_TEXT}</p>
       </div>
     `;
   } else {
@@ -2119,17 +2198,17 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
       return `<li style="margin:2px 0;">${esc(d.name || 'Unnamed beach')}${sp ? ` &mdash; ${esc(sp)}` : ''}${d.distFt > 0 ? ` <span style="color:${COLOR.light};">(${d.distFt} ft)</span>` : ''}</li>`;
     }).join('');
     forageHtml = `
-      <div style="padding:12px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;margin-bottom:10px;">
+      <div style="padding:12px;background:#FDE9C8;border-radius:8px;border:1px solid #F3CF98;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#9A3412;">Forage Fish Spawning Beach</span>
+          <span style="font-size:14px;font-weight:700;color:#6E3D03;">Forage Fish Spawning Beach</span>
         </div>
         ${forage.documented.length > 0 ? `
-          <p style="${BODY};color:#C2410C;margin-bottom:6px;">Documented spawning within ${distances.forageFt} ft of this property:</p>
+          <p style="${BODY};color:#6E3D03;margin-bottom:6px;">Documented spawning within ${distances.forageFt} ft of this property:</p>
           <ul style="margin:0 0 8px 18px;padding:0;font-size:14px;color:${COLOR.dark};">${beachRows}</ul>` : `
-          <p style="${BODY};color:#C2410C;margin-bottom:6px;">Potential spawning habitat within ${distances.forageFt} ft &mdash; beach substrate suitable for surf smelt or Pacific sand lance.</p>`}
-        ${forage.documented.length > 0 && forage.potentialCount > 0 ? `<p style="font-size:12px;color:${COLOR.mid};margin:0 0 6px;">Also mapped as potential spawning habitat.</p>` : ''}
-        <p style="font-size:13px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${FORAGE_TEXT}</p>
+          <p style="${BODY};color:#6E3D03;margin-bottom:6px;">Potential spawning habitat within ${distances.forageFt} ft &mdash; beach substrate suitable for surf smelt or Pacific sand lance.</p>`}
+        ${forage.documented.length > 0 && forage.potentialCount > 0 ? `<p style="font-size:14px;color:${COLOR.mid};margin:0 0 6px;">Also mapped as potential spawning habitat.</p>` : ''}
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${FORAGE_TEXT}</p>
       </div>
     `;
   } else {
@@ -2140,13 +2219,13 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
   let herringHtml = '';
   if (herring.present) {
     herringHtml = `
-      <div style="padding:12px;background:#EFF6FF;border-radius:8px;border:1px solid #BFDBFE;margin-bottom:10px;">
+      <div style="padding:12px;background:#D8F0F7;border-radius:8px;border:1px solid #A9D9E8;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#1E40AF;">Herring Spawning Ground</span>
+          <span style="font-size:14px;font-weight:700;color:#045A6E;">Herring Spawning Ground</span>
         </div>
-        <p style="${BODY};color:#1D4ED8;margin-bottom:6px;">${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic), lies within ${distances.herringFt} ft of this property.</p>
-        <p style="font-size:13px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${HERRING_TEXT}</p>
+        <p style="${BODY};color:#045A6E;margin-bottom:6px;">${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic), lies within ${distances.herringFt} ft of this property.</p>
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${HERRING_TEXT}</p>
       </div>
     `;
   } else {
@@ -2266,40 +2345,3 @@ function buildBuildingsTab(result: BuildingQueryResult): string {
 // Non-parcel popup
 // ---------------------------------------------------------------------------
 
-function buildPopupHtml(
-  label: string,
-  layer: LayerState,
-  fields: { label: string; value: string }[],
-  addressRowId: string | null,
-): string {
-  const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
-
-  const addressRow = addressRowId
-    ? `<tr>
-        <td style="color:${COLOR.mid};padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap;font-weight:600;">Address</td>
-        <td id="${esc(addressRowId)}" style="color:${COLOR.light};padding:5px 0;font-style:italic;">Looking up address...</td>
-       </tr>`
-    : '';
-
-  return `
-    <div style="font-family:${FONT};max-width:360px;max-height:400px;overflow-y:auto;">
-      <div style="font-weight:700;font-size:18px;color:${COLOR.dark};margin-bottom:6px;border-bottom:2px solid ${accentColor};padding-bottom:4px;">
-        ${esc(label)}
-      </div>
-      <div style="font-size:14px;color:${COLOR.mid};margin-bottom:10px;">
-        ${esc(layer.config.name)}
-      </div>
-      ${(fields.length > 0 || addressRowId) ? `
-        <table style="font-size:15px;border-collapse:collapse;width:100%;">
-          ${addressRow}
-          ${fields.map(f => `
-            <tr>
-              <td style="color:${COLOR.mid};padding:5px 10px 5px 0;vertical-align:top;white-space:nowrap;">${esc(f.label)}</td>
-              <td style="color:${COLOR.dark};padding:5px 0;word-break:break-word;">${linkify(f.value)}</td>
-            </tr>
-          `).join('')}
-        </table>
-      ` : `<div style="font-size:15px;color:${COLOR.dark};">No additional details available</div>`}
-    </div>
-  `;
-}

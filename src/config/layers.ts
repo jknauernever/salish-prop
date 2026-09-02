@@ -597,7 +597,7 @@ export const layerConfigs: LayerConfig[] = [
       fillColor: '#20B2AA',
       fillOpacity: 0,
       strokeColor: '#20B2AA',
-      strokeWeight: 2.5,
+      strokeWeight: 4.5, // thick enough to click reliably
     },
     popupFields: [
       { key: 'SITE', label: 'Site' },

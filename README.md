@@ -261,6 +261,20 @@ When a parcel popup opens, two additional spatial queries run:
 
 ---
 
+## Popup Frame (every click)
+
+Every feature click renders through one frame, `src/components/Map/popupFrame.ts` (`buildPopupFrame`), styled by the `.ssx-*` rules in `src/index.css` in Friends of the San Juans' palette (sea blue `#0297BA`, driftwood `#B69866`, kelp lime `#92C642`, chartreuse `#E6E533` for the single call-to-action, orange only for caveats; Montserrat headings, Source Sans body). Slots, top to bottom:
+
+1. **Photo** — 16:9 with caption and credit; more than one photo becomes an album with ‹ › arrows and a counter. Precedence: feature photo (observations), then the layer's stand-in photo from `LAYER_PHOTOS` in `src/config/popups.ts` (images in `public/reports/shoreline-images/`), then none.
+2. **Header** — layer eyebrow in the layer's map color, title, subtitle.
+3. **Key facts** — up to three big numbers.
+4. **Why it matters** (sand block) and **What you can do** (lime block, chartreuse button).
+5. **Chips**, then an optional custom body (the parcel report's tabs).
+6. **All details** — every field, collapsed behind a count when more than six.
+7. **Footer** — source credit/link left, quiet buttons right.
+
+Per-layer content comes from `POPUP_SPECS` in `src/config/popups.ts` (title, subtitle, stats, chips, story, action, link, `noDetails`). Layers without a spec get the fallback: best name field as title, all fields in the table, the layer's `standardMessage` as the story, its `sourceCredit`/`sourceUrl` in the footer. Google's InfoWindow chrome is overridden in CSS (no padding, hidden default close); the frame's own × dispatches `ssx-popup-close` on `window`, which every InfoWindow owner listens for. The parcel report, the two raster popups (`ForestLossPopup`, `DistAlertPopup`), and the species-observation popup in `useLayers.ts` all render through the same builder.
+
 ## Property Popup (FeaturePopup)
 
 The popup is an `google.maps.InfoWindow` rendered as a tabbed HTML interface. It opens when a user clicks a tax parcel or when an address search resolves to a parcel.

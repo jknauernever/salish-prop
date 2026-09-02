@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useMap } from '../../hooks/useMap';
 import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighlight';
 import type { LayerState } from '../../types';
+import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT } from './popupFrame';
+import { LAYER_PHOTOS } from '../../config/popups';
 
 interface DistAlertPopupProps {
   layers: LayerState[];
@@ -18,6 +20,29 @@ interface DistAlertPopupProps {
 // pixel and the InfoWindow's tail. Matched with `pixelOffset` so the line and
 // the InfoWindow tail share an endpoint.
 const NECK_PX = 55;
+
+const LAYER_ID = 'opera-dist-alert';
+const ACCENT = '#D9480F';
+
+function rasterFrame(layer: LayerState | undefined, title: string, subtitle: string, opts: {
+  stats?: { value: string; unit?: string; label: string }[];
+  story?: { kicker: string; html: string };
+  chips?: { label: string; tone?: 'default' | 'on' | 'warn' | 'teal' }[];
+} = {}): string {
+  return buildPopupFrame({
+    id: `${LAYER_ID}-${Date.now()}`,
+    accent: ACCENT,
+    layerName: layer?.config.name ?? 'Forest Disturbance (DIST-ALERT)',
+    swatch: 'fill',
+    title,
+    subtitle,
+    photos: LAYER_PHOTOS[LAYER_ID] ? [LAYER_PHOTOS[LAYER_ID]] : [],
+    stats: opts.stats,
+    chips: opts.chips,
+    story: opts.story,
+    source: { credit: layer?.config.sourceCredit, url: layer?.config.sourceUrl },
+  });
+}
 
 export function DistAlertPopup({ layers }: DistAlertPopupProps) {
   const { map } = useMap();
@@ -50,6 +75,9 @@ export function DistAlertPopup({ layers }: DistAlertPopupProps) {
   const visible = !!layer?.visible;
   const endpoint = layer?.config.apiEndpoint;
 
+  const layerRef = useRef(layer);
+  layerRef.current = layer;
+  const layerNow = () => layerRef.current;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const endpointRef = useRef(endpoint);
@@ -69,7 +97,16 @@ export function DistAlertPopup({ layers }: DistAlertPopupProps) {
         clearFeatureHighlight();
         hideNeck();
       });
+      installPopupFrameHandlers();
     }
+    const iwForClose = infoWindowRef.current;
+    const onFrameClose = () => {
+      if (!iwForClose.isOpen) return;
+      iwForClose.close();
+      clearFeatureHighlight();
+      hideNeck();
+    };
+    window.addEventListener(POPUP_CLOSE_EVENT, onFrameClose);
 
     const handler = async (event: google.maps.MapMouseEvent) => {
       if (!visibleRef.current || !endpointRef.current || !event.latLng) return;
@@ -79,9 +116,7 @@ export function DistAlertPopup({ layers }: DistAlertPopupProps) {
       const lat = event.latLng.lat();
       const lng = event.latLng.lng();
 
-      iw.setContent(
-        '<div style="padding:6px 10px;font-size:12px;color:#2C3E50;">Looking up disturbance alert…</div>',
-      );
+      iw.setContent(rasterFrame(layerNow(), 'Forest disturbance', 'Looking up this location…'));
       iw.setPosition(event.latLng);
       iw.open(map);
       showNeck(map, event.latLng);
@@ -102,9 +137,7 @@ export function DistAlertPopup({ layers }: DistAlertPopupProps) {
 
         if (!data.date) {
           clearFeatureHighlight();
-          iw.setContent(
-            '<div style="padding:6px 10px;font-size:12px;color:#2C3E50;">No vegetation disturbance recorded at this location.</div>',
-          );
+          iw.setContent(rasterFrame(layerNow(), 'No vegetation disturbance recorded here', `${lat.toFixed(4)}, ${lng.toFixed(4)}`));
           return;
         }
 
@@ -127,25 +160,30 @@ export function DistAlertPopup({ layers }: DistAlertPopupProps) {
           ? ' <span style="color:#8B6914;">(very large patch — area underestimated)</span>'
           : '';
 
-        iw.setContent(
-          `<div style="padding:6px 10px;font-size:12px;color:#2C3E50;line-height:1.5;min-width:220px;">
-             <div style="font-weight:600;margin-bottom:2px;">Disturbance detected ${prettyDate}</div>
-             <div>${data.statusLabel ?? ''}</div>
-             <div>${severityStr}</div>
-             <div style="margin-top:4px;color:#5D6D7E;">${acresStr} in this connected patch${truncatedNote}</div>
-           </div>`,
-        );
+        void severityStr; void acresStr; void truncatedNote;
+        const d = new Date(data.date);
+        iw.setContent(rasterFrame(layerNow(), 'Disturbance detected', `${prettyDate} · ${lat.toFixed(4)}, ${lng.toFixed(4)}`, {
+          stats: [
+            { value: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), label: `First seen ${d.getFullYear()}` },
+            { value: data.severity != null ? `${Math.round(data.severity)}%` : '—', label: 'Vegetation loss' },
+            { value: data.acres != null && data.acres >= 0.01 ? data.acres.toFixed(2) : '< 0.01', unit: 'ac', label: 'Connected patch' },
+          ],
+          chips: [
+            ...(data.statusLabel ? [{ label: data.statusLabel, tone: 'teal' as const }] : []),
+            ...(data.truncated ? [{ label: 'Very large patch — area underestimated', tone: 'warn' as const }] : []),
+          ],
+          story: { kicker: 'What this is', html: 'Satellite-detected loss of vegetation cover since the previous season, from NASA\'s OPERA DIST-ALERT product. It flags clearing and storm damage; it cannot tell a permit-approved harvest from anything else.' },
+        }));
       } catch (err) {
         console.error('DIST-ALERT lookup failed:', err);
-        iw.setContent(
-          '<div style="padding:6px 10px;font-size:12px;color:#B91C1C;">Failed to look up disturbance data.</div>',
-        );
+        iw.setContent(rasterFrame(layerNow(), 'Lookup failed', 'Could not reach the disturbance service.'));
       }
     };
 
     const listener = map.addListener('click', handler);
     return () => {
       google.maps.event.removeListener(listener);
+      window.removeEventListener(POPUP_CLOSE_EVENT, onFrameClose);
     };
   }, [map]);
 

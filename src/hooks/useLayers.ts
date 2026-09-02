@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { LayerConfig, LayerState } from '../types';
+import { buildPopupFrame } from '../components/Map/popupFrame';
 import { layerConfigs } from '../config/layers';
 import { fetchGeoJSON } from '../utils/geojson';
 import { fetchHotspotsGeoJSON } from '../services/ebird';
@@ -1138,13 +1139,6 @@ export function useLayers(
 // Mirrors the EarthAtlas popup style (src/explore/components/ExploreMap.jsx
 // buildPopupHTML): photo on top, common+scientific name, place/date/observer
 // metadata, source badge, "View observation ↗" external link.
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function formatObsDate(dateStr: string, timeStr: string | null): string {
   try {
@@ -1161,37 +1155,22 @@ function formatObsDate(dateStr: string, timeStr: string | null): string {
 }
 
 function buildObservationPopupHTML(p: SpeciesObservationProperties): string {
-  const accent = OBS_ACCENT;
-  const photo = p.photoUrl ? escapeHtml(p.photoUrl) : null;
-  return `
-    <div style="font-family: 'Source Sans 3', system-ui, sans-serif; color: #1a2332; width: 260px; line-height: 1.4;">
-      ${photo ? `
-        <div style="margin: -1px -1px 10px; height: 160px; overflow: hidden; border-radius: 4px 4px 0 0; position: relative;">
-          <img src="${photo}" alt="${escapeHtml(p.comName)}" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'" />
-          <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 40px; background: linear-gradient(transparent, #fff);"></div>
-        </div>
-      ` : ''}
-      <div style="padding: 0 2px;">
-        <div style="font-size: 16px; font-weight: 600; line-height: 1.2; margin-bottom: 2px;">${escapeHtml(p.comName)}</div>
-        ${p.sciName ? `<div style="font-style: italic; color: #5a6b7a; font-size: 12px; margin-bottom: 8px;">${escapeHtml(p.sciName)}</div>` : ''}
-        <div style="font-size: 12px; color: #3d4f5f; display: flex; flex-direction: column; gap: 3px;">
-          ${p.place ? `<div>📍 ${escapeHtml(p.place)}</div>` : ''}
-          <div>📅 ${escapeHtml(formatObsDate(p.obsDate, p.obsTimeStr))}</div>
-          ${p.observer ? `<div>👤 ${escapeHtml(p.observer)}</div>` : ''}
-          ${p.count != null ? `<div>🔢 Count: ${p.count}</div>` : ''}
-          <div style="margin-top: 6px; font-size: 10px; color: #7a8a96; text-transform: uppercase; letter-spacing: 0.05em;">
-            via ${escapeHtml(p.source)}
-          </div>
-        </div>
-        <a href="${escapeHtml(p.sourceUrl)}" target="_blank" rel="noopener noreferrer" style="
-          display: block; margin-top: 10px; text-align: center;
-          padding: 6px 8px; border-radius: 4px;
-          background: ${accent}18; color: ${accent};
-          border: 1px solid ${accent}40;
-          font-size: 12px; font-weight: 500;
-          text-decoration: none;
-        ">View observation ↗</a>
-      </div>
-    </div>
-  `;
+  const when = formatObsDate(p.obsDate, p.obsTimeStr);
+  const stats = [
+    { value: when.split(',')[0] || when, label: when.includes(',') ? when.split(',').slice(1).join(',').trim() : 'Observed' },
+    ...(p.place ? [{ value: p.place, label: 'Location' }] : []),
+    { value: p.source, label: p.observer ? `Observer ${p.observer}` : 'Source' },
+  ];
+  return buildPopupFrame({
+    id: `obs-${Date.now()}`,
+    accent: OBS_ACCENT,
+    layerName: 'Species observations',
+    swatch: 'point',
+    title: p.comName,
+    subtitle: [p.sciName, p.count != null ? `${p.count} ${p.count === 1 ? 'individual' : 'individuals'}` : ''].filter(Boolean).join(' · '),
+    photos: p.photoUrl ? [{ url: p.photoUrl, caption: `Observer's photo`, credit: `${p.observer ? p.observer + ' via ' : ''}${p.source}` }] : [],
+    stats,
+    source: { credit: `${p.source}` },
+    footerButtons: [{ label: 'View observation ↗', href: p.sourceUrl }],
+  });
 }
