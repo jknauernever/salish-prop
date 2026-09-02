@@ -1,5 +1,5 @@
 import type { LayerConfig } from '../types';
-import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms';
+import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms.js'; // .js extension: this file is also loaded by the Node share function (ESM)
 
 export const layerConfigs: LayerConfig[] = [
   // === Property Layers ===
