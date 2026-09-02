@@ -1761,8 +1761,8 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
     : `deep-water edge not mapped within ${distances.eelgrassFt} ft`;
   const forageDetail = forage.present ? forageSummary(forage) : `none mapped within ${distances.forageFt} ft`;
   const herringDetail = herring.present
-    ? `adjacent to ${esc(herring.names.join(', '))}`
-    : 'not adjacent to a mapped spawning ground';
+    ? `${esc(herring.names.join(', '))} within ${distances.herringFt} ft`
+    : `no mapped spawning ground within ${distances.herringFt} ft`;
 
   const rows = `
     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
@@ -2145,19 +2145,19 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
           ${vegIcon(true)}
           <span style="font-size:14px;font-weight:700;color:#1E40AF;">Herring Spawning Ground</span>
         </div>
-        <p style="${BODY};color:#1D4ED8;margin-bottom:6px;">This property is adjacent to ${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic).</p>
+        <p style="${BODY};color:#1D4ED8;margin-bottom:6px;">${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic), lies within ${distances.herringFt} ft of this property.</p>
         <p style="font-size:13px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${HERRING_TEXT}</p>
       </div>
     `;
   } else {
-    herringHtml = absent('Not adjacent to a mapped herring spawning ground');
+    herringHtml = absent(`No herring spawning ground mapped within ${distances.herringFt} ft`);
   }
 
   return `
     <div style="${CARD}">
       ${sectionHeading('Nearshore Habitat')}
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
-        Friends of the San Juans survey data: bull kelp and eelgrass within ${distances.kelpFt} ft of the property, forage fish spawning beaches within ${distances.forageFt} ft, and adjacent herring spawning grounds.
+        Friends of the San Juans survey data: bull kelp and eelgrass within ${distances.kelpFt} ft of the property, forage fish spawning beaches within ${distances.forageFt} ft, and herring spawning grounds within ${distances.herringFt} ft.
       </p>
       ${kelpHtml}
       ${eelgrassHtml}

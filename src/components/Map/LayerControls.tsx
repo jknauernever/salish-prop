@@ -191,6 +191,9 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
           {isPlaceholder && (
             <span className="ml-1.5 text-xs text-slate-blue/30 italic">coming soon</span>
           )}
+          {!isPlaceholder && config.minZoom != null && config.minZoom >= 12 && (
+            <span className="ml-1.5 text-[10px] text-slate-blue/40 whitespace-nowrap" title={`Drawn at zoom ${config.minZoom} and closer`}>zoom {config.minZoom}+</span>
+          )}
           {error && !isPlaceholder && (
             <span className="ml-1.5 text-xs text-red-500">{error}</span>
           )}

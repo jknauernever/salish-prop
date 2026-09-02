@@ -99,7 +99,7 @@ export function countIntersectingBuildings(
 
 export interface NearshoreVegetationResult {
   /** Search distances the numbers were computed with (feet). */
-  distances: { kelpFt: number; eelgrassFt: number; forageFt: number };
+  distances: { kelpFt: number; eelgrassFt: number; forageFt: number; herringFt: number };
   bullKelp: {
     present: boolean;
     featureCount: number;
@@ -137,7 +137,7 @@ export function nearshoreFromStats(
   const f = rec?.forage;
   const h = rec?.herring ?? [];
   return {
-    distances: { kelpFt: meta.kelpFt, eelgrassFt: meta.eelgrassFt, forageFt: meta.forageFt },
+    distances: { kelpFt: meta.kelpFt, eelgrassFt: meta.eelgrassFt, forageFt: meta.forageFt, herringFt: meta.herringFt ?? 100 },
     bullKelp: {
       present: !!k && k.n > 0,
       featureCount: k?.n ?? 0,

@@ -7,7 +7,7 @@
  * The property popup reads this instead of running live turf.js queries, so
  * kelp / eelgrass / forage fish / herring always appear in a property report
  * regardless of which layers are switched on — and the search distances are
- * the agreed ones (500 ft offshore features, 100 ft beaches, herring touching)
+ * the agreed ones (500 ft offshore features, 100 ft beaches and herring grounds)
  * rather than the old 100 ft that missed offshore beds.
  */
 
@@ -44,7 +44,7 @@ export interface NearshoreStatsMeta {
   kelpFt: number;
   eelgrassFt: number;
   forageFt: number;
-  adjacentFt: number;
+  herringFt: number;
   shoreformFt?: number;
   parcels: number;
   parcelsWithHits: number;
@@ -61,7 +61,7 @@ export const DEFAULT_NEARSHORE_META: NearshoreStatsMeta = {
   kelpFt: 500,
   eelgrassFt: 500,
   forageFt: 100,
-  adjacentFt: 10,
+  herringFt: 100,
   parcels: 0,
   parcelsWithHits: 0,
 };

@@ -8,6 +8,8 @@ import {
   type SpeciesObservationProperties,
 } from '../services/speciesObservations';
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
+import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
+import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
 import type { UrlLayerUi } from '../services/urlState';
 
@@ -157,12 +159,30 @@ function midpointMarkerStyle(
   return (feature) => ({
     icon: {
       url: iconUrl,
-      scaledSize: new google.maps.Size(22, 22),
-      anchor: new google.maps.Point(11, 11),
+      scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
+      anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
     },
     clickable: false,
     visible: visible && (chosen === null || chosen.has(Number(feature.getProperty('mid')))),
   });
+}
+
+/**
+ * Stroke for a layer at this zoom. With `haloByZoom`, the weight interpolates
+ * between the two zoom stops and, in the wide half, the halo color/opacity
+ * replaces the base stroke (a light, translucent band reads as a glow on
+ * satellite imagery; the base dark edge takes over up close).
+ */
+function strokeAtZoom(config: LayerConfig, zoom: number): { strokeWeight: number; strokeColor: string; strokeOpacity?: number } {
+  const base = { strokeWeight: config.style.strokeWeight, strokeColor: config.style.strokeColor, strokeOpacity: config.style.strokeOpacity };
+  const h = config.haloByZoom;
+  if (!h) return base;
+  const t = Math.min(1, Math.max(0, (zoom - h.zoomWide) / (h.zoomNarrow - h.zoomWide)));
+  const strokeWeight = h.weightWide + (h.weightNarrow - h.weightWide) * t;
+  if (t < 0.6 && h.strokeColorWide) {
+    return { strokeWeight, strokeColor: h.strokeColorWide, strokeOpacity: h.strokeOpacityWide ?? base.strokeOpacity };
+  }
+  return { ...base, strokeWeight };
 }
 
 function createInitialState(config: LayerConfig, initialLayerIds?: string[], ui?: UrlLayerUi): LayerState {
@@ -243,6 +263,8 @@ export function useLayers(
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const pointLayersRef = useRef<Set<string>>(new Set());
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
+  // Canvas overlays for layers with a custom `renderer` (e.g. kelp squiggles)
+  const patternOverlaysRef = useRef<Map<string, KelpOverlay>>(new Map());
   const loadedRef = useRef<Set<string>>(new Set());
 
   // Viewport-filtered layer data: full GeoJSON + spatial index
@@ -361,6 +383,9 @@ export function useLayers(
     const dl = dataLayersRef.current.get(layerId);
     if (!dl) return;
 
+    const overlay = patternOverlaysRef.current.get(layerId);
+    if (overlay) overlay.setMap(visible ? (map ?? null) : null);
+
     // Multi-source observation layers carry a time filter alongside
     // visibility — route both through the dedicated style applier so the
     // date window survives toggling. Also close any open popup when the
@@ -395,8 +420,8 @@ export function useLayers(
         dl.setStyle(() => ({
           icon: {
             url: config.markerIcon!,
-            scaledSize: new google.maps.Size(28, 28),
-            anchor: new google.maps.Point(14, 14),
+            scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
+            anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
           },
           clickable: visible,
           visible,
@@ -450,8 +475,7 @@ export function useLayers(
       dl.setStyle({
         fillColor: config.style.fillColor,
         fillOpacity: config.style.fillOpacity,
-        strokeColor: config.style.strokeColor,
-        strokeWeight: config.style.strokeWeight,
+        ...strokeAtZoom(config, map?.getZoom() ?? 0),
         clickable: visible,
         visible,
       });
@@ -680,8 +704,8 @@ export function useLayers(
           dataLayer.setStyle(() => ({
             icon: config.markerIcon ? {
               url: config.markerIcon,
-              scaledSize: new google.maps.Size(28, 28),
-              anchor: new google.maps.Point(14, 14),
+              scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
+              anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
             } : undefined,
             clickable: true,
             visible: ebirdVisible,
@@ -786,8 +810,8 @@ export function useLayers(
             dataLayer.setStyle(() => ({
               icon: {
                 url: config.markerIcon!,
-                scaledSize: new google.maps.Size(28, 28),
-                anchor: new google.maps.Point(14, 14),
+                scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
+                anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
               },
               clickable: shouldShow,
               visible: shouldShow,
@@ -838,14 +862,20 @@ export function useLayers(
             dataLayer.setStyle({
               fillColor: config.style.fillColor,
               fillOpacity: config.style.fillOpacity,
-              strokeColor: config.style.strokeColor,
-              strokeWeight: config.style.strokeWeight,
+              ...strokeAtZoom(config, currentZoom),
               clickable: shouldShow,
               visible: shouldShow,
             });
           }
 
           dataLayersRef.current.set(config.id, dataLayer);
+
+          // Custom-rendered layers: paint on a canvas overlay above the (transparent) Data layer
+          if (config.renderer === 'kelp-squiggle') {
+            const overlay = createKelpOverlay(data);
+            overlay.setMap(shouldShow ? map : null);
+            patternOverlaysRef.current.set(config.id, overlay);
+          }
 
           // For LineString layers with a markerIcon, add midpoint markers
           if (config.markerIcon) {
@@ -907,7 +937,13 @@ export function useLayers(
         }
 
         const minZoom = layer.config.minZoom;
-        if (minZoom == null) return layer;
+        if (minZoom == null) {
+          // Halo strokes track zoom even without a minZoom gate
+          if (layer.config.haloByZoom && layer.loaded && !layer.config.viewportFiltered) {
+            setVectorVisible(layer.config.id, layer.visible);
+          }
+          return layer;
+        }
         // Viewport-filtered layers are handled by the idle listener
         if (layer.config.viewportFiltered) return layer;
 

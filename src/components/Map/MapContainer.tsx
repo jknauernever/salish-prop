@@ -90,7 +90,7 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
   }, []);
 
   return (
-    <MapContext.Provider value={{ map, isLoaded }}>
+    <MapContext.Provider value={{ map, isLoaded, zoom }}>
       <div className="h-full flex flex-col bg-fog-gray">
         {header}
         <div className="relative flex-1">

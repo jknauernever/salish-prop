@@ -1,5 +1,6 @@
 import type { LayerConfig } from '../types';
-import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms.js'; // .js extension: this file is also loaded by the Node share function (ESM)
+import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms.js';
+import { MARKER_ICONS } from './markerIcons.js'; // .js extension: this file is also loaded by the Node share function (ESM)
 
 export const layerConfigs: LayerConfig[] = [
   // === Property Layers ===
@@ -538,11 +539,12 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Areas (present or historic) where Pacific Herring spawn (WDFW)',
     category: 'friends-data',
     source: '/data/friends-herring-spawning.json',
-    visible: false,
+    visible: true, // on by default, but only drawn once zoomed in (see minZoom)
+    minZoom: 14,
     style: {
-      fillColor: '#DAA520',
-      fillOpacity: 0.35,
-      strokeColor: '#B8860B',
+      fillColor: '#8B5CF6',
+      fillOpacity: 0.3,
+      strokeColor: '#6D28D9', // violet — no clash with cream kelp or orange parcels
       strokeWeight: 1.5,
     },
     popupFields: [
@@ -560,12 +562,20 @@ export const layerConfigs: LayerConfig[] = [
     // Merged kelp patches (scripts/build-kelp-patches.py). The raw DNR file is
     // 228,964 one-square-foot raster cells (400 MB) that never rendered visibly.
     source: '/data/friends-bull-kelp-patches.geojson',
-    visible: false,
+    visible: true, // on by default — the client wants nearshore habitat visible while browsing
+    // Canopy olive-amber: bull kelp seen from above is a muted golden-brown
+    // (blades) with darker umber stipes. Distinct from the eelgrass teal and
+    // land greens without being bright. The wide low-zoom halo gives the thin
+    // shoreline ribbons enough mass to register at county scale.
+    // Rendered by KelpOverlay (chart-style kelp squiggles); this Data-layer
+    // style is transparent and only serves as the click target for popups.
+    renderer: 'kelp-squiggle',
     style: {
-      fillColor: '#6B8E23',
-      fillOpacity: 0.55,
-      strokeColor: '#3D5A3E',
-      strokeWeight: 1.5,
+      fillColor: '#FFF4CC',
+      fillOpacity: 0.01,
+      strokeColor: '#FFF4CC',
+      strokeWeight: 1,
+      strokeOpacity: 0,
     },
     popupFields: [
       { key: 'acres', label: 'Acres' },
@@ -581,8 +591,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Deepest (waterward) edge of eelgrass meadows (Friends, DNR, Friday Harbor Labs)',
     category: 'friends-data',
     source: '/data/friends-deepwater-eelgrass.geojson',
-    visible: false,
-    markerIcon: '/eelgrass-marker.png',
+    visible: true, // on by default — the client wants nearshore habitat visible while browsing
+    markerIcon: MARKER_ICONS.eelgrass,
     style: {
       fillColor: '#20B2AA',
       fillOpacity: 0,
@@ -607,12 +617,13 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Beach substrate suitable to support spawning by Pacific sand lance or surf smelt',
     category: 'friends-data',
     source: '/data/friends-potential-forage-spawning.json',
-    visible: false,
+    visible: true, // on by default, but only drawn once zoomed in (see minZoom)
+    minZoom: 14,
     style: {
-      fillColor: '#FF7F50',
+      fillColor: '#F9A8D4',
       fillOpacity: 0,
-      strokeColor: '#FF7F50',
-      strokeWeight: 2.5,
+      strokeColor: '#F9A8D4', // light pink — same family as documented, lighter = "potential"
+      strokeWeight: 4,
     },
     popupFields: [
       { key: 'C_Type_FOSJ', label: 'Shore Type' },
@@ -627,12 +638,13 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Beaches where Pacific sand lance, surf smelt, or both have been found spawning',
     category: 'friends-data',
     source: '/data/friends-documented-forage-spawning.json',
-    visible: false,
+    visible: true, // on by default, but only drawn once zoomed in (see minZoom)
+    minZoom: 14,
     style: {
-      fillColor: '#FF4500',
+      fillColor: '#E11D74',
       fillOpacity: 0,
-      strokeColor: '#FF4500',
-      strokeWeight: 3,
+      strokeColor: '#E11D74', // raspberry — distinct from the orange parcel lines
+      strokeWeight: 5,
     },
     popupFields: [
       { key: 'NAME', label: 'Beach Name' },
@@ -777,7 +789,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-mooring-buoys.json',
     visible: false,
-    markerIcon: '/buoy-marker.png',
+    markerIcon: MARKER_ICONS.buoy,
     style: {
       fillColor: '#191970',
       fillOpacity: 1,
@@ -818,7 +830,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-docks.geojson',
     visible: false,
-    markerIcon: '/dock-marker.png',
+    markerIcon: MARKER_ICONS.dock,
     style: {
       fillColor: '#008B8B',
       fillOpacity: 1,
@@ -1044,7 +1056,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'community-science',
     source: 'ebird:hotspots',
     visible: false,
-    markerIcon: '/bird-marker.png',
+    markerIcon: MARKER_ICONS.bird,
     style: {
       fillColor: '#E63946',
       fillOpacity: 1,

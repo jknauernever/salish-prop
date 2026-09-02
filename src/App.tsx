@@ -8,6 +8,7 @@ import { DistAlertPopup } from './components/Map/DistAlertPopup';
 import type { ParcelSearchDetail, OpenParcelPopupDetail, ParcelPopupStateDetail } from './components/Map/FeaturePopup';
 import { RadiusOverlay } from './components/Map/RadiusOverlay';
 import { LandingIntro } from './components/Map/LandingIntro';
+import { MapLegend } from './components/Map/MapLegend';
 import { AddressSearch } from './components/Search/AddressSearch';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -92,6 +93,7 @@ function AppShell({ preset }: { preset: Preset | null }) {
     >
       <AppContent
         sidebarOpen={sidebarOpen}
+        onOpenSidebar={() => setSidebarOpen(true)}
         placeSelectedRef={placeSelectedRef}
         preset={preset}
         layersLocked={layersLocked}
@@ -105,13 +107,14 @@ function AppShell({ preset }: { preset: Preset | null }) {
  */
 interface AppContentProps {
   sidebarOpen: boolean;
+  onOpenSidebar: () => void;
   placeSelectedRef: React.MutableRefObject<(result: GeocodingResult) => void>;
   preset: Preset | null;
   layersLocked: boolean;
 }
 
-function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: AppContentProps) {
-  const { map } = useMap();
+function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, layersLocked }: AppContentProps) {
+  const { map, zoom } = useMap();
   const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi } =
     useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi);
 
@@ -205,6 +208,11 @@ function AppContent({ sidebarOpen, placeSelectedRef, preset, layersLocked }: App
 
       {/* Admin-editable welcome box (only on the main landing view, not preset embeds) */}
       {!preset && <LandingIntro html={siteContent.landing_intro.html} defaultDismissed={initialUrlState.hasState} />}
+
+      {/* Floating legend: only what's on the map, plus the door to the full picker */}
+      {!layersLocked && !sidebarOpen && (
+        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} />
+      )}
 
       {!layersLocked && (
         <Sidebar open={sidebarOpen}>

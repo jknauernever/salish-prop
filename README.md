@@ -60,6 +60,9 @@
 ### UI / UX
 - PNW-inspired theme: teals, slate blues, fog grays, forest greens (Source Sans 3 font)
 - Slide-out sidebar with grouped layer controls, feature-count badges, loading spinners
+- Floating map legend (`src/components/Map/MapLegend.tsx`, top-left) listing only the layers currently on: swatch, per-layer info button, "zoom in" hint for zoom-gated layers, off switch, an **Explore more data** button that opens the sidebar picker, and a **How this is sourced** link that opens a modal describing every visible dataset with its source credit and link. Hidden while the sidebar is open and in locked preset views.
+- Point layers use Google-POI-style SVG pins (`src/config/markerIcons.ts`); bull kelp draws through a canvas overlay (`src/components/Map/KelpOverlay.ts`) with a cream wash, animated nautical "kelp squiggle" pattern from zoom 12.5, and a soft band below that.
+- Bull Kelp and Deepwater Edge of Eelgrass are on by default at county zoom; the spawning layers are on by default but only drawn from zoom 14 (`minZoom`).
 - Slide-in report panel with collapsible sections and radius selector
 - Custom event bridge: clicking an address inside a parcel popup triggers a new search
 
@@ -298,7 +301,7 @@ The property popup's **Nearshore Habitat** card (Summary tab) and the **Shorelin
 | Eelgrass deep-water edge | within **500 ft** | segment count, length, mean/max depth, nearest distance, survey sites |
 | Documented forage fish spawning beaches | within **100 ft** | beach names, species (surf smelt / sand lance), distance |
 | Potential forage fish spawning beaches | within **100 ft** | count |
-| Herring spawning grounds | **adjacent** (touching, 10 ft tolerance) | ground names |
+| Herring spawning grounds | within **100 ft** (client: same as forage fish) | ground names |
 | Friends geomorphic shoreform | nearest segment within **50 ft** | shore type (`PIAT_shoreforms`), forage fish habitat flag, PIAT protection/restoration priority, SMP designation, public ownership |
 
 - **Bull kelp geometry:** the Friends/DNR 2007 kelp file is a raster converted to vectors — 228,964 polygons with a median size of **one square foot** (400 MB). Drawn as-is it is invisible at every zoom. [`scripts/build-kelp-patches.py`](scripts/build-kelp-patches.py) buffers the cells 20 ft, dissolves, shrinks 12 ft, simplifies, and writes `public/data/friends-bull-kelp-patches.geojson` (patches with `acres`), which is what the Bull Kelp layer and the stats script now use. Re-run it only if Friends supply new kelp data.

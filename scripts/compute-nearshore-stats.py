@@ -6,7 +6,7 @@ For every tax parcel (keyed by FID, same as ndvi_parcel_stats.json) this writes:
   kelp      merged bull kelp patches within KELP_FT of the parcel (count, acres, nearest ft)
   eelgrass  deep-water-edge eelgrass segments within EELGRASS_FT (count, length, depths, sites)
   forage    documented spawning beaches within FORAGE_FT (names, species) + potential beach count
-  herring   herring spawning grounds touching the parcel (ADJACENT_FT tolerance)
+  herring   herring spawning grounds within HERRING_FT of the parcel
   shoreform nearest Friends geomorphic shoreform segment within SHOREFORM_FT (class + attributes)
 
 Only parcels with at least one hit are written, so the file stays small. The
@@ -37,7 +37,7 @@ DATA = os.path.join(ROOT, 'public', 'data')
 KELP_FT = 500
 EELGRASS_FT = 500
 FORAGE_FT = 100
-ADJACENT_FT = 10  # tolerance for "touching" herring grounds
+HERRING_FT = 100  # herring spawning grounds within this distance (client asked for same as forage fish)
 SHOREFORM_FT = 50  # nearest Friends shoreform segment (parcel lines vs. shoreline lines rarely coincide exactly)
 
 # WGS84 → NAD83(HARN) / Washington North (US survey feet) so buffers are in feet
@@ -183,7 +183,7 @@ def main():
                 })
             rec['forage'] = {'documented': beaches[:6], 'potentialN': len(ph)}
 
-        hh = hits(her_t, her_i, her_g, pg, ADJACENT_FT)
+        hh = hits(her_t, her_i, her_g, pg, HERRING_FT)
         if hh:
             names = []
             for i, _ in hh:
@@ -223,7 +223,7 @@ def main():
             'kelpFt': KELP_FT,
             'eelgrassFt': EELGRASS_FT,
             'forageFt': FORAGE_FT,
-            'adjacentFt': ADJACENT_FT,
+            'herringFt': HERRING_FT,
             'shoreformFt': SHOREFORM_FT,
             'parcels': len(parcels),
             'parcelsWithHits': n_hit,

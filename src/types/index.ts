@@ -77,7 +77,29 @@ export interface LayerConfig {
    */
   sourceCredit?: string;
   defaultOpacity?: number;
+  /**
+   * Zoom-scaled "halo" stroke for thin polygon layers (e.g. kelp ribbons):
+   * a wide, semi-transparent stroke at low zoom that narrows as you zoom in,
+   * so shoreline-hugging slivers still read as a mass from county scale.
+   * Weight is interpolated linearly between the two zoom stops.
+   */
+  haloByZoom?: {
+    zoomWide: number;
+    weightWide: number;
+    zoomNarrow: number;
+    weightNarrow: number;
+    /** Stroke color/opacity while the halo is wide (below the midpoint zoom); the base style's stroke is used when narrow. */
+    strokeColorWide?: string;
+    strokeOpacityWide?: number;
+  };
   viewportFiltered?: boolean;
+  /**
+   * Draw this polygon layer with a custom canvas overlay instead of Data-layer
+   * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
+   * components/Map/KelpOverlay.ts). The Data layer stays as an invisible
+   * click target so popups still work.
+   */
+  renderer?: 'kelp-squiggle';
   markerIcon?: string;
   styleByProperty?: StyleByProperty;
   /**
