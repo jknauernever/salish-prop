@@ -126,6 +126,35 @@ export const LAYER_PHOTOS: Record<string, PopupPhoto> = {
   'stormwater-pipes': { url: `${IMG}/clean-water.jpg`, caption: 'Runoff reaches the shore', credit: FRIENDS },
 };
 
+/** What a photo's caption must mention to illustrate a layer (see photosForSubject). */
+export const PHOTO_SUBJECTS: Record<string, RegExp> = {
+  'friends-deepwater-eelgrass': /eelgrass|seagrass/i,
+  'eelgrass': /eelgrass|seagrass/i,
+  'friends-bull-kelp': /\bkelp\b/i,
+  'friends-herring-spawning': /herring/i,
+  'pacific-herring': /herring/i,
+  'friends-documented-forage-spawning': /forage fish|sand lance|smelt|spawn/i,
+  'friends-potential-forage-spawning': /forage fish|sand lance|smelt|spawn/i,
+  'pacific-sand-lance': /sand lance|forage fish/i,
+  'surf-smelt': /smelt|forage fish/i,
+  'chinook-salmon': /salmon/i,
+  'chum-salmon': /salmon/i,
+  'pink-salmon': /salmon/i,
+  'friends-shoreline-geology': /bluff|beach|shoreline/i,
+  'friends-armor': /armor|bulkhead|riprap|seawall|rock/i,
+  'friends-armor-2019': /armor|bulkhead|riprap|seawall|rock/i,
+  'friends-armor-change-2019': /armor|bulkhead|riprap|seawall|rock/i,
+  'friends-docks': /\bdock\b|\bpier\b/i,
+  'friends-pilings': /piling|creosote/i,
+  'friends-mooring-buoys': /buoy|mooring/i,
+  'marbled-murrelet-observations': /murrelet/i,
+  'marbled-murrelet-breeding': /murrelet/i,
+  'marbled-murrelet-winter': /murrelet/i,
+};
+
+/** Captions that are about something other than the habitat even when they name it. */
+export const PHOTO_EXCLUDE = /sculpture|tile|mural|art\b|canoe|kayak|ship|tanker|vessel|marina|\bboat\b|logo|map\b|graph|chart|sign\b|poster/i;
+
 // ---------------------------------------------------------------------------
 // Action blocks: what Friends would like done, keyed to what was clicked
 // ---------------------------------------------------------------------------

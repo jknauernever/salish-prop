@@ -173,7 +173,7 @@ export function buildPopupFrame(o: PopupFrameOptions): string {
 
   return `<div class="ssx" id="${escapeHtml(o.id)}" style="--accent:${escapeHtml(o.accent)};${o.width ? `width:${o.width}px;` : ''}">
     <div class="ssx-edge"></div>
-    <button type="button" class="ssx-x" data-ssx-close aria-label="Close">&times;</button>
+    <div class="ssx-xwrap"><button type="button" class="ssx-x" data-ssx-close aria-label="Close">&times;</button></div>
     ${photos.length ? photoHtml(photos) : ''}
     <div class="ssx-head">
       <div class="ssx-layer">${swatchHtml(o.swatch, o.accent, o.swatchColor)}${escapeHtml(o.layerName)}</div>

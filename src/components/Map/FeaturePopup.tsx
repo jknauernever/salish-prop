@@ -3,7 +3,7 @@ import * as turf from '@turf/turf';
 import { useMap } from '../../hooks/useMap';
 import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHtml as escHtml } from './popupFrame';
 import type { PopupPhoto, PopupStat } from './popupFrame';
-import { POPUP_SPECS, LAYER_PHOTOS, fallbackTitle, fmtAcresValue } from '../../config/popups';
+import { POPUP_SPECS, LAYER_PHOTOS, PHOTO_SUBJECTS, PHOTO_EXCLUDE, fallbackTitle, fmtAcresValue } from '../../config/popups';
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
@@ -11,7 +11,7 @@ import { countIntersectingBuildings, nearshoreFromStats } from '../../services/p
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
 import { fetchParcelDetail, findParcelAtPoint, getFidToTaxArea } from '../../services/parcelDetail';
 import { DECK_CLICK_EVENT, type DeckClickDetail } from './DeckLayers';
-import { getFriendsContentSync, preloadFriendsContent, articleForUrl, articleForProject, articlesForLayer, articleDate, type ContentItem } from '../../services/friendsContent';
+import { getFriendsContentSync, preloadFriendsContent, articleForUrl, articleForProject, articlesForFeature, photosForSubject, articleDate, type ContentItem } from '../../services/friendsContent';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
 import { fetchNearbyBirdSummary } from '../../services/ebird';
@@ -1671,7 +1671,7 @@ function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): strin
   if (!articles.length) return '';
   const rows = articles.map((a, i) => `
     <a class="ssx-art" href="${escHtml(a.url)}" target="_blank" rel="noopener noreferrer">
-      ${a.image ? `<img class="ssx-art-img" src="${escHtml(a.image.url)}" alt="" loading="lazy">` : '<span class="ssx-art-img ssx-art-noimg"></span>'}
+      ${a.image ? `<img class="ssx-art-img" src="${escHtml(a.image.url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       <span class="ssx-art-body">
         <span class="ssx-art-title">${escHtml(a.title)}</span>
         <span class="ssx-art-meta">${escHtml(articleDate(a.date))}</span>
@@ -1702,12 +1702,31 @@ export function buildFeaturePopupHtml(
   const own = config.id === 'friends-projects'
     ? (articleForUrl(idx, typeof props.LINK === 'string' ? props.LINK : undefined) ?? articleForProject(idx, String(props.NAME ?? ''), island))
     : null;
-  const related = articlesForLayer(idx, config.id, island, 3).filter(a => a.id !== own?.id);
-  const articles = own ? [own, ...related].slice(0, 3) : related;
+  const related = articlesForFeature(idx, config.id, props, 3).filter(a => a.id !== own?.id);
+  // Pick by relevance, then list newest first
+  const articles = (own ? [own, ...related].slice(0, 3) : related).slice().sort((a, b) => b.date.localeCompare(a.date));
 
   const photos: PopupPhoto[] = spec?.photos?.(props) ?? [];
-  const articleImages = articles.flatMap(a => a.images.map(im => ({ url: im.url, caption: im.caption || a.title, credit: 'Friends of the San Juans' })));
-  if (!photos.length && articleImages.length) photos.push(...articleImages.slice(0, 6));
+  const shortCaption = (t: string) => {
+    const c = t.trim();
+    return c.length > 0 && c.length <= 70 ? c : '';
+  };
+  if (!photos.length) {
+    if (own) {
+      // A project's own article: its photos are the project (before / after)
+      photos.push(...own.images.slice(0, 4).map(im => ({ url: im.url, caption: shortCaption(im.caption), credit: 'Friends of the San Juans' })));
+    } else {
+      // Habitat / structure layers: the curated handout photo first, then only
+      // Friends photos whose captions name the subject.
+      if (LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
+      const subject = PHOTO_SUBJECTS[config.id];
+      if (subject) {
+        for (const im of photosForSubject(idx, subject, PHOTO_EXCLUDE, 2)) {
+          photos.push({ url: im.url, caption: im.caption, credit: 'Friends of the San Juans' });
+        }
+      }
+    }
+  }
   if (!photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
 
   const story = spec?.story?.(props)
