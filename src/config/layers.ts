@@ -32,7 +32,9 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Sale_Price', label: 'Last Sale Price' },
     ],
     minZoom: 15,
-    viewportFiltered: true,
+    // Rendered from vector tiles (deck.gl); the 133 MB GeoJSON is no longer downloaded.
+    // Per-parcel detail comes from storage.googleapis.com/salish-ndvi-tiles/parcels/<FID>.json
+    tiles: { url: 'https://storage.googleapis.com/salish-ndvi-tiles/tiles/parcels/{z}/{x}/{y}.pbf', sourceLayer: 'parcels', minZoom: 13, maxZoom: 16 },
     sourceCredit: 'San Juan County GIS (Assessor parcel data)',
   },
   {
@@ -58,7 +60,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Source', label: 'Data Source' },
     ],
     minZoom: 15,
-    viewportFiltered: true,
+    tiles: { url: 'https://storage.googleapis.com/salish-ndvi-tiles/tiles/buildings/{z}/{x}/{y}.pbf', sourceLayer: 'buildings', minZoom: 14, maxZoom: 16 },
     sourceCredit: 'San Juan County GIS',
   },
 

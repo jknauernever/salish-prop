@@ -58,15 +58,13 @@ function bboxesOverlap(a: BBox, b: BBox): boolean {
 
 export function countIntersectingBuildings(
   parcelFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-  buildingLayer: LayerState,
+  candidates: GeoJSON.Feature[],
 ): BuildingQueryResult {
-  if (!buildingLayer.geojsonData) return { count: 0, buildings: [], totalSqFt: 0 };
-
   const parcelBbox = turf.bbox(parcelFeature);
   const buildings: BuildingProperties[] = [];
   let totalSqFt = 0;
 
-  for (const building of buildingLayer.geojsonData.features) {
+  for (const building of candidates) {
     if (!building.geometry) continue;
     try {
       const buildingBbox = turf.bbox(building);

@@ -243,6 +243,24 @@ Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Rele
 
 ---
 
+## Vector Tiles (deck.gl on Google Maps)
+
+Parcels and building footprints no longer download as GeoJSON (133 MB + 17 MB). They render from vector tiles through a deck.gl `GoogleMapsOverlay` (`src/components/Map/DeckLayers.ts`), styled from the same layer config so nothing changes visually. A layer opts in with `tiles: { url, sourceLayer, minZoom, maxZoom }` in `src/config/layers.ts`; the hook then skips the fetch, marks the layer loaded, and toggles/zoom-gates it through the deck manager. Clicks are re-broadcast as an `ssx-deck-click` window event that `FeaturePopup` routes like a Data-layer click.
+
+Because tile features are clipped at tile edges, the parcel popup fetches a small per-parcel file for the full geometry and the buildings on or beside it (`src/services/parcelDetail.ts`), and a ~1.5 MB bbox index (`public/data/parcel_index.json`) answers point-in-parcel lookups for shared links and address search, plus FID → tax area for the island greenery percentiles. The radius report reads parcels and buildings from deck's loaded tiles.
+
+Rebuilding the tiles and parcel files (tippecanoe via Homebrew, shapely in a venv):
+
+```bash
+tippecanoe -e /tmp/tiles/parcels -l parcels -Z13 -z16 --no-tile-compression --drop-densest-as-needed --extend-zooms-if-still-dropping --detect-shared-borders --force public/data/Tax_Parcels.geojson
+tippecanoe -e /tmp/tiles/buildings -l buildings -Z14 -z16 --no-tile-compression --drop-densest-as-needed --extend-zooms-if-still-dropping --force public/data/Building_Footprints.geojson
+gsutil -m -h "Content-Type:application/x-protobuf" -h "Cache-Control:public,max-age=86400" cp -r /tmp/tiles/parcels /tmp/tiles/buildings gs://salish-ndvi-tiles/tiles/
+python3 scripts/build-parcel-files.py /tmp/parcel-files
+gsutil -m -h "Content-Type:application/json" -h "Cache-Control:public,max-age=86400" cp -r /tmp/parcel-files/parcels gs://salish-ndvi-tiles/
+```
+
+Tiles live at `gs://salish-ndvi-tiles/tiles/{parcels,buildings}/{z}/{x}/{y}.pbf` (uncompressed MVT), parcel files at `gs://salish-ndvi-tiles/parcels/<FID>.json`. The bucket already allows CORS from any origin.
+
 ## Spatial Query System
 
 ### How It Works

@@ -56,7 +56,7 @@ export function useLayersInView(map: google.maps.Map | null, layers: LayerState[
         for (const layer of layers) {
           if (!layer.visible || layer.config.placeholder || !inZoomRange(layer, zoom)) continue;
           const t = layer.config.layerType;
-          if (t === 'raster' || t === 'dynamic-raster') {
+          if (t === 'raster' || t === 'dynamic-raster' || layer.config.tiles) {
             next.add(layer.config.id);
             continue;
           }

@@ -1,4 +1,5 @@
 import * as turf from '@turf/turf';
+import { getDeckRenderedFeatures } from '../components/Map/DeckLayers';
 import type { SpatialQueryParams, SpatialQueryResult, LayerState } from '../types';
 
 export interface SpatialQueryOutput {
@@ -19,7 +20,7 @@ export function queryRadius(params: SpatialQueryParams): SpatialQueryOutput {
   let homeParcel: GeoJSON.Feature | null = null;
 
   for (const layer of layers) {
-    if (!layer.geojsonData || !layer.loaded) continue;
+    if (!layer.loaded || (!layer.geojsonData && !layer.config.tiles)) continue;
 
     const intersecting = findIntersectingFeatures(layer, buffer, bufferBbox);
 
@@ -46,7 +47,7 @@ function findContainingParcel(
   layer: LayerState,
   point: GeoJSON.Feature<GeoJSON.Point>
 ): GeoJSON.Feature | null {
-  const features = layer.geojsonData?.features;
+  const features = layerFeatures(layer);
   if (!features) return null;
 
   for (const feature of features) {
@@ -67,7 +68,7 @@ function findIntersectingFeatures(
   buffer: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
   bufferBbox: BBox
 ): GeoJSON.Feature[] {
-  const features = layer.geojsonData?.features;
+  const features = layerFeatures(layer);
   if (!features) return [];
 
   const results: GeoJSON.Feature[] = [];
@@ -96,4 +97,11 @@ type BBox = GeoJSON.BBox;
 
 function bboxesOverlap(a: BBox, b: BBox): boolean {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
+}
+
+/** A layer's features: the GeoJSON when loaded, else whatever deck.gl has in its loaded tiles. */
+function layerFeatures(layer: LayerState): GeoJSON.Feature[] | null {
+  if (layer.geojsonData) return layer.geojsonData.features;
+  if (layer.config.tiles) return getDeckRenderedFeatures(layer.config.id);
+  return null;
 }

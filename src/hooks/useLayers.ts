@@ -10,6 +10,7 @@ import {
 } from '../services/speciesObservations';
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
+import { getDeckManager, registerDeckManager } from '../components/Map/DeckLayers';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
 import type { UrlLayerUi } from '../services/urlState';
@@ -381,6 +382,11 @@ export function useLayers(
   const setVectorVisible = useCallback((layerId: string, visible: boolean) => {
     const config = layerConfigs.find(c => c.id === layerId);
     if (!config || config.viewportFiltered) return; // viewport layers handled separately
+    if (config.tiles) {
+      // deck.gl applies the minZoom gate itself; pass the user's intent
+      if (map) getDeckManager(map).setVisible(layerId, visible);
+      return;
+    }
     const dl = dataLayersRef.current.get(layerId);
     if (!dl) return;
 
@@ -742,6 +748,19 @@ export function useLayers(
         return;
       }
 
+      // --- Vector-tile layers (deck.gl) — nothing to download up front ---
+      if (config.tiles) {
+        loadedRef.current.add(config.id);
+        const deck = getDeckManager(map);
+        registerDeckManager(deck);
+        deck.setLayer(config, isVisibleByDefault(config.id));
+        deck.setZoom(map.getZoom() ?? 0);
+        setLayers(prev => prev.map(l =>
+          l.config.id === config.id ? { ...l, loading: false, loaded: true, featureCount: 0 } : l
+        ));
+        return;
+      }
+
       // --- Vector GeoJSON layers ---
       loadedRef.current.add(config.id);
 
@@ -930,7 +949,10 @@ export function useLayers(
       // the case for almost every zoom tick during a smooth zoom.
       handleZoomForSpeciesObs();
 
+      getDeckManager(map).setZoom(zoom);
+
       setLayers(prev => prev.map(layer => {
+        if (layer.config.tiles) return layer; // deck.gl gates these itself
         // Midpoint-marker layers thin out with zoom — re-style on every change
         const ml = layer.config.markerIcon ? markerLayersRef.current.get(layer.config.id) : undefined;
         if (ml && layer.loaded) {
@@ -981,6 +1003,12 @@ export function useLayers(
           const inRange = minZoom == null || zoom >= minZoom;
           raster.setOpacity(newVisible && inRange ? (layer.opacity ?? 0.7) : 0);
         }
+        return { ...layer, visible: newVisible };
+      }
+
+      // Vector-tile layers — deck.gl handles the zoom gate
+      if (layer.config.tiles) {
+        if (map) getDeckManager(map).setVisible(layerId, newVisible);
         return { ...layer, visible: newVisible };
       }
 

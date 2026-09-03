@@ -9,6 +9,8 @@ import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojso
 import { reverseGeocode } from '../../services/geocode';
 import { countIntersectingBuildings, nearshoreFromStats } from '../../services/popupSpatial';
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
+import { fetchParcelDetail, findParcelAtPoint, getFidToTaxArea } from '../../services/parcelDetail';
+import { DECK_CLICK_EVENT, type DeckClickDetail } from './DeckLayers';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
 import { fetchNearbyBirdSummary } from '../../services/ebird';
@@ -95,18 +97,9 @@ let islandIndexCache: Map<string, IslandPercentile> | null = null;
 
 function buildIslandIndex(
   ndviStats: Record<string, NdviStats>,
-  parcelGeojson: GeoJSON.FeatureCollection,
+  fidToIsland: Map<string, string>,
 ): Map<string, IslandPercentile> {
   if (islandIndexCache) return islandIndexCache;
-
-  // Build FID -> Tax_Area mapping
-  const fidToIsland = new Map<string, string>();
-  for (const feat of parcelGeojson.features) {
-    const p = feat.properties;
-    if (p?.FID != null && p?.Tax_Area) {
-      fidToIsland.set(String(p.FID), String(p.Tax_Area).trim());
-    }
-  }
 
   // Group NDVI means by island
   const islandGroups = new Map<string, { fid: string; mean: number }[]>();
@@ -277,7 +270,30 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
       window.addEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
     }
 
+    // deck.gl tile layers (parcels, buildings) re-broadcast clicks as a window event
+    const onDeckClick = (e: Event) => {
+      const { layerId, properties, lat, lng } = (e as CustomEvent<DeckClickDetail>).detail;
+      const layer = layersRef.current.find(l => l.config.id === layerId);
+      if (!layer || !layer.visible) return;
+      const props: Record<string, unknown> = { ...properties };
+      const geoFeature: GeoJSON.Feature = { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [0, 0] } };
+      const label = getFeatureLabel(geoFeature, layerId);
+      const fields = extractAllFeatureProperties(geoFeature, layer.config.popupFields);
+      const latLng = new google.maps.LatLng(lat, lng);
+      if (layerId === 'tax-parcels') {
+        if (!propertyClick) return;
+        handleParcelClick(label, layer, fields, props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, layersRef.current);
+      } else {
+        clearFeatureHighlight();
+        infoWindowRef.current?.setContent(buildFeaturePopupHtml(layer, props, fields, label));
+        infoWindowRef.current?.setPosition(latLng);
+        infoWindowRef.current?.open(map);
+      }
+    };
+    window.addEventListener(DECK_CLICK_EVENT, onDeckClick);
+
     return () => {
+      window.removeEventListener(DECK_CLICK_EVENT, onDeckClick);
       listeners.forEach(l => google.maps.event.removeListener(l));
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
       delete (window as unknown as Record<string, unknown>).__openNdviInfo;
@@ -767,25 +783,12 @@ function openParcelPopupAtCoords(
   allLayers: LayerState[],
 ) {
   const parcelLayer = allLayers.find(l => l.config.id === 'tax-parcels');
-  if (!parcelLayer?.geojsonData) return;
+  if (!parcelLayer) return;
 
-  // Find the parcel containing the searched point
-  const point = turf.point([lng, lat]);
-  let matchedFeature: GeoJSON.Feature | null = null;
-
-  for (const feature of parcelLayer.geojsonData.features) {
-    if (!feature.geometry || (feature.geometry.type !== 'Polygon' && feature.geometry.type !== 'MultiPolygon')) continue;
-    try {
-      if (turf.booleanPointInPolygon(point, feature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>)) {
-        matchedFeature = feature;
-        break;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  if (!matchedFeature?.properties) return;
+  // Which parcel contains the point: bbox index + per-parcel geometry
+  findParcelAtPoint(lat, lng).then(hit => {
+    if (!hit || !hit.detail.parcel.properties) return;
+    const matchedFeature = hit.detail.parcel;
 
   const props: Record<string, unknown> = { ...matchedFeature.properties };
   const geoFeature: GeoJSON.Feature = {
@@ -797,19 +800,14 @@ function openParcelPopupAtCoords(
   const label = getFeatureLabel(geoFeature, parcelLayer.config.id);
   const fields = extractAllFeatureProperties(geoFeature, parcelLayer.config.popupFields);
 
-  // Highlight the matched parcel geometry
-  if (matchedFeature.geometry && (matchedFeature.geometry.type === 'Polygon' || matchedFeature.geometry.type === 'MultiPolygon')) {
-    highlightFeatureGeometry(
-      matchedFeature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-      map,
-    );
-  }
+  highlightFeatureGeometry(matchedFeature, map);
 
   // Create a synthetic event with the searched position
   const latLng = new google.maps.LatLng(lat, lng);
   const syntheticEvent = { latLng } as google.maps.Data.MouseEvent;
 
   handleParcelClick(label, parcelLayer, fields, props, syntheticEvent, map, infoWindowRef, allLayers);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -830,10 +828,10 @@ function handleParcelClick(
   const popupId = `parcel-${Date.now()}`;
   const addressRowId = `${popupId}-address`;
 
-  const parcelGeoFeature = findParcelGeometry(layer, props);
-
-  // Highlight selected parcel on the map
-  highlightFeatureGeometry(parcelGeoFeature, map);
+  // Full geometry + nearby buildings come from a small per-parcel file (the
+  // parcels on the map are vector tiles, clipped at tile edges).
+  const detailPromise = props.FID != null ? fetchParcelDetail(String(props.FID)) : Promise.resolve(null);
+  detailPromise.then(d => { if (d) highlightFeatureGeometry(d.parcel, map); });
 
   const content = buildTabbedPopupHtml(label, layer, fields, addressRowId, popupId, props);
   infoWindowRef.current?.setContent(content);
@@ -844,9 +842,7 @@ function handleParcelClick(
   const domReadyListener = google.maps.event.addListener(
     infoWindowRef.current!, 'domready', () => {
       attachTabHandlers(popupId, accentColor);
-      if (parcelGeoFeature) {
-        renderPropertySnapshot(popupId, parcelGeoFeature, allLayers);
-      }
+      detailPromise.then(d => { if (d) renderPropertySnapshot(popupId, d.parcel, d.buildings); });
       google.maps.event.removeListener(domReadyListener);
     },
   );
@@ -859,13 +855,20 @@ function handleParcelClick(
   const titleElId = `${popupId}-title`;
 
   // Wildlife tab: whale / marine mammal sightings live on EarthAtlas, opened at the parcel
-  const centroid = parcelGeoFeature ? turf.centroid(parcelGeoFeature).geometry.coordinates : [clickLng, clickLat];
-  renderWhaleLink(popupId, centroid[1], centroid[0], label);
+  let centroid: number[] = [clickLng, clickLat];
+  let popupName = label;
+  renderWhaleLink(popupId, centroid[1], centroid[0], popupName);
+  detailPromise.then(d => {
+    if (!d) return;
+    centroid = turf.centroid(d.parcel).geometry.coordinates;
+    renderWhaleLink(popupId, centroid[1], centroid[0], popupName);
+  });
 
   const setPopupTitle = (address: string) => {
     const titleEl = document.getElementById(titleElId);
     if (titleEl) titleEl.textContent = address;
-    renderWhaleLink(popupId, centroid[1], centroid[0], address || label);
+    popupName = address || label;
+    renderWhaleLink(popupId, centroid[1], centroid[0], popupName);
   };
 
   getAddressLookup().then(lookup => {
@@ -908,10 +911,12 @@ function handleParcelClick(
   // Same for the DIST-ALERT raster layer: per-pixel disturbance info.
   runDistAlertQuery(clickLat, clickLng, popupId, allLayers);
 
-  // Run spatial queries + address-enriched summary
-  if (parcelGeoFeature) {
+  // Run spatial queries + address-enriched summary once the parcel file is here
+  detailPromise.then(detail => {
+  if (detail) {
+    const parcelGeoFeature = detail.parcel;
     requestAnimationFrame(() => {
-      const buildingResult = runBuildingQuery(parcelGeoFeature, allLayers, popupId);
+      const buildingResult = runBuildingQuery(parcelGeoFeature, detail.buildings, popupId);
       const fid = String(props.FID ?? '');
       const sEl = document.getElementById(`${popupId}-shoreline`);
       if (sEl) sEl.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Checking nearshore habitat…</p></div>`;
@@ -925,6 +930,7 @@ function handleParcelClick(
       );
       const ndviPromise = fid ? getNdviStats() : Promise.resolve({} as Record<string, NdviStats>);
       const addrPromise = pin ? getAddressLookup() : Promise.resolve({} as Record<string, AddressEntry[]>);
+      const taxAreaPromise = fid ? getFidToTaxArea() : Promise.resolve(new Map<string, string>());
 
       nearshorePromise.then(vegResult => {
         renderShorelineTab(popupId, vegResult);
@@ -933,15 +939,12 @@ function handleParcelClick(
         const shorelineResult = null;
         renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
 
-        Promise.all([ndviPromise, addrPromise]).then(([stats, addrLookup]) => {
+        Promise.all([ndviPromise, addrPromise, taxAreaPromise]).then(([stats, addrLookup, fidToIsland]) => {
           const ndvi = fid ? (stats[fid] ?? null) : null;
           let island: IslandPercentile | null = null;
-          if (fid) {
-            const parcelLayer = allLayers.find(l => l.config.id === 'tax-parcels');
-            if (parcelLayer?.geojsonData) {
-              const index = buildIslandIndex(stats, parcelLayer.geojsonData);
-              island = index.get(fid) ?? null;
-            }
+          if (fid && fidToIsland.size > 0) {
+            const index = buildIslandIndex(stats, fidToIsland);
+            island = index.get(fid) ?? null;
           }
           const addrEntries = pin ? (addrLookup[pin] || null) : null;
           renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries);
@@ -955,34 +958,18 @@ function handleParcelClick(
     if (sEl) sEl.innerHTML = `<span style="color:${COLOR.light};font-style:italic;">Spatial data unavailable</span>`;
     renderSummary(popupId, props, null, null, null, null, null, null);
   }
+  });
+  void allLayers;
 }
 
-function findParcelGeometry(
-  layer: LayerState,
-  clickProps: Record<string, unknown>,
-): GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null {
-  if (!layer.geojsonData) return null;
-  const fid = clickProps.FID;
-  if (fid == null) return null;
-  const match = layer.geojsonData.features.find(f => f.properties?.FID === fid);
-  if (!match?.geometry) return null;
-  if (match.geometry.type !== 'Polygon' && match.geometry.type !== 'MultiPolygon') return null;
-  return match as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
-}
 
 function runBuildingQuery(
   parcel: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-  layers: LayerState[],
+  candidates: GeoJSON.Feature[],
   popupId: string,
 ): BuildingQueryResult | null {
   const el = document.getElementById(`${popupId}-buildings`);
-  const buildingLayer = layers.find(l => l.config.id === 'building-footprints');
-  if (!buildingLayer?.loaded || !buildingLayer.geojsonData) {
-    if (el) el.innerHTML = `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Building data not loaded</p></div>`;
-    return null;
-  }
-
-  const result = countIntersectingBuildings(parcel, buildingLayer);
+  const result = countIntersectingBuildings(parcel, candidates);
   if (el) {
     el.innerHTML = buildBuildingsTab(result);
   }
@@ -1391,7 +1378,7 @@ function attachTabHandlers(popupId: string, accentColor: string) {
 function renderPropertySnapshot(
   popupId: string,
   parcelFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-  allLayers: LayerState[],
+  buildings: GeoJSON.Feature[],
 ) {
   const container = document.getElementById(`${popupId}-snapshot`);
   if (!container) return;
@@ -1439,14 +1426,13 @@ function renderPropertySnapshot(
   });
 
   // Add building footprints within the parcel bounds
-  const buildingLayer = allLayers.find(l => l.config.id === 'building-footprints');
-  if (buildingLayer?.geojsonData) {
+  if (buildings.length > 0) {
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
     const parcelBbox: [number, number, number, number] = [sw.lng(), sw.lat(), ne.lng(), ne.lat()];
 
     const nearbyBuildings: GeoJSON.Feature[] = [];
-    for (const feat of buildingLayer.geojsonData.features) {
+    for (const feat of buildings) {
       if (!feat.geometry) continue;
       // Quick bbox check
       let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;

@@ -94,6 +94,12 @@ export interface LayerConfig {
   };
   viewportFiltered?: boolean;
   /**
+   * Vector tiles (deck.gl MVTLayer) instead of a GeoJSON download. `url` is a
+   * {z}/{x}/{y}.pbf template; `sourceLayer` is the tippecanoe layer name.
+   * When set, `source` is not fetched.
+   */
+  tiles?: { url: string; sourceLayer: string; minZoom: number; maxZoom: number; idProperty?: string };
+  /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
    * components/Map/KelpOverlay.ts). The Data layer stays as an invisible

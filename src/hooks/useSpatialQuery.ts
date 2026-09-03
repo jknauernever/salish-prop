@@ -17,7 +17,7 @@ export function useSpatialQuery(layers: LayerState[]) {
   useEffect(() => {
     if (!center) return;
 
-    const loadedLayers = layers.filter(l => l.loaded && l.geojsonData);
+    const loadedLayers = layers.filter(l => l.loaded && (l.geojsonData || l.config.tiles));
     if (loadedLayers.length === 0) return;
 
     setIsQuerying(true);

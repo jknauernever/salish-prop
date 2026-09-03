@@ -10,12 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@deck.gl/core": "^9.3.11",
+    "@deck.gl/geo-layers": "^9.3.11",
+    "@deck.gl/google-maps": "^9.3.11",
+    "@deck.gl/layers": "^9.3.11",
     "@googlemaps/js-api-loader": "^2.0.2",
     "@tailwindcss/vite": "^4.1.18",
     "@tiptap/pm": "^3.31.0",
     "@tiptap/react": "^3.31.0",
     "@tiptap/starter-kit": "^3.31.0",
     "@turf/turf": "^7.3.4",
+    "deck.gl": "^9.3.11",
     "react": "^19.2.0",
     "react-arborist": "^3.6.1",
     "react-dom": "^19.2.0",
