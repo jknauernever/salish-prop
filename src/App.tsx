@@ -118,7 +118,7 @@ interface AppContentProps {
 function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, layersLocked }: AppContentProps) {
   const { map, zoom } = useMap();
   const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi, zoomOverrides, setZoomOverride } =
-    useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi);
+    useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi, initialUrlState.zoomOverrides);
   const layersInView = useLayersInView(map, layers, zoomOverrides);
   useEffect(() => { void preloadFriendsContent(); }, []);
 
@@ -138,6 +138,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
     );
     setUrlParams({
       l: isDefault ? null : visibleIds.join(','),
+      zo: Array.from(zoomOverrides).filter(id => visibleIds.includes(id)).join(','),
       o: fmtPairs(
         layers
           .filter(l => rasterIds.has(l.config.id) && l.opacity != null && l.opacity !== (l.config.defaultOpacity ?? 0.7))
@@ -155,7 +156,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
           .map(l => [l.config.id, `${l.dateRange!.start ?? ''}..${l.dateRange!.end ?? ''}`]),
       ),
     });
-  }, [layers, preset]);
+  }, [layers, preset, zoomOverrides]);
 
   // --- URL mirroring: which parcel popup is open ---
   useEffect(() => {

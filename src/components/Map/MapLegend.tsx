@@ -63,7 +63,7 @@ function CategoryChips({ config, className = '' }: { config: LayerConfig; classN
   return (
     <div className={`flex flex-wrap gap-x-2.5 gap-y-0.5 ${className}`}>
       {cat.items.map(item => (
-        <span key={item.label} className="inline-flex items-center gap-1 text-[10px] text-slate-blue/60">
+        <span key={item.label} className="inline-flex items-center gap-1 text-[11px] text-slate-blue/75">
           <span
             aria-hidden="true"
             className={item.shape === 'point' ? 'inline-block w-2 h-2 rounded-full' : item.shape === 'fill' ? 'inline-block w-3 h-2 rounded-sm' : 'inline-block w-3 h-0.5 rounded'}
@@ -79,7 +79,7 @@ function CategoryChips({ config, className = '' }: { config: LayerConfig; classN
 /** Inline "about this layer" block — same content as the sidebar's info panel. */
 function LayerInfo({ config }: { config: LayerConfig }) {
   return (
-    <div className="mt-1 ml-6 mr-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-[11px] leading-relaxed text-slate-blue/80">
+    <div className="mt-1 ml-6 mr-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/85">
       {config.standardMessage ? (
         <p className="m-0">{config.standardMessage}</p>
       ) : (
@@ -216,7 +216,13 @@ function SourcingModal({ layers, zoom, onClose }: { layers: LayerState[]; zoom: 
  * modal describing every visible dataset.
  */
 export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoomOverrides, onSetZoomOverride }: MapLegendProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Drawer from the left edge: starts tucked away, slides open shortly after
+  // first paint so people see it arrive, then a handle (or the ×) toggles it.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setOpen(true), 450);
+    return () => window.clearTimeout(t);
+  }, []);
   const [openInfo, setOpenInfo] = useState<string | null>(null);
   const [showSourcing, setShowSourcing] = useState(false);
   // Layers hidden from the legend row (click on the name) stay listed until ×
@@ -241,30 +247,76 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
 
   return (
     <>
-      <div className="absolute top-3 left-3 z-30 w-64 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-1.5rem)] flex flex-col bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-fog-gray-dark/40 text-slate-blue">
-        <button
-          type="button"
-          onClick={() => setCollapsed(c => !c)}
-          className="w-full shrink-0 flex items-center justify-between px-3 py-2 text-left"
-          aria-expanded={!collapsed}
-        >
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-blue/60">
+      <div className="absolute top-3 left-0 z-30 flex items-start max-h-[calc(100%-1.5rem)]">
+      <div
+        className="max-w-[calc(100vw-3rem)] max-h-[calc(100vh-7rem)] flex flex-col bg-white/95 backdrop-blur-sm rounded-r-lg shadow-lg border border-l-0 border-fog-gray-dark/40 text-slate-blue overflow-hidden transition-[width] duration-500 ease-out motion-reduce:transition-none"
+        style={{ width: open ? '20rem' : '2.75rem' }}
+      >
+        {!open && (
+          /* Collapsed rail: just the swatches of what's on the map */
+          <div className="flex flex-col items-center gap-1 py-2 w-11">
+            {on.map(layer => {
+              const { config } = layer;
+              const hidden = !layer.visible;
+              const gated = !zoomOverrides.has(config.id) && config.minZoom != null && zoom < config.minZoom;
+              const lit = layer.visible && inView.has(config.id);
+              const state = hidden ? 'hidden. Click to show' : gated ? 'click to show at this zoom' : 'on. Click to hide';
+              return (
+                <button
+                  key={config.id}
+                  type="button"
+                  onClick={() => (hidden ? showRow(config.id, gated) : gated ? onSetZoomOverride(config.id, true) : hideRow(config.id))}
+                  title={`${config.name}: ${state}`}
+                  aria-label={`${config.name}: ${state}`}
+                  aria-pressed={!hidden}
+                  className={`relative w-8 h-8 inline-flex items-center justify-center rounded-md hover:bg-fog-gray transition-colors ${hidden ? 'opacity-30' : lit ? '' : 'opacity-60'}`}
+                >
+                  <Swatch config={config} />
+                  {hidden && <span aria-hidden="true" className="absolute inset-x-1.5 top-1/2 h-[2px] -rotate-45 bg-slate-blue/70 rounded" />}
+                </button>
+              );
+            })}
+            <span aria-hidden="true" className="w-6 border-t border-fog-gray-dark/50 my-1" />
+            <button
+              type="button"
+              onClick={onExplore}
+              title="Explore more data"
+              aria-label="Explore more data"
+              className="w-8 h-8 inline-flex items-center justify-center rounded-md text-deep-teal hover:bg-teal-50 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {open && (<>
+        <div className="w-80 shrink-0 flex items-center justify-between pl-3 pr-1.5 py-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-blue/70">
             On the map
             {on.length > 0 && (
-              <span className="ml-1.5 normal-case tracking-normal font-normal text-slate-blue/50">
+              <span className="ml-1.5 normal-case tracking-normal font-normal text-slate-blue/60">
                 {inViewCount} of {on.length} in view
               </span>
             )}
           </span>
-          <svg className={`w-3.5 h-3.5 text-slate-blue/50 transition-transform ${collapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close the legend"
+            title="Close"
+            className="w-7 h-7 shrink-0 inline-flex items-center justify-center rounded-full text-slate-blue/50 hover:text-slate-blue hover:bg-fog-gray transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
-        {!collapsed && (
-          <div className="px-1.5 pb-1.5 flex-1 min-h-0 overflow-y-auto">
+        {(
+          <div className="w-80 px-1.5 pb-1.5 flex-1 min-h-0 overflow-y-auto">
             {on.length === 0 && (
-              <p className="px-2 py-2 text-xs text-slate-blue/60">No data layers are turned on.</p>
+              <p className="px-2 py-2 text-sm text-slate-blue/70">No data layers are turned on.</p>
             )}
             {on.map(layer => {
               const { config } = layer;
@@ -294,27 +346,23 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
                     <button
                       type="button"
                       onClick={() => (hidden ? showRow(config.id, gated) : gated ? onSetZoomOverride(config.id, true) : hideRow(config.id))}
-                      className={`flex-1 min-w-0 text-left text-xs leading-tight truncate hover:text-deep-teal ${visibleNow ? 'font-semibold text-slate-blue' : hidden ? 'text-slate-blue/60 line-through decoration-slate-blue/30' : 'text-slate-blue/80'}`}
+                      className={`flex-1 min-w-0 text-left text-sm leading-snug hover:text-deep-teal ${visibleNow ? 'font-semibold text-slate-blue' : hidden ? 'text-slate-blue/60 line-through decoration-slate-blue/30' : 'text-slate-blue/85'}`}
                       title={nameTitle}
                       aria-pressed={!hidden}
                     >
                       {config.name}
                     </button>
                     {hidden ? (
-                      <span className="text-[10px] text-slate-blue/50 whitespace-nowrap">hidden</span>
+                      <span className="text-[11px] text-slate-blue/60 whitespace-nowrap">hidden</span>
                     ) : gated ? (
                       <button
                         type="button"
                         onClick={() => onSetZoomOverride(config.id, true)}
-                        className="text-[10px] text-slate-blue/50 whitespace-nowrap hover:text-deep-teal underline decoration-dotted"
+                        className="text-[11px] text-slate-blue/60 whitespace-nowrap hover:text-deep-teal underline decoration-dotted"
                         title={`Drawn from zoom ${config.minZoom}. Click to show it now`}
                       >
                         zoom in
                       </button>
-                    ) : !visibleNow ? (
-                      <span className="text-[10px] text-slate-blue/50 whitespace-nowrap" title="Nothing from this layer is inside the current map frame">
-                        not in view
-                      </span>
                     ) : null}
                     {hasInfo(config) && (
                       <button
@@ -323,7 +371,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
                         aria-label={infoOpen ? `Hide info for ${config.name}` : `About ${config.name}`}
                         aria-expanded={infoOpen}
                         title="About this layer"
-                        className={`shrink-0 w-4 h-4 inline-flex items-center justify-center rounded-full border text-[10px] font-semibold transition-colors ${
+                        className={`shrink-0 w-[18px] h-[18px] inline-flex items-center justify-center rounded-full border text-[11px] font-semibold transition-colors ${
                           infoOpen
                             ? 'bg-deep-teal text-white border-deep-teal'
                             : 'bg-white text-slate-blue/50 border-slate-blue/30 hover:text-slate-blue hover:border-slate-blue/60'
@@ -355,7 +403,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
         <button
           type="button"
           onClick={onExplore}
-          className="w-full shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 border-t border-fog-gray-dark/40 text-xs font-semibold text-deep-teal hover:bg-teal-50 transition-colors"
+          className="w-80 shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 border-t border-fog-gray-dark/40 text-sm font-semibold text-deep-teal hover:bg-teal-50 transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -366,7 +414,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
         <button
           type="button"
           onClick={() => setShowSourcing(true)}
-          className="w-full shrink-0 flex items-center justify-center gap-1 px-3 py-1.5 border-t border-fog-gray-dark/40 text-[11px] text-ocean-blue hover:text-ocean-blue-light hover:bg-fog-gray/60 rounded-b-lg transition-colors"
+          className="w-80 shrink-0 flex items-center justify-center gap-1 px-3 py-2 border-t border-fog-gray-dark/40 text-xs text-ocean-blue hover:text-ocean-blue-light hover:bg-fog-gray/60 rounded-br-lg transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" strokeWidth={1.8} />
@@ -374,6 +422,22 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
             <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
           </svg>
           How this is sourced
+        </button>
+        </>)}
+      </div>
+
+        {/* Handle: a subtle pull tab on the drawer's edge */}
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          aria-label={open ? 'Hide the legend' : 'Show the legend'}
+          aria-expanded={open}
+          title={open ? 'Hide the legend' : 'Show the legend'}
+          className="mt-8 -ml-px w-5 h-14 shrink-0 flex items-center justify-center rounded-r-lg bg-white/95 backdrop-blur-sm border border-l-0 border-fog-gray-dark/40 shadow-md text-slate-blue/50 hover:text-deep-teal hover:bg-white transition-colors"
+        >
+          <svg className={`w-3.5 h-3.5 transition-transform duration-500 ${open ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
       </div>
 

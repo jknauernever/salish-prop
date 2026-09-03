@@ -7,6 +7,7 @@
  *   z   zoom              "10.8"
  *   b   basemap           roadmap | satellite | hybrid | terrain
  *   l   visible layers    "friends-bull-kelp,tax-parcels"   (l= means none)
+ *   zo  layers shown below their minZoom  "tax-parcels"
  *   o   raster opacity    "ndvi-naip:0.5,ndvi-sentinel:0.8"
  *   m   viz mode          "opera-dist-alert:status"
  *   s   sentinel season   "ndvi-sentinel:summer-2024"
@@ -39,6 +40,8 @@ export interface InitialUrlState {
   basemap: string | null;
   /** null = not specified in URL (use defaults / preset) */
   layers: string[] | null;
+  /** Layers the user chose to show below their minZoom (`zo=`). */
+  zoomOverrides: string[];
   layerUi: Record<string, UrlLayerUi>;
   parcel: { lat: number; lng: number } | null;
   search: { lat: number; lng: number } | null;
@@ -84,6 +87,7 @@ export function parseUrlState(queryString: string): InitialUrlState {
 
   const lRaw = sp.get('l');
   const layers = lRaw === null ? null : lRaw.split(',').filter(id => ID_RE.test(id));
+  const zoomOverrides = (sp.get('zo') ?? '').split(',').filter(id => ID_RE.test(id));
 
   const layerUi: Record<string, UrlLayerUi> = {};
   const ui = (id: string) => (layerUi[id] ??= {});
@@ -109,13 +113,13 @@ export function parseUrlState(queryString: string): InitialUrlState {
 
   const hasState = view !== null || layers !== null || parcel !== null || search !== null;
 
-  return { view, basemap, layers, layerUi, parcel, search, sidebar, hasState };
+  return { view, basemap, layers, zoomOverrides, layerUi, parcel, search, sidebar, hasState };
 }
 
 /** Parsed once at module load — the state the page was opened with. */
 export const initialUrlState: InitialUrlState =
   typeof window === 'undefined'
-    ? { view: null, basemap: null, layers: null, layerUi: {}, parcel: null, search: null, sidebar: false, hasState: false }
+    ? { view: null, basemap: null, layers: null, zoomOverrides: [], layerUi: {}, parcel: null, search: null, sidebar: false, hasState: false }
     : parseUrlState(window.location.search);
 
 // ---------------------------------------------------------------------------

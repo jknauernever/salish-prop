@@ -10,7 +10,7 @@ import {
 } from '../services/speciesObservations';
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
-import { getDeckManager, registerDeckManager } from '../components/Map/DeckLayers';
+import { getDeckManager, registerDeckManager, DECK_CLICK_EVENT } from '../components/Map/DeckLayers';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
 import type { UrlLayerUi } from '../services/urlState';
@@ -146,16 +146,35 @@ function worldPixel(lng: number, lat: number, zoom: number): [number, number] {
   return [x, y];
 }
 
+/**
+ * Pixel clearance other markers keep from a Friends' Projects marker: half of
+ * (36 px Friends pin + 24 px regular pin) plus a little air.
+ */
+const RESERVED_CLEAR_PX = 34;
+
+/** True when a world-pixel position sits on top of a reserved (Friends) marker. */
+function nearReserved(x: number, y: number, reserved: [number, number][]): boolean {
+  for (const [rx, ry] of reserved) {
+    if (Math.abs(x - rx) < RESERVED_CLEAR_PX && Math.abs(y - ry) < RESERVED_CLEAR_PX) return true;
+  }
+  return false;
+}
+
 /** Ids (the `mid` property) of the markers to show at this zoom. null = show all. */
-function selectMarkersForZoom(ml: google.maps.Data, zoom: number): Set<number> | null {
-  if (zoom >= MARKER_SHOW_ALL_ZOOM) return null;
+function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = []): Set<number> | null {
   const gridPx = markerGridPx(zoom);
   const best = new Map<string, { id: number; rank: number }>();
+  const showAll = zoom >= MARKER_SHOW_ALL_ZOOM;
   ml.forEach((feature) => {
     const g = feature.getGeometry();
     if (!g || g.getType() !== 'Point') return;
     const ll = (g as google.maps.Data.Point).get();
     const [x, y] = worldPixel(ll.lng(), ll.lat(), zoom);
+    if (reserved.length && nearReserved(x, y, reserved)) return; // yield to a Friends' Projects pin
+    if (showAll) {
+      best.set(`f${feature.getProperty('mid')}`, { id: Number(feature.getProperty('mid')), rank: 0 });
+      return;
+    }
     const key = `${Math.floor(x / gridPx)}:${Math.floor(y / gridPx)}`;
     const id = Number(feature.getProperty('mid'));
     const rank = Number(feature.getProperty('lengthRank') ?? 1);
@@ -190,11 +209,12 @@ function midpointMarkerStyle(
   config: LayerConfig,
   visible: boolean,
   zoom: number,
+  reserved: [number, number][] = [],
 ): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
-  const chosen = visible ? selectMarkersForZoom(ml, zoom) : null;
+  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved) : null;
   return (feature) => ({
     icon: markerIconSpec(config, iconUrlFor(config, feature)),
-    clickable: false,
+    clickable: true,
     visible: visible && (chosen === null || chosen.has(Number(feature.getProperty('mid')))),
   });
 }
@@ -281,6 +301,7 @@ export function useLayers(
   map: google.maps.Map | null,
   initialLayerIds?: string[],
   initialUi?: Record<string, UrlLayerUi>,
+  initialZoomOverrides: string[] = [],
 ) {
   const isVisibleByDefault = useCallback((layerId: string): boolean => {
     if (initialLayerIds) return initialLayerIds.includes(layerId);
@@ -291,9 +312,14 @@ export function useLayers(
   const [layers, setLayers] = useState<LayerState[]>(() =>
     layerConfigs.map(c => createInitialState(c, initialLayerIds, initialUi?.[c.id]))
   );
+  // Friends' Projects marker positions: every other marker layer keeps clear of these
+  const reservedLngLatRef = useRef<[number, number][]>([]);
+  const reservedAt = (zoom: number): [number, number][] =>
+    reservedLngLatRef.current.map(([lng, lat]) => worldPixel(lng, lat, zoom));
+
   // Layers the user asked to see regardless of their minZoom (legend "zoom in" click)
-  const zoomOverridesRef = useRef<Set<string>>(new Set());
-  const [zoomOverrides, setZoomOverrides] = useState<Set<string>>(() => new Set());
+  const zoomOverridesRef = useRef<Set<string>>(new Set(initialZoomOverrides));
+  const [zoomOverrides, setZoomOverrides] = useState<Set<string>>(() => new Set(initialZoomOverrides));
   const gateOk = (layerId: string, minZoom: number | undefined, zoom: number) =>
     minZoom == null || zoom >= minZoom || zoomOverridesRef.current.has(layerId);
 
@@ -457,17 +483,30 @@ export function useLayers(
           clickable: visible,
           visible,
         });
-        ml.setStyle(midpointMarkerStyle(ml, config, visible, map?.getZoom() ?? 0));
+        ml.setStyle(midpointMarkerStyle(ml, config, visible, map?.getZoom() ?? 0, reservedAt(map?.getZoom() ?? 0)));
       } else {
         // Point layer: use icon directly
-        dl.setStyle((feature: google.maps.Data.Feature) => ({
-          icon: markerIconSpec(config, iconUrlFor(config, feature)),
-          strokeColor: config.style.strokeColor,
-          strokeWeight: config.style.strokeWeight,
-          strokeOpacity: config.style.strokeOpacity,
-          clickable: visible,
-          visible,
-        }));
+        const z = map?.getZoom() ?? 0;
+        const reserved = config.id === 'friends-projects' ? [] : reservedAt(z);
+        dl.setStyle((feature: google.maps.Data.Feature) => {
+          let show = visible;
+          if (show && reserved.length) {
+            const g = feature.getGeometry();
+            if (g && g.getType() === 'Point') {
+              const ll = (g as google.maps.Data.Point).get();
+              const [x, y] = worldPixel(ll.lng(), ll.lat(), z);
+              if (nearReserved(x, y, reserved)) show = false;
+            }
+          }
+          return {
+            icon: markerIconSpec(config, iconUrlFor(config, feature)),
+            strokeColor: config.style.strokeColor,
+            strokeWeight: config.style.strokeWeight,
+            strokeOpacity: config.style.strokeOpacity,
+            clickable: show,
+            visible: show,
+          };
+        });
       }
       return;
     }
@@ -788,6 +827,7 @@ export function useLayers(
         const deck = getDeckManager(map);
         registerDeckManager(deck);
         deck.setLayer(config, isVisibleByDefault(config.id));
+        if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
         deck.setZoom(map.getZoom() ?? 0);
         setLayers(prev => prev.map(l =>
           l.config.id === config.id ? { ...l, loading: false, loaded: true, featureCount: 0 } : l
@@ -861,14 +901,27 @@ export function useLayers(
           );
 
           if (config.markerIcon && hasPoints) {
-            dataLayer.setStyle((feature: google.maps.Data.Feature) => ({
-              icon: markerIconSpec(config, iconUrlFor(config, feature)),
-              strokeColor: config.style.strokeColor,
-              strokeWeight: config.style.strokeWeight,
-              strokeOpacity: config.style.strokeOpacity,
-              clickable: shouldShow,
-              visible: shouldShow,
-            }));
+            const z0 = map.getZoom() ?? 0;
+            const reserved0 = config.id === 'friends-projects' ? [] : reservedAt(z0);
+            dataLayer.setStyle((feature: google.maps.Data.Feature) => {
+              let show = shouldShow;
+              if (show && reserved0.length) {
+                const g = feature.getGeometry();
+                if (g && g.getType() === 'Point') {
+                  const ll = (g as google.maps.Data.Point).get();
+                  const [x, y] = worldPixel(ll.lng(), ll.lat(), z0);
+                  if (nearReserved(x, y, reserved0)) show = false;
+                }
+              }
+              return {
+                icon: markerIconSpec(config, iconUrlFor(config, feature)),
+                strokeColor: config.style.strokeColor,
+                strokeWeight: config.style.strokeWeight,
+                strokeOpacity: config.style.strokeOpacity,
+                clickable: show,
+                visible: show,
+              };
+            });
           } else if (config.styleByProperty) {
             const sbp = config.styleByProperty;
             dataLayer.setStyle((feature) => {
@@ -930,6 +983,13 @@ export function useLayers(
             patternOverlaysRef.current.set(config.id, overlay);
           }
 
+          if (config.id === 'friends-projects') {
+            reservedLngLatRef.current = data.features.flatMap(f =>
+              f.geometry?.type === 'Point' ? [[f.geometry.coordinates[0], f.geometry.coordinates[1]] as [number, number]] : []);
+            // Marker layers that loaded earlier re-space themselves around these pins
+            setTimeout(() => google.maps.event.trigger(map, 'zoom_changed'), 0);
+          }
+
           // For LineString layers with a markerIcon, add midpoint markers
           if (config.markerIcon) {
             const hasLines = data.features.some(f =>
@@ -939,7 +999,17 @@ export function useLayers(
               const midpoints = createMidpointMarkers(data);
               const markerLayer = new google.maps.Data({ map });
               markerLayer.addGeoJson(midpoints);
-              markerLayer.setStyle(midpointMarkerStyle(markerLayer, config, shouldShow, map.getZoom() ?? 0));
+              // A pin click opens the same popup as clicking the line it marks
+              markerLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
+                const properties: Record<string, unknown> = {};
+                event.feature.forEachProperty((v, k) => { if (k !== 'mid' && k !== 'lengthRank') properties[k] = v; });
+                const ll = event.latLng;
+                if (!ll) return;
+                window.dispatchEvent(new CustomEvent(DECK_CLICK_EVENT, {
+                  detail: { layerId: config.id, properties, lat: ll.lat(), lng: ll.lng() },
+                }));
+              });
+              markerLayer.setStyle(midpointMarkerStyle(markerLayer, config, shouldShow, map.getZoom() ?? 0, reservedAt(map.getZoom() ?? 0)));
               markerLayersRef.current.set(config.id, markerLayer);
             }
           }
@@ -989,13 +1059,13 @@ export function useLayers(
         // Midpoint-marker layers thin out with zoom — re-style on every change
         const ml = layer.config.markerIcon ? markerLayersRef.current.get(layer.config.id) : undefined;
         if (ml && layer.loaded) {
-          ml.setStyle(midpointMarkerStyle(ml, layer.config, layer.visible, zoom));
+          ml.setStyle(midpointMarkerStyle(ml, layer.config, layer.visible, zoom, reservedAt(zoom)));
         }
 
         const minZoom = layer.config.minZoom;
         if (minZoom == null) {
-          // Halo strokes track zoom even without a minZoom gate
-          if (layer.config.haloByZoom && layer.loaded && !layer.config.viewportFiltered) {
+          // Halo strokes and marker spacing track zoom even without a minZoom gate
+          if ((layer.config.haloByZoom || layer.config.markerIcon) && layer.loaded && !layer.config.viewportFiltered) {
             setVectorVisible(layer.config.id, layer.visible);
           }
           return layer;
@@ -1026,6 +1096,17 @@ export function useLayers(
     setLayers(prev => prev.map(layer => {
       if (layer.config.id !== layerId) return layer;
       const newVisible = !layer.visible;
+
+      // Turning a layer on below its minZoom means "show it to me now":
+      // lift the zoom gate for it rather than silently showing nothing.
+      const zoomNow = map?.getZoom() ?? 0;
+      if (newVisible && layer.config.minZoom != null && zoomNow < layer.config.minZoom && !zoomOverridesRef.current.has(layerId)) {
+        zoomOverridesRef.current.add(layerId);
+        queueMicrotask(() => {
+          setZoomOverrides(new Set(zoomOverridesRef.current));
+          if (map) getDeckManager(map).setGateOverride(layerId, true);
+        });
+      }
 
       // Raster layers (both static and dynamic) — toggle via opacity
       const raster = rasterLayersRef.current.get(layerId);

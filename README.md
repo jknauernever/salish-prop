@@ -467,6 +467,7 @@ Everything a visitor can change on the map is mirrored into the query string, so
 | `p` | open parcel popup at `lat,lng` (restored once parcel data loads) | `p=48.53470,-123.01730` |
 | `q` | address-search center (draws the ¼-mile radius) | `q=48.53470,-123.01730` |
 | `sb` | sidebar open | `sb=1` |
+| `zo` | layers the user chose to show below their `minZoom` (set automatically when a gated layer is turned on while zoomed out, or via the legend's "zoom in" link) | `zo=tax-parcels` |
 
 Works on `/` and on `/view/:preset` (URL params override the preset's initial view and layers). When a visitor arrives via a link that carries map state, the landing intro box starts collapsed to its pill so the shared view is unobstructed.
 
