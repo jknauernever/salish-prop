@@ -474,16 +474,32 @@ export function useLayers(
       // Check if this layer has a midpoint marker layer (LineString with icons)
       const ml = markerLayersRef.current.get(layerId);
       if (ml) {
-        // LineString layer: style the lines normally, toggle midpoint markers
-        dl.setStyle({
-          fillColor: config.style.fillColor,
-          fillOpacity: config.style.fillOpacity,
-          strokeColor: config.style.strokeColor,
-          strokeWeight: config.style.strokeWeight,
-          clickable: visible,
-          visible,
+        // Line layer with midpoint markers — but a mixed layer (Friends'
+        // Projects) also has points, which keep their icons here.
+        const zl = map?.getZoom() ?? 0;
+        const reservedL = config.id === 'friends-projects' ? [] : reservedAt(zl);
+        dl.setStyle((feature: google.maps.Data.Feature) => {
+          const g = feature.getGeometry();
+          const isPoint = !!g && (g.getType() === 'Point' || g.getType() === 'MultiPoint');
+          if (isPoint) {
+            let show = visible;
+            if (show && reservedL.length && g!.getType() === 'Point') {
+              const ll = (g as google.maps.Data.Point).get();
+              const [x, y] = worldPixel(ll.lng(), ll.lat(), zl);
+              if (nearReserved(x, y, reservedL)) show = false;
+            }
+            return { icon: markerIconSpec(config, iconUrlFor(config, feature)), clickable: show, visible: show };
+          }
+          return {
+            fillColor: config.style.fillColor,
+            fillOpacity: config.style.fillOpacity,
+            strokeColor: config.style.strokeColor,
+            strokeWeight: config.style.strokeWeight,
+            clickable: visible,
+            visible,
+          };
         });
-        ml.setStyle(midpointMarkerStyle(ml, config, visible, map?.getZoom() ?? 0, reservedAt(map?.getZoom() ?? 0)));
+        ml.setStyle(midpointMarkerStyle(ml, config, visible, zl, reservedAt(zl)));
       } else {
         // Point layer: use icon directly
         const z = map?.getZoom() ?? 0;
