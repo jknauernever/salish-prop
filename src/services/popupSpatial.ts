@@ -126,6 +126,12 @@ export interface NearshoreVegetationResult {
   };
   /** Nearest Friends geomorphic shoreform segment, if one lies within meta.shoreformFt. */
   shoreform: NearshoreParcelRecord['shoreform'] | null;
+  /** Beamer & Fresh fish-use scores from the precompute (null when no segment within meta.fishFt). */
+  fish: NearshoreParcelRecord['fish'] | null;
+  /** Shoreline modifications from the precompute (null when none within the meta distances). */
+  mods: NearshoreParcelRecord['mods'] | null;
+  /** Distances the fish / modification numbers were computed with (feet). */
+  modDistances: { fishFt: number; armorFt: number; structureFt: number; buoyFt: number; shoreformFt: number };
 }
 
 export function nearshoreFromStats(
@@ -160,6 +166,15 @@ export function nearshoreFromStats(
     },
     herring: { present: h.length > 0, names: h },
     shoreform: rec?.shoreform ?? null,
+    fish: rec?.fish ?? null,
+    mods: rec?.mods ?? null,
+    modDistances: {
+      fishFt: meta.fishFt ?? 200,
+      armorFt: meta.armorFt ?? 50,
+      structureFt: meta.structureFt ?? 100,
+      buoyFt: meta.buoyFt ?? 300,
+      shoreformFt: meta.shoreformFt ?? 200,
+    },
   };
 }
 

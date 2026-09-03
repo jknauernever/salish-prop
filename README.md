@@ -277,6 +277,8 @@ Per-layer content comes from `POPUP_SPECS` in `src/config/popups.ts` (title, sub
 
 ## Property Popup (FeaturePopup)
 
+Seven tabs, in order: **Summary** (At a Glance, snapshot, shore type, nearshore habitat) · **Shoreline** (shoreform card + kelp/eelgrass) · **Fish** (Beamer & Fresh fish-use scores + forage/herring spawning, all from the precompute) · **Wildlife** (eBird list + an EarthAtlas whale-sightings link at zoom 12 centered on the parcel) · **Modifications** (armor within 50 ft of the parcel line, docks/groins/ramps/railways/pilings within 100 ft, buoys & floats within 300 ft, with the distances printed, plus the Friends site-visit call to action) · **Vegetation** (Greenery & Tree Cover, forest loss, DIST-ALERT) · **Property** (assessor fields with appraised value, buildings). Appraised value is deliberately not featured in the header or At a Glance. All habitat, fish, and modification numbers come from `public/data/nearshore_parcel_stats.json` (`scripts/compute-nearshore-stats.py`), so no layer needs to be on.
+
 The popup is an `google.maps.InfoWindow` rendered as a tabbed HTML interface. It opens when a user clicks a tax parcel or when an address search resolves to a parcel.
 
 ### Summary Tab

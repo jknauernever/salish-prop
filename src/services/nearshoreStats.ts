@@ -7,8 +7,8 @@
  * The property popup reads this instead of running live turf.js queries, so
  * kelp / eelgrass / forage fish / herring always appear in a property report
  * regardless of which layers are switched on — and the search distances are
- * the agreed ones (500 ft offshore features, 100 ft beaches and herring grounds)
- * rather than the old 100 ft that missed offshore beds.
+ * the agreed ones (500 ft offshore features, 200 ft beaches and shoreforms, 100 ft
+ * herring grounds; armor 50 ft, structures 100 ft, buoys 300 ft).
  */
 
 export interface NearshoreParcelRecord {
@@ -37,6 +37,23 @@ export interface NearshoreParcelRecord {
     restoration: string;
     publicOwnership: boolean;
   };
+  /** Beamer & Fresh fish-use scores for shoreline segments within meta.fishFt. */
+  fish?: {
+    distFt: number;
+    /** Keyed by species code (Ck, Chum, Pk, Herr, Lance, Smelt, Hex); values 0–1. */
+    scores: Record<string, { hrm: number; lrm: number }>;
+    segment: { name: string; geoUnit: string; systemType: string; subType: string; materialClass: string; featureType: string };
+  };
+  /** Shoreline modifications from Friends' field surveys, within the meta distances. */
+  mods?: {
+    armor?: { n: number; lengthFt: number; distFt: number };
+    docks?: { distFt: number; material: string; floatMaterial: string; creosote: boolean; grating: boolean; condition: string }[];
+    groins?: { n: number; distFt: number };
+    ramps?: { n: number; distFt: number };
+    railways?: { n: number; distFt: number };
+    pilings?: { n: number; count: number; creosote: boolean; distFt: number };
+    buoys?: { n: number; distFt: number; types: Record<string, number> };
+  };
 }
 
 export interface NearshoreStatsMeta {
@@ -46,6 +63,10 @@ export interface NearshoreStatsMeta {
   forageFt: number;
   herringFt: number;
   shoreformFt?: number;
+  fishFt?: number;
+  armorFt?: number;
+  structureFt?: number;
+  buoyFt?: number;
   parcels: number;
   parcelsWithHits: number;
 }
@@ -60,8 +81,13 @@ export const DEFAULT_NEARSHORE_META: NearshoreStatsMeta = {
   generated: '',
   kelpFt: 500,
   eelgrassFt: 500,
-  forageFt: 100,
+  forageFt: 200,
   herringFt: 100,
+  shoreformFt: 200,
+  fishFt: 200,
+  armorFt: 50,
+  structureFt: 100,
+  buoyFt: 300,
   parcels: 0,
   parcelsWithHits: 0,
 };

@@ -8,6 +8,9 @@ For every tax parcel (keyed by FID, same as ndvi_parcel_stats.json) this writes:
   forage    documented spawning beaches within FORAGE_FT (names, species) + potential beach count
   herring   herring spawning grounds within HERRING_FT of the parcel
   shoreform nearest Friends geomorphic shoreform segment within SHOREFORM_FT (class + attributes)
+  fish      Beamer & Fresh fish-use scores (max HRM/LRM per species) for segments within FISH_FT
+  mods      shoreline modifications: armor within ARMOR_FT (length), docks / groins / ramps /
+            railways / pilings within STRUCTURE_FT, mooring buoys & floats within BUOY_FT
 
 Only parcels with at least one hit are written, so the file stays small. The
 property popup reads it (src/services/nearshoreStats.ts) instead of doing live
@@ -36,9 +39,16 @@ DATA = os.path.join(ROOT, 'public', 'data')
 
 KELP_FT = 500
 EELGRASS_FT = 500
-FORAGE_FT = 100
+FORAGE_FT = 200  # widened from 100 (2026-09-02) so parcels behind a road / community lot still read as shoreline
 HERRING_FT = 100  # herring spawning grounds within this distance (client asked for same as forage fish)
-SHOREFORM_FT = 50  # nearest Friends shoreform segment (parcel lines vs. shoreline lines rarely coincide exactly)
+SHOREFORM_FT = 200  # nearest Friends shoreform segment; widened from 50 for the same reason as FORAGE_FT
+FISH_FT = 200  # Beamer & Fresh shoreline segments (fish use scores) — same reach as the shoreform
+ARMOR_FT = 50  # shoreline armor touching / hugging the parcel line
+STRUCTURE_FT = 100  # docks, groins, ramps, railways, pilings
+BUOY_FT = 300  # mooring buoys and floats sit offshore
+
+# Beamer & Fresh species column suffixes (HRM_<code> / LRM_<code>) — keep in sync with popupSpatial.ts SPECIES_CONFIG
+FISH_CODES = ['Ck', 'Chum', 'Pk', 'Herr', 'Lance', 'Smelt', 'Hex']
 
 # WGS84 → NAD83(HARN) / Washington North (US survey feet) so buffers are in feet
 TO_FT = Transformer.from_crs('EPSG:4326', 'EPSG:2926', always_xy=True)
@@ -82,6 +92,14 @@ def main():
     pot = load('friends-potential-forage-spawning.json')
     her = load('friends-herring-spawning.json')
     sf = load('friends-shoreline-geology.json')
+    fish = load('chinook-salmon.geojson')  # all seven fish layers share this geometry + HRM_/LRM_ columns
+    armor = load('friends-armor.json')
+    docks = load('friends-docks.geojson')
+    groins = load('friends-groins.json')
+    ramps = load('friends-boat-ramps.json')
+    rails = load('friends-marine-railway.json')
+    buoys = load('friends-mooring-buoys.json')
+    piles = load('friends-pilings.json')
 
     print('Projecting to feet…', flush=True)
     kelp_g = geoms_ft(kelp)
@@ -90,6 +108,14 @@ def main():
     pot_g = geoms_ft(pot)
     her_g = geoms_ft(her)
     sf_g = geoms_ft(sf)
+    fish_g = geoms_ft(fish)
+    armor_g = geoms_ft(armor)
+    docks_g = geoms_ft(docks)
+    groins_g = geoms_ft(groins)
+    ramps_g = geoms_ft(ramps)
+    rails_g = geoms_ft(rails)
+    buoys_g = geoms_ft(buoys)
+    piles_g = geoms_ft(piles)
 
     def tree(gs):
         idx = [i for i, g in enumerate(gs) if g is not None and not g.is_empty]
@@ -101,6 +127,14 @@ def main():
     pot_t, pot_i = tree(pot_g)
     her_t, her_i = tree(her_g)
     sf_t, sf_i = tree(sf_g)
+    fish_t, fish_i = tree(fish_g)
+    armor_t, armor_i = tree(armor_g)
+    docks_t, docks_i = tree(docks_g)
+    groins_t, groins_i = tree(groins_g)
+    ramps_t, ramps_i = tree(ramps_g)
+    rails_t, rails_i = tree(rails_g)
+    buoys_t, buoys_i = tree(buoys_g)
+    piles_t, piles_i = tree(piles_g)
     print(f'  indexes built ({time.time() - t0:.0f}s)', flush=True)
 
     def hits(tr, idx, geoms, query_geom, dist_ft):
@@ -211,6 +245,80 @@ def main():
                 'publicOwnership': clean(p.get('SomePublicOwnership')) == 'Y',
             }
 
+        # --- Beamer & Fresh fish use scores: max HRM/LRM per species across nearby segments ---
+        fh = hits(fish_t, fish_i, fish_g, pg, FISH_FT)
+        if fh:
+            scores = {}
+            for code in FISH_CODES:
+                hmax = lmax = 0.0
+                for i, _ in fh:
+                    p = fish[i].get('properties') or {}
+                    hmax = max(hmax, float(p.get(f'HRM_{code}') or 0))
+                    lmax = max(lmax, float(p.get(f'LRM_{code}') or 0))
+                if hmax > 0 or lmax > 0:
+                    scores[code] = {'hrm': round(hmax, 3), 'lrm': round(lmax, 3)}
+            i, d = min(fh, key=lambda x: x[1])
+            p = fish[i].get('properties') or {}
+            def cl(v):
+                v = '' if v is None else str(v).strip()
+                return '' if v in ('<Null>', 'None') else v
+            rec['fish'] = {
+                'distFt': round(d),
+                'scores': scores,
+                'segment': {
+                    'name': cl(p.get('Name')), 'geoUnit': cl(p.get('GeoUnit')), 'systemType': cl(p.get('RITT_SysTy')),
+                    'subType': cl(p.get('RITT_SubTy')), 'materialClass': cl(p.get('MatrlClass')), 'featureType': cl(p.get('FType')),
+                },
+            }
+
+        # --- Shoreline modifications (Friends field surveys) ---
+        mods = {}
+        ah = hits(armor_t, armor_i, armor_g, pg, ARMOR_FT)
+        if ah:
+            zone = pg.buffer(ARMOR_FT)
+            length = sum(armor_g[i].intersection(zone).length for i, _ in ah)
+            mods['armor'] = {'n': len(ah), 'lengthFt': round(length), 'distFt': round(min(d for _, d in ah))}
+        dh2 = hits(docks_t, docks_i, docks_g, pg, STRUCTURE_FT)
+        if dh2:
+            yn = lambda v: str(v or '').strip().upper() in ('Y', 'YES', '1', 'TRUE')
+            items = []
+            for i, d in sorted(dh2, key=lambda x: x[1])[:8]:
+                p = docks[i].get('properties') or {}
+                items.append({
+                    'distFt': round(d),
+                    'material': str(p.get('Material') or '').strip(),
+                    'floatMaterial': str(p.get('FloatMaterial') or '').strip(),
+                    'creosote': yn(p.get('Creosote')),
+                    'grating': yn(p.get('Grating')),
+                    'condition': str(p.get('Condition') or '').strip(),
+                })
+            mods['docks'] = items
+        for key, tr, idx, gs in (('groins', groins_t, groins_i, groins_g), ('ramps', ramps_t, ramps_i, ramps_g), ('railways', rails_t, rails_i, rails_g)):
+            h = hits(tr, idx, gs, pg, STRUCTURE_FT)
+            if h:
+                mods[key] = {'n': len(h), 'distFt': round(min(d for _, d in h))}
+        ph2 = hits(piles_t, piles_i, piles_g, pg, STRUCTURE_FT)
+        if ph2:
+            count = 0
+            creo = False
+            for i, _ in ph2:
+                p = piles[i].get('properties') or {}
+                try:
+                    count += int(float(p.get('Count_') or 0))
+                except Exception:
+                    pass
+                creo = creo or str(p.get('Creosote') or '').strip().lower() in ('y', 'yes', '1', 'true')
+            mods['pilings'] = {'n': len(ph2), 'count': count, 'creosote': creo, 'distFt': round(min(d for _, d in ph2))}
+        bh = hits(buoys_t, buoys_i, buoys_g, pg, BUOY_FT)
+        if bh:
+            types = {}
+            for i, _ in bh:
+                t = str((buoys[i].get('properties') or {}).get('Type') or '?').strip().upper() or '?'
+                types[t] = types.get(t, 0) + 1
+            mods['buoys'] = {'n': len(bh), 'distFt': round(min(d for _, d in bh)), 'types': types}
+        if mods:
+            rec['mods'] = mods
+
         if rec:
             results[fid] = rec
             n_hit += 1
@@ -225,6 +333,10 @@ def main():
             'forageFt': FORAGE_FT,
             'herringFt': HERRING_FT,
             'shoreformFt': SHOREFORM_FT,
+            'fishFt': FISH_FT,
+            'armorFt': ARMOR_FT,
+            'structureFt': STRUCTURE_FT,
+            'buoyFt': BUOY_FT,
             'parcels': len(parcels),
             'parcelsWithHits': n_hit,
         },

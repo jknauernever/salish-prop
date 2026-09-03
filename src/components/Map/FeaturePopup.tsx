@@ -7,7 +7,7 @@ import { POPUP_SPECS, LAYER_PHOTOS, fallbackTitle, fmtAcresValue } from '../../c
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
-import { countIntersectingBuildings, queryShorelineHabitat, nearshoreFromStats } from '../../services/popupSpatial';
+import { countIntersectingBuildings, nearshoreFromStats } from '../../services/popupSpatial';
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
@@ -858,9 +858,14 @@ function handleParcelClick(
 
   const titleElId = `${popupId}-title`;
 
+  // Wildlife tab: whale / marine mammal sightings live on EarthAtlas, opened at the parcel
+  const centroid = parcelGeoFeature ? turf.centroid(parcelGeoFeature).geometry.coordinates : [clickLng, clickLat];
+  renderWhaleLink(popupId, centroid[1], centroid[0], label);
+
   const setPopupTitle = (address: string) => {
     const titleEl = document.getElementById(titleElId);
     if (titleEl) titleEl.textContent = address;
+    renderWhaleLink(popupId, centroid[1], centroid[0], address || label);
   };
 
   getAddressLookup().then(lookup => {
@@ -922,7 +927,10 @@ function handleParcelClick(
       const addrPromise = pin ? getAddressLookup() : Promise.resolve({} as Record<string, AddressEntry[]>);
 
       nearshorePromise.then(vegResult => {
-        const { shorelineResult } = runShorelineQuery(parcelGeoFeature, allLayers, popupId, vegResult);
+        renderShorelineTab(popupId, vegResult);
+        renderFishTab(popupId, vegResult);
+        renderModsTab(popupId, vegResult);
+        const shorelineResult = null;
         renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
 
         Promise.all([ndviPromise, addrPromise]).then(([stats, addrLookup]) => {
@@ -981,36 +989,109 @@ function runBuildingQuery(
   return result;
 }
 
-interface ShorelineAndVegResult {
-  shorelineResult: ShorelineQueryResult | null;
-  vegResult: NearshoreVegetationResult;
+// ---------------------------------------------------------------------------
+// Shoreline / Fish / Modifications / Wildlife tabs (all from the precompute)
+// ---------------------------------------------------------------------------
+
+const FISH_CODE_NAMES: Record<string, string> = {
+  Ck: 'Chinook Salmon', Chum: 'Chum Salmon', Pk: 'Pink Salmon', Herr: 'Pacific Herring',
+  Lance: 'Pacific Sand Lance', Smelt: 'Surf Smelt', Hex: 'Lingcod & Greenling',
+};
+
+function renderShorelineTab(popupId: string, veg: NearshoreVegetationResult) {
+  const el = document.getElementById(`${popupId}-shoreline`);
+  if (!el) return;
+  el.innerHTML = (veg.shoreform ? buildShoreformCard(veg.shoreform) : '') + buildNearshoreVegetationHtml(veg, 'veg');
 }
 
-function runShorelineQuery(
-  parcel: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-  layers: LayerState[],
-  popupId: string,
-  vegResult: NearshoreVegetationResult,
-): ShorelineAndVegResult {
-  const el = document.getElementById(`${popupId}-shoreline`);
-  const hasFishLayer = layers.some(l => l.config.category === 'fish-habitat' && l.loaded && l.geojsonData);
-
-  // Nearshore habitat always renders (it comes from the precomputed stats)
-  const vegHtml = (vegResult.shoreform ? buildShoreformCard(vegResult.shoreform) : '') + buildNearshoreVegetationHtml(vegResult);
-
-  if (!hasFishLayer) {
-    if (el) {
-      el.innerHTML = vegHtml + `<div style="${CARD}"><p style="${BODY};color:${COLOR.mid};">Turn on a Fish Habitat layer in the sidebar to see fish use scores for this shoreline.</p></div>`;
-    }
-    return { shorelineResult: null, vegResult };
+function renderFishTab(popupId: string, veg: NearshoreVegetationResult) {
+  const el = document.getElementById(`${popupId}-fish`);
+  if (!el) return;
+  let scoresHtml: string;
+  if (veg.fish && Object.keys(veg.fish.scores).length > 0) {
+    const species = Object.entries(veg.fish.scores)
+      .map(([code, v]) => ({ species: FISH_CODE_NAMES[code] ?? code, hrmValue: v.hrm, lrmValue: v.lrm }))
+      .sort((a, b) => b.hrmValue - a.hrmValue);
+    scoresHtml = buildFishCard({ species, shorelineDescription: veg.fish.segment }, veg.modDistances.fishFt, veg.fish.distFt);
+  } else {
+    scoresHtml = `<div style="${CARD}">${sectionHeading('Fish Utilization')}<p style="${BODY};color:${COLOR.mid};">No surveyed shoreline segment lies within ${veg.modDistances.fishFt} ft of this parcel, so there are no fish use scores to show. Shoreline segments are scored countywide; inland parcels have none.</p></div>`;
   }
+  el.innerHTML = scoresHtml + buildNearshoreVegetationHtml(veg, 'spawn');
+}
 
-  const result = queryShorelineHabitat(parcel, layers);
-  if (el) {
-    const shorelineHtml = result.species.length > 0 ? buildShorelineTab(result) : '';
-    el.innerHTML = vegHtml + shorelineHtml;
-  }
-  return { shorelineResult: result, vegResult };
+const SITE_VISIT_URL = 'https://sanjuans.org/our-work/landowner-resources/#SiteVisit';
+const ARMOR_WEBINAR_URL = 'https://www.youtube.com/watch?v=Ts8aC0REZJA';
+
+function renderModsTab(popupId: string, veg: NearshoreVegetationResult) {
+  const el = document.getElementById(`${popupId}-mods`);
+  if (!el) return;
+  const m = veg.mods ?? {};
+  const d = veg.modDistances;
+  const MATERIAL: Record<string, string> = { W: 'wood', C: 'concrete', R: 'rock', S: 'steel', P: 'plastic', M: 'metal', F: 'fiberglass', O: 'other' };
+  const CONDITION: Record<string, string> = { G: 'good', F: 'fair', P: 'poor', E: 'excellent' };
+  const BUOY: Record<string, string> = { B: 'mooring buoy', F: 'float', R: 'raft' };
+  const chip = (t: string, tone = '') => `<span class="ssx-chip${tone ? ` ssx-chip-${tone}` : ''}">${esc(t)}</span>`;
+
+  const row = (present: boolean, title: string, detail: string, within: string) => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:8px;border-radius:8px;background:${present ? '#FDE9C8' : '#FBF7EF'};border:1px solid ${present ? '#F3CF98' : COLOR.border};">
+      <span style="margin-top:6px;display:inline-block;width:9px;height:9px;border-radius:50%;background:${present ? '#C2410C' : COLOR.border};flex-shrink:0;"></span>
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:700;color:${present ? '#6E3D03' : COLOR.mid};">${esc(title)}<span style="font-weight:500;font-size:13px;color:${COLOR.mid};margin-left:8px;">within ${esc(within)}</span></div>
+        ${detail ? `<div style="font-size:14px;color:${COLOR.dark};margin-top:3px;line-height:1.45;">${detail}</div>` : ''}
+      </div>
+    </div>`;
+
+  const ft = (n: number) => `${n.toLocaleString('en-US')} ft`;
+  const rows: string[] = [];
+  const a = m.armor;
+  rows.push(row(!!a, 'Shoreline armor', a
+    ? `About ${ft(a.lengthFt)} of bulkhead, riprap, or other hard armor along this parcel (${a.n} mapped ${a.n === 1 ? 'segment' : 'segments'}, nearest ${ft(a.distFt)}).`
+    : 'No mapped armor along the parcel line.', `${d.armorFt} ft of the parcel line`));
+  const docks = m.docks ?? [];
+  rows.push(row(docks.length > 0, docks.length === 1 ? 'Dock' : `Docks (${docks.length})`, docks.length
+    ? docks.map(k => {
+        const bits = [MATERIAL[k.material.toUpperCase()] ? `${MATERIAL[k.material.toUpperCase()]} deck` : '', MATERIAL[k.floatMaterial.toUpperCase()] ? `${MATERIAL[k.floatMaterial.toUpperCase()]} float` : '', CONDITION[k.condition.toUpperCase()] ? `condition ${CONDITION[k.condition.toUpperCase()]}` : ''].filter(Boolean).join(', ');
+        return `<div style="margin:2px 0;">${ft(k.distFt)} away${bits ? ` &mdash; ${esc(bits)}` : ''} ${k.creosote ? chip('creosote', 'warn') : ''}${k.grating ? chip('grated', 'on') : ''}</div>`;
+      }).join('')
+    : 'No mapped dock nearby.', `${d.structureFt} ft`));
+  const simple = (key: 'groins' | 'ramps' | 'railways', title: string, noun: string) => {
+    const v = m[key];
+    rows.push(row(!!v, title, v ? `${v.n} mapped ${v.n === 1 ? noun : noun + 's'}, nearest ${ft(v.distFt)}.` : `No mapped ${noun} nearby.`, `${d.structureFt} ft`));
+  };
+  simple('groins', 'Groins', 'groin');
+  simple('ramps', 'Improved boat ramps', 'ramp');
+  simple('railways', 'Marine railways', 'railway');
+  const pl = m.pilings;
+  rows.push(row(!!pl, 'Pilings', pl ? `${pl.count || pl.n} ${pl.count === 1 ? 'piling' : 'pilings'} not tied to a dock, nearest ${ft(pl.distFt)}. ${pl.creosote ? chip('creosote', 'warn') : ''}` : 'No mapped stand-alone pilings nearby.', `${d.structureFt} ft`));
+  const b = m.buoys;
+  rows.push(row(!!b, 'Mooring buoys & floats', b
+    ? `${b.n} mapped (${Object.entries(b.types).map(([t, n]) => `${n} ${BUOY[t] ?? 'moorage'}${n === 1 ? '' : 's'}`).join(', ')}), nearest ${ft(b.distFt)}.`
+    : 'No mapped moorage nearby.', `${d.buoyFt} ft`));
+
+  const any = !!(a || docks.length || m.groins || m.ramps || m.railways || pl || b);
+  const cta = any
+    ? `<div class="ssx-block ssx-act" style="margin:0 0 12px;"><div class="ssx-k">Friends can help</div>Friends of the San Juans offers free site visits and technical assistance to remove failing armor, soften banks, and upgrade docks, floats, and moorings to shore-friendly designs.<div class="ssx-btn-row"><a class="ssx-btn-sun" href="${SITE_VISIT_URL}" target="_blank" rel="noopener noreferrer">Sign up for a site visit</a> <a class="ssx-btn" href="${ARMOR_WEBINAR_URL}" target="_blank" rel="noopener noreferrer" style="margin-left:6px;">Armor research webinar ↗</a></div></div>`
+    : `<div class="ssx-block ssx-act" style="margin:0 0 12px;"><div class="ssx-k">Keeping it that way</div>Planning a dock, mooring, or bank work? Friends offers free site visits to help design it around the habitat.<div class="ssx-btn-row"><a class="ssx-btn-sun" href="${SITE_VISIT_URL}" target="_blank" rel="noopener noreferrer">Sign up for a site visit</a></div></div>`;
+
+  el.innerHTML = `
+    <div style="${CARD}">
+      ${sectionHeading('Shoreline Modifications')}
+      <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">Human-made structures from Friends of the San Juans field surveys (2009, updated 2019): armor within ${d.armorFt} ft of the parcel line; docks, groins, ramps, railways, and pilings within ${d.structureFt} ft; mooring buoys and floats within ${d.buoyFt} ft.</p>
+      ${rows.join('')}
+    </div>
+    ${cta}`;
+}
+
+function renderWhaleLink(popupId: string, lat: number, lng: number, name: string) {
+  const el = document.getElementById(`${popupId}-whales`);
+  if (!el) return;
+  const url = `https://earthatlas.org/whales?lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}&name=${encodeURIComponent(name)}&z=12`;
+  el.innerHTML = `
+    <div class="ssx-block ssx-story" style="margin:0 0 12px;">
+      <div class="ssx-k">Whales &amp; marine mammals</div>
+      Recent orca, humpback, porpoise, and seal sightings around this shoreline are mapped on EarthAtlas, centered on this parcel.
+      <div class="ssx-btn-row"><a class="ssx-btn-sun" href="${url}" target="_blank" rel="noopener noreferrer">See sightings near here ↗</a></div>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1288,6 +1369,7 @@ function attachTabHandlers(popupId: string, accentColor: string) {
   const panels = popupEl.querySelectorAll<HTMLDivElement>('[data-panel]');
 
   void accentColor; // tabs take their color from the frame CSS now
+  const srcEl = popupEl.querySelector<HTMLElement>('.ssx-src');
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-tab');
@@ -1295,6 +1377,9 @@ function attachTabHandlers(popupId: string, accentColor: string) {
       panels.forEach(p => {
         p.hidden = p.getAttribute('data-panel') !== target;
       });
+      // Footer credit follows the tab: each one draws on different datasets
+      const src = btn.getAttribute('data-source');
+      if (srcEl && src) srcEl.textContent = `Source: ${src}`;
     });
   });
 }
@@ -1410,28 +1495,41 @@ function buildTabbedPopupHtml(
 ): string {
   const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0297BA';
 
+  // Each tab credits its own sources, source first, then what it supplied.
+  // The frame footer follows the active tab.
+  const TAB_SOURCES: Record<string, string> = {
+    summary: 'San Juan County GIS (assessor parcels); Friends of the San Juans (shore type, kelp, eelgrass)',
+    shoreline: 'Friends of the San Juans (shoreform mapping with Coastal Geologic Services, kelp, eelgrass); Washington DNR (kelp, eelgrass); Friday Harbor Labs (eelgrass)',
+    fish: 'Beamer & Fresh 2012, Skagit River System Cooperative (fish use scores); Friends of the San Juans (forage fish spawning beaches); WDFW (forage fish records, herring spawning grounds)',
+    wildlife: 'eBird, Cornell Lab of Ornithology (birds); EarthAtlas (marine mammal sightings)',
+    mods: 'Friends of the San Juans (shoreline inventory 2009, armor change survey 2019)',
+    vegetation: 'USDA NAIP imagery via Google Earth Engine (greenery); Hansen/UMD/Google/USGS/NASA (forest loss); NASA OPERA (disturbance)',
+    property: 'San Juan County GIS (assessor parcels, building footprints)',
+  };
   const tabBtn = (name: string, dataTab: string, active: boolean) =>
-    `<button type="button" class="ssx-tab${active ? ' on' : ''}" data-tab="${dataTab}">${esc(name)}</button>`;
+    `<button type="button" class="ssx-tab${active ? ' on' : ''}" data-tab="${dataTab}" data-source="${esc(TAB_SOURCES[dataTab] ?? '')}">${esc(name)}</button>`;
 
-  const propertyContent = buildPropertyTab(fields, addressRowId);
+  const propertyContent = buildPropertyTab(fields, addressRowId, popupId);
   const panelStyle = 'min-height:520px;max-height:520px;overflow-y:auto;';
+  const loading = (text: string) => `<div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">${text}</p></div>`;
 
-  // Key facts from the assessor record; waterfront only when present
+  // Key facts from the assessor record; waterfront only when present.
+  // Appraised value deliberately stays out of the header (Friends doesn't want it featured).
   const acres = Number(props.Acres || props.Legal_Acre) || 0;
   const wf = Number(props.WF_LGTH) || 0;
-  const appraised = Number(props.Appraised_) || 0;
   const stats: PopupStat[] = [];
   if (acres > 0) stats.push({ value: fmtAcresValue(acres), unit: 'ac', label: 'Parcel' });
   if (wf > 0) stats.push({ value: Math.round(wf).toLocaleString('en-US'), unit: 'ft', label: 'Waterfront' });
-  if (appraised > 0) stats.push({ value: fmtCurrency(appraised).replace(/\.\d+([KM])$/, '$1'), label: 'Appraised' });
 
   const body = `
       <div class="ssx-tabs" id="${popupId}-tabs">
         ${tabBtn('Summary', 'summary', true)}
-        ${tabBtn('Property', 'property', false)}
-        ${tabBtn('Buildings', 'buildings', false)}
         ${tabBtn('Shoreline', 'shoreline', false)}
-        ${tabBtn('Birds', 'birds', false)}
+        ${tabBtn('Fish', 'fish', false)}
+        ${tabBtn('Wildlife', 'wildlife', false)}
+        ${tabBtn('Modifications', 'mods', false)}
+        ${tabBtn('Vegetation', 'vegetation', false)}
+        ${tabBtn('Property', 'property', false)}
       </div>
 
       <div class="ssx-panel" data-panel="summary" style="${panelStyle}">
@@ -1443,29 +1541,28 @@ function buildTabbedPopupHtml(
             <span style="font-size:12px;color:${COLOR.light};font-style:italic;">Loading map...</span>
           </div>
         </div>
-        <div id="${popupId}-summary-cards">
-          <div style="${CARD}"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading property data...</p></div>
-        </div>
+        <div id="${popupId}-summary-cards">${loading('Loading property data...')}</div>
+      </div>
+      <div class="ssx-panel" data-panel="shoreline" hidden style="${panelStyle}">
+        <div id="${popupId}-shoreline">${loading('Checking nearshore habitat…')}</div>
+      </div>
+      <div class="ssx-panel" data-panel="fish" hidden style="${panelStyle}">
+        <div id="${popupId}-fish">${loading('Checking fish use and spawning data…')}</div>
+      </div>
+      <div class="ssx-panel" data-panel="wildlife" hidden style="${panelStyle}">
+        <div id="${popupId}-whales"></div>
+        <div id="${popupId}-birds">${loading('Loading bird observations...')}</div>
+      </div>
+      <div class="ssx-panel" data-panel="mods" hidden style="${panelStyle}">
+        <div id="${popupId}-mods">${loading('Checking shoreline modifications…')}</div>
+      </div>
+      <div class="ssx-panel" data-panel="vegetation" hidden style="${panelStyle}">
+        <div id="${popupId}-greenery">${loading('Loading vegetation data…')}</div>
         <div id="${popupId}-forest-loss"></div>
         <div id="${popupId}-dist-alert"></div>
       </div>
       <div class="ssx-panel" data-panel="property" hidden style="${panelStyle}">
         ${propertyContent}
-      </div>
-      <div class="ssx-panel" data-panel="buildings" hidden style="${panelStyle}">
-        <div id="${popupId}-buildings">
-          <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Checking for buildings...</p></div>
-        </div>
-      </div>
-      <div class="ssx-panel" data-panel="shoreline" hidden style="${panelStyle}">
-        <div id="${popupId}-shoreline">
-          <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Analyzing nearby shoreline...</p></div>
-        </div>
-      </div>
-      <div class="ssx-panel" data-panel="birds" hidden style="${panelStyle}">
-        <div id="${popupId}-birds">
-          <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Loading bird observations...</p></div>
-        </div>
       </div>`;
 
   return buildPopupFrame({
@@ -1481,7 +1578,7 @@ function buildTabbedPopupHtml(
     stats,
     chipsId: `${popupId}-chips`,
     body,
-    source: { credit: layer.config.sourceCredit || 'San Juan County Assessor', url: layer.config.sourceUrl },
+    source: { credit: TAB_SOURCES.summary, url: layer.config.sourceUrl },
   });
 }
 
@@ -1489,7 +1586,7 @@ function buildTabbedPopupHtml(
 // Property tab
 // ---------------------------------------------------------------------------
 
-function buildPropertyTab(fields: { label: string; value: string }[], addressRowId: string): string {
+function buildPropertyTab(fields: { label: string; value: string }[], addressRowId: string, popupId: string): string {
   const addressRow = `
     <tr>
       <td style="color:${COLOR.mid};padding:6px 12px 6px 0;vertical-align:top;white-space:nowrap;font-weight:600;">Address</td>
@@ -1508,6 +1605,9 @@ function buildPropertyTab(fields: { label: string; value: string }[], addressRow
           </tr>
         `).join('')}
       </table>
+    </div>
+    <div id="${popupId}-buildings">
+      <div style="${CARD}"><p style="${BODY};color:${COLOR.light};font-style:italic;">Checking for buildings...</p></div>
     </div>
   `;
 }
@@ -1538,11 +1638,13 @@ function renderSummary(
 
   const cards: string[] = [];
 
+  void shorelineResult; // fish scores now live in the Fish tab, from the precompute
+
   // --- Shoreline Description: Friends geomorphic shoreform first, Beamer geo-unit as fallback ---
   if (vegResult?.shoreform) {
     cards.push(buildShoreformCard(vegResult.shoreform));
-  } else if (shorelineResult?.shorelineDescription) {
-    cards.push(buildShorelineDescriptionCard(shorelineResult.shorelineDescription));
+  } else if (vegResult?.fish?.segment?.geoUnit) {
+    cards.push(buildShorelineDescriptionCard(vegResult.fish.segment));
   }
 
   // --- Nearshore Ecology (Eelgrass & Kelp) ---
@@ -1551,17 +1653,15 @@ function renderSummary(
     renderLivingShorelineChips(popupId, vegResult);
   }
 
-  // --- Fish & Wildlife ---
-  if (shorelineResult && shorelineResult.species.length > 0) {
-    cards.push(buildFishCard(shorelineResult));
-  }
-
-  // --- Greenery & Tree Cover ---
-  if (ndviStats) {
-    cards.push(buildGreeneryCard(ndviStats, Number(props.WF_LGTH) > 0, islandStats));
-  }
-
   cardsEl.innerHTML = cards.join('');
+
+  // --- Greenery & Tree Cover lives in the Vegetation tab ---
+  const greenEl = document.getElementById(`${popupId}-greenery`);
+  if (greenEl && ndviStats) {
+    greenEl.innerHTML = buildGreeneryCard(ndviStats, Number(props.WF_LGTH) > 0, islandStats);
+  } else if (greenEl && ndviStats === null && vegResult) {
+    greenEl.innerHTML = `<div style="${CARD}">${sectionHeading('Greenery & Tree Cover')}<p style="${BODY};color:${COLOR.mid};">No vegetation index is available for this parcel yet.</p></div>`;
+  }
 }
 
 /** Header chips: what living shoreline is near this parcel, lit when present. */
@@ -1631,7 +1731,6 @@ function buildAtAGlanceCard(
 ): string {
   const acres = fmtAcres(props.Acres || props.Legal_Acre);
   const taxArea = String(props.Tax_Area || '').trim();
-  const appraised = Number(props.Appraised_) || 0;
   const wfLength = Number(props.WF_LGTH) || 0;
   const buildings = buildingResult?.count ?? 0;
   const totalSqFt = buildingResult?.totalSqFt ?? 0;
@@ -1647,7 +1746,6 @@ function buildAtAGlanceCard(
   statRows.push(compactStat(acres, 'Acres'));
   if (buildings > 0) statRows.push(compactStat(String(buildings), buildings === 1 ? 'Building' : 'Buildings'));
   if (totalSqFt > 0) statRows.push(compactStat(Math.round(totalSqFt).toLocaleString(), 'Sq Ft'));
-  if (appraised > 0) statRows.push(compactStat(fmtCurrency(appraised), 'Assessed Value'));
   if (wfLength > 0) statRows.push(compactStat(Math.round(wfLength) + ' ft', 'Waterfront'));
 
   const statsBlock = `<div style="margin-bottom:8px;border-bottom:1px solid ${COLOR.border};padding-bottom:6px;">${statRows.join('')}</div>`;
@@ -2049,7 +2147,7 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
   `;
 }
 
-function buildFishCard(result: ShorelineQueryResult): string {
+function buildFishCard(result: ShorelineQueryResult, withinFt?: number, distFt?: number): string {
   const { species } = result;
   const count = species.length;
   const top = species[0];
@@ -2086,6 +2184,7 @@ function buildFishCard(result: ShorelineQueryResult): string {
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">${hrmDesc} ${moreInfoLink}</p>
       <div style="font-size:14px;color:${COLOR.dark};margin-bottom:6px;">Habitat relevance score</div>
       ${bars}
+      ${withinFt != null ? `<p style="font-size:13.5px;color:${COLOR.mid};margin:10px 0 0;line-height:1.45;">Scores are for the surveyed shoreline segment${distFt != null && distFt > 0 ? ` ${distFt} ft from the parcel line` : ' along this parcel'} (segments within ${withinFt} ft are considered). Source: Beamer &amp; Fresh 2012, Skagit River System Cooperative.</p>` : ''}
     </div>
   `;
 }
@@ -2112,7 +2211,7 @@ function describeEelgrassExtent(segmentCount: number, totalLengthFt: number): st
   return 'Eelgrass detected nearby';
 }
 
-function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
+function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult, mode: 'veg' | 'spawn' = 'veg'): string {
   const { bullKelp, eelgrass, forage, herring, distances } = veg;
 
   const vegIcon = (present: boolean) => present
@@ -2232,16 +2331,26 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
     herringHtml = absent(`No herring spawning ground mapped within ${distances.herringFt} ft`);
   }
 
+  if (mode === 'spawn') {
+    return `
+    <div style="${CARD}">
+      ${sectionHeading('Spawning Habitat')}
+      <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
+        Friends of the San Juans and WDFW survey data: forage fish spawning beaches within ${distances.forageFt} ft of the property and herring spawning grounds within ${distances.herringFt} ft.
+      </p>
+      ${forageHtml}
+      ${herringHtml}
+    </div>
+  `;
+  }
   return `
     <div style="${CARD}">
       ${sectionHeading('Nearshore Habitat')}
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
-        Friends of the San Juans survey data: bull kelp and eelgrass within ${distances.kelpFt} ft of the property, forage fish spawning beaches within ${distances.forageFt} ft, and herring spawning grounds within ${distances.herringFt} ft.
+        Friends of the San Juans survey data: bull kelp and eelgrass within ${distances.kelpFt} ft of the property.
       </p>
       ${kelpHtml}
       ${eelgrassHtml}
-      ${forageHtml}
-      ${herringHtml}
     </div>
   `;
 }
@@ -2250,61 +2359,7 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult): string {
 // Shoreline tab (full detail)
 // ---------------------------------------------------------------------------
 
-function buildShorelineTab(result: ShorelineQueryResult): string {
-  const { species, shorelineDescription } = result;
 
-  const speciesRows = species.map(sp => {
-    const pct = Math.round(sp.hrmValue * 100);
-    return `
-      <tr>
-        <td style="color:${COLOR.dark};padding:6px 10px 6px 0;white-space:nowrap;font-size:15px;">${esc(sp.species)}</td>
-        <td style="padding:6px 0;width:100%;">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="background:${COLOR.border};border-radius:3px;height:10px;flex:1;overflow:hidden;">
-              <div style="background:${COLOR.teal};height:100%;width:${pct}%;border-radius:3px;"></div>
-            </div>
-            <span style="font-size:14px;color:${COLOR.dark};min-width:32px;font-weight:600;">${pct}%</span>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  const descHtml = shorelineDescription ? `
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid ${COLOR.border};">
-      <div style="font-size:14px;font-weight:600;color:${COLOR.dark};margin-bottom:8px;">Shoreline Details</div>
-      <table style="font-size:15px;border-collapse:collapse;width:100%;">
-        ${shorelineRow('Location', shorelineDescription.name)}
-        ${shorelineRow('Type', shorelineDescription.geoUnit)}
-        ${shorelineRow('System', shorelineDescription.systemType)}
-        ${shorelineRow('Classification', shorelineDescription.subType)}
-        ${shorelineRow('Bottom Material', shorelineDescription.materialClass)}
-        ${shorelineRow('Feature', shorelineDescription.featureType)}
-      </table>
-    </div>
-  ` : '';
-
-  return `
-    <div style="${CARD}">
-      ${sectionHeading('Species Habitat Scores')}
-      <p style="${BODY};margin-bottom:10px;">These scores show how important the nearby shoreline is as habitat for each species. Higher scores mean more critical habitat.</p>
-      <table style="border-collapse:collapse;width:100%;">
-        ${speciesRows}
-      </table>
-      ${descHtml}
-    </div>
-  `;
-}
-
-function shorelineRow(label: string, value: string): string {
-  if (!value || !value.trim()) return '';
-  return `
-    <tr>
-      <td style="color:${COLOR.mid};padding:4px 10px 4px 0;">${esc(label)}</td>
-      <td style="color:${COLOR.dark};padding:4px 0;">${esc(value)}</td>
-    </tr>
-  `;
-}
 
 // ---------------------------------------------------------------------------
 // Buildings tab
