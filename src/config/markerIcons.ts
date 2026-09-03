@@ -22,6 +22,8 @@ interface IconSpec {
   color: string;
   /** Glyph as SVG path data in a 24×24 box, drawn in white. */
   glyph: string;
+  /** Draw the glyph as a 2px white stroke (line icon) instead of a filled shape. */
+  strokeGlyph?: boolean;
 }
 
 // Glyphs are hand-drawn in a 24×24 box, centered.
@@ -44,6 +46,14 @@ const SPECS: Record<string, IconSpec> = {
     glyph:
       'M4 9h16v2.4H4zM6 11.4h2.2V18H6zM10.9 11.4h2.2V18h-2.2zM15.8 11.4H18V18h-2.2zM4.5 18.5h15v1.5h-15z',
   },
+  // Friends' Projects: a site target ring over the water (chosen from the
+  // marker exploration canvas, 2026-09-03). Disc color comes per project
+  // type via FRIENDS_PROJECT_ICONS; the ring and wave stay white.
+  friends: {
+    color: '#0D4F4F',
+    glyph:
+      'M12 4.2a5.8 5.8 0 1 1 0 11.6 5.8 5.8 0 0 1 0-11.6zm0 2.4a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm0 1.6a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z M2 19.6c1.7-1.2 3.3-1.2 5 0s3.3 1.2 5 0 3.3-1.2 5 0 3.3 1.2 5 0v2.6H2z',
+  },
   // Bird in flight
   bird: {
     color: '#E8710A',
@@ -65,7 +75,9 @@ function buildSvg(spec: IconSpec): string {
   <defs><filter id="sh" x="-25%" y="-15%" width="150%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="0.9" flood-color="#000" flood-opacity="0.32"/></filter></defs>
   <path d="${outer}" fill="#FFFFFF" filter="url(#sh)"/>
   <circle cx="${cx}" cy="${cy}" r="9" fill="${spec.color}"/>
-  <g transform="translate(${cx - 12 * g} ${cy - 12 * g}) scale(${g})"><path d="${spec.glyph}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/></g>
+  <g transform="translate(${cx - 12 * g} ${cy - 12 * g}) scale(${g})">${spec.strokeGlyph
+    ? `<path d="${spec.glyph}" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="${spec.glyph}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/>`}</g>
 </svg>`;
 }
 
@@ -76,3 +88,20 @@ function dataUri(svg: string): string {
 export const MARKER_ICONS: Record<keyof typeof SPECS, string> = Object.fromEntries(
   Object.entries(SPECS).map(([k, spec]) => [k, dataUri(buildSvg(spec))]),
 ) as Record<keyof typeof SPECS, string>;
+
+/** A named glyph on a different disc color (e.g. one icon shape, colored by category). */
+export function markerIconWithColor(glyph: keyof typeof SPECS, color: string): string {
+  return dataUri(buildSvg({ ...SPECS[glyph], color }));
+}
+
+/** Friends' project types → marker colors (Friends palette; white globe on each). */
+export const FRIENDS_PROJECT_COLORS: Record<string, string> = {
+  'Restoration project': '#0297BA',
+  'Riparian project': '#3D6410',
+  'In/over-water structure project': '#8F6B2E',
+  'Restoration site': '#0D4F4F',
+};
+
+export const FRIENDS_PROJECT_ICONS: Record<string, string> = Object.fromEntries(
+  Object.entries(FRIENDS_PROJECT_COLORS).map(([kind, color]) => [kind, markerIconWithColor('friends', color)]),
+);

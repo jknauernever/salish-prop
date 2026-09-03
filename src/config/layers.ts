@@ -1,6 +1,6 @@
 import type { LayerConfig } from '../types';
 import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms.js';
-import { MARKER_ICONS } from './markerIcons.js'; // .js extension: this file is also loaded by the Node share function (ESM)
+import { MARKER_ICONS, FRIENDS_PROJECT_ICONS, FRIENDS_PROJECT_COLORS } from './markerIcons.js'; // .js extension: this file is also loaded by the Node share function (ESM)
 
 export const layerConfigs: LayerConfig[] = [
   // === Property Layers ===
@@ -852,95 +852,40 @@ export const layerConfigs: LayerConfig[] = [
     sourceCredit: 'Friends of the San Juans shoreline inventory',
   },
   {
-    id: 'friends-restoration-sites',
-    name: 'Restoration Sites',
-    description: 'Shoreline restoration site locations (Friends)',
+    id: 'friends-projects',
+    name: "Friends' Projects",
+    description: 'Restoration, riparian, and in/over-water structure projects by Friends of the San Juans',
     category: 'friends-data',
-    source: '/data/friends-restoration-sites.json',
-    visible: false,
+    source: '/data/friends-projects.geojson',
+    visible: true, // always on: this is Friends' own work on the map
+    markerIcon: MARKER_ICONS.friends,
+    markerIconByProperty: { property: 'kind', icons: FRIENDS_PROJECT_ICONS },
+    markerScale: 1.5, // hero layer: half again the size of every other pin
+    legend: {
+      type: 'categories',
+      items: Object.entries(FRIENDS_PROJECT_COLORS).map(([label, color]) => ({ label, color, shape: 'point' as const })),
+    },
     style: {
-      strokeColor: '#2D9B27',
+      strokeColor: '#0D4F4F',
       strokeWeight: 3,
       strokeOpacity: 0.9,
-    },
-    popupFields: [
-      { key: 'Island', label: 'Island' },
-      { key: 'Notes', label: 'Notes' },
-    ],
-    standardMessage: 'Shoreline segments identified as restoration sites during Friends of the San Juans shoreline surveys — places where armor removal or other restoration is possible.',
-    sourceCredit: 'Friends of the San Juans',
-  },
-  {
-    id: 'friends-iow-structures',
-    name: 'In/Over Water Structures',
-    description: 'In and over water structure projects (Friends)',
-    category: 'friends-data',
-    source: '/data/friends-iow-structures.json',
-    visible: false,
-    style: {
-      fillColor: '#0EA5E9',
+      fillColor: '#0D4F4F',
       fillOpacity: 1,
-      strokeColor: '#0369A1',
-      strokeWeight: 1,
     },
     popupFields: [
+      { key: 'NAME', label: 'Project' },
+      { key: 'kind', label: 'Type' },
       { key: 'ISLAND', label: 'Island' },
-      { key: 'OWNER', label: 'Owner' },
-      { key: 'HABITAT_TYPE', label: 'Habitat Type' },
-      { key: 'PROJECT_TYPE', label: 'Project Type' },
+      { key: 'DATE', label: 'Completed' },
+      { key: 'HABITAT_TYPES', label: 'Habitat' },
       { key: 'DESCRIPTION', label: 'Description' },
-      { key: 'AMOUNT', label: 'Amount' },
+      { key: 'LINEARFEET_SHORELINE', label: 'Shoreline restored (ft)' },
+      { key: 'ACRES_PROTECTED', label: 'Acres protected' },
+      { key: 'SQFT_HABITATRESTORED', label: 'Habitat restored (sq ft)' },
+      { key: 'AMOUNT', label: 'Structures' },
+      { key: 'LINK', label: 'Project page' },
     ],
-    standardMessage: 'In- and overwater structure projects by Friends of the San Juans — eelgrass-friendly mooring buoy upgrades, creosote removal, and dock improvements that reduce impacts on nearshore habitat.',
-    sourceCredit: 'Friends of the San Juans restoration program',
-  },
-  {
-    id: 'friends-restoration-projects',
-    name: 'Restoration Projects',
-    description: 'Habitat restoration projects (Friends)',
-    category: 'friends-data',
-    source: '/data/friends-restoration-projects.json',
-    visible: false,
-    style: {
-      fillColor: '#16A34A',
-      fillOpacity: 1,
-      strokeColor: '#15803D',
-      strokeWeight: 1,
-    },
-    popupFields: [
-      { key: 'NAME', label: 'Name' },
-      { key: 'ISLAND', label: 'Island' },
-      { key: 'HABITAT_TYPE', label: 'Habitat Type' },
-      { key: 'DATE', label: 'Date' },
-      { key: 'DESCRIPTION', label: 'Description' },
-      { key: 'LINEARFEET_SHORELINE', label: 'Linear Feet of Shoreline' },
-      { key: 'ACRES_PROTECTED', label: 'Acres Protected' },
-      { key: 'SQFT_HABITATRESTORED', label: 'Sq Ft Habitat Restored' },
-      { key: 'LINK', label: 'Link' },
-    ],
-    standardMessage: 'Habitat restoration projects completed by Friends of the San Juans and partners — armor removal, beach and tidal-marsh restoration, culvert replacement, and habitat enhancement. Click a project for details and a link to its story.',
-    sourceCredit: 'Friends of the San Juans restoration program',
-  },
-  {
-    id: 'friends-riparian-projects',
-    name: 'Riparian Projects',
-    description: 'Riparian restoration projects (Friends)',
-    category: 'friends-data',
-    source: '/data/friends-riparian-projects.json',
-    visible: false,
-    style: {
-      fillColor: '#65A30D',
-      fillOpacity: 1,
-      strokeColor: '#4D7C0F',
-      strokeWeight: 1,
-    },
-    popupFields: [
-      { key: 'NAME', label: 'Name' },
-      { key: 'ISLAND', label: 'Island' },
-      { key: 'HABITAT_TYPE', label: 'Habitat Type' },
-      { key: 'DESCRIPTION', label: 'Description' },
-    ],
-    standardMessage: 'Riparian restoration projects by Friends of the San Juans — planting and protecting native streamside and shoreline vegetation.',
+    standardMessage: "Projects completed by Friends of the San Juans and partners: armor removal, beach and tidal-marsh restoration, culvert replacement, riparian planting, and eelgrass-friendly upgrades to mooring buoys, docks, and pilings. Click a project for its story.",
     sourceCredit: 'Friends of the San Juans restoration program',
   },
   {

@@ -10,6 +10,7 @@ import { RadiusOverlay } from './components/Map/RadiusOverlay';
 import { LandingIntro } from './components/Map/LandingIntro';
 import { MapLegend } from './components/Map/MapLegend';
 import { useLayersInView } from './hooks/useLayersInView';
+import { preloadFriendsContent } from './services/friendsContent';
 import { AddressSearch } from './components/Search/AddressSearch';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -116,9 +117,10 @@ interface AppContentProps {
 
 function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, layersLocked }: AppContentProps) {
   const { map, zoom } = useMap();
-  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi } =
+  const { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi, zoomOverrides, setZoomOverride } =
     useLayers(map, initialUrlState.layers ?? preset?.layers, initialUrlState.layerUi);
-  const layersInView = useLayersInView(map, layers);
+  const layersInView = useLayersInView(map, layers, zoomOverrides);
+  useEffect(() => { void preloadFriendsContent(); }, []);
 
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(initialUrlState.search);
   const { content: siteContent } = useSiteContent();
@@ -213,7 +215,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
 
       {/* Floating legend: only what's on the map, plus the door to the full picker */}
       {!layersLocked && !sidebarOpen && (
-        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} inView={layersInView} />
+        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} inView={layersInView} zoomOverrides={zoomOverrides} onSetZoomOverride={setZoomOverride} />
       )}
 
       {!layersLocked && (

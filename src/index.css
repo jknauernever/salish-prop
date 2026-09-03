@@ -189,3 +189,15 @@ body {
 .ssx-minimap button[aria-label*="eyboard shortcuts"],
 .ssx-minimap .gmnoprint[title*="eyboard"] { display: none !important; }
 .ssx-minimap .gm-style-cc { font-size: 9px !important; }
+/* "From Friends" related-article rows inside the popup frame */
+.ssx-from { margin: 0 18px 12px; padding-top: 4px; }
+.ssx-from .ssx-k { color: #036E88; margin-bottom: 6px; }
+.ssx-art { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-top: 1px solid #E3DBCB; text-decoration: none !important; color: #1A1A1A !important; }
+.ssx-art:first-of-type { border-top: 0; }
+.ssx-art:hover .ssx-art-title { color: #036E88; text-decoration: underline; }
+.ssx-art-img { width: 64px; height: 48px; object-fit: cover; border-radius: 6px; flex: none; background: #E3DBCB; display: block; }
+.ssx-art-noimg { background: linear-gradient(135deg, #DCD3C2, #C9BFAA); }
+.ssx-art-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ssx-art-title { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+.ssx-art-meta { font-size: 11.5px; font-weight: 600; color: #4A4640; letter-spacing: .02em; }
+.ssx-art-sum { font-size: 13px; line-height: 1.45; color: #2E2B26; margin-top: 2px; }

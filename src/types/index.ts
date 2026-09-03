@@ -99,6 +99,10 @@ export interface LayerConfig {
    * When set, `source` is not fetched.
    */
   tiles?: { url: string; sourceLayer: string; minZoom: number; maxZoom: number; idProperty?: string };
+  /** Pick the marker icon per feature from a property value; falls back to `markerIcon`. */
+  markerIconByProperty?: { property: string; icons: Record<string, string> };
+  /** Multiplier on the standard 24×26 px marker size (e.g. 2 for a hero layer). */
+  markerScale?: number;
   /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see

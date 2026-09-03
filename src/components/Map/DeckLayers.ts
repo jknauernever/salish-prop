@@ -25,6 +25,8 @@ export interface DeckClickDetail {
 interface Entry {
   config: LayerConfig;
   visible: boolean;
+  /** User asked to see this layer at any zoom (ignore config.minZoom). */
+  ignoreGate?: boolean;
 }
 
 function hexToRgb(hex: string | undefined, fallback: [number, number, number]): [number, number, number] {
@@ -63,7 +65,16 @@ class DeckManager {
 
   /** Add or update a tile layer. Visibility here already includes the zoom gate. */
   setLayer(config: LayerConfig, visible: boolean) {
-    this.entries.set(config.id, { config, visible });
+    const prev = this.entries.get(config.id);
+    this.entries.set(config.id, { config, visible, ignoreGate: prev?.ignoreGate });
+    this.rebuild();
+  }
+
+  /** Show the layer regardless of its minZoom (or restore the gate). */
+  setGateOverride(layerId: string, ignore: boolean) {
+    const e = this.entries.get(layerId);
+    if (!e || !!e.ignoreGate === ignore) return;
+    e.ignoreGate = ignore;
     this.rebuild();
   }
 
@@ -110,7 +121,7 @@ class DeckManager {
     const stroke = hexToRgb(st.strokeColor, [13, 79, 79]);
     const fillA = Math.round((st.fillOpacity ?? 0) * 255);
     const strokeA = Math.round((st.strokeOpacity ?? 1) * 255);
-    const gated = config.minZoom != null && this.zoom < config.minZoom;
+    const gated = !e.ignoreGate && config.minZoom != null && this.zoom < config.minZoom;
     const layer = new MVTLayer({
       id: config.id,
       data: t.url,

@@ -11,6 +11,7 @@ import { countIntersectingBuildings, nearshoreFromStats } from '../../services/p
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
 import { fetchParcelDetail, findParcelAtPoint, getFidToTaxArea } from '../../services/parcelDetail';
 import { DECK_CLICK_EVENT, type DeckClickDetail } from './DeckLayers';
+import { getFriendsContentSync, preloadFriendsContent, articleForUrl, articleForProject, articlesForLayer, articleDate, type ContentItem } from '../../services/friendsContent';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
 import { fetchNearbyBirdSummary } from '../../services/ebird';
@@ -245,10 +246,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
           feature.toGeoJson((json) => {
             highlightFeatureGeometry(json as GeoJSON.Feature, map);
           });
-          const content = buildFeaturePopupHtml(layer, props, fields, label);
-          infoWindowRef.current?.setContent(content);
-          infoWindowRef.current?.setPosition(event.latLng!);
-          infoWindowRef.current?.open(map);
+          openFeaturePopup(layer, props, fields, label, event.latLng!, map, infoWindowRef);
         }
       });
 
@@ -285,9 +283,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
         handleParcelClick(label, layer, fields, props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, layersRef.current);
       } else {
         clearFeatureHighlight();
-        infoWindowRef.current?.setContent(buildFeaturePopupHtml(layer, props, fields, label));
-        infoWindowRef.current?.setPosition(latLng);
-        infoWindowRef.current?.open(map);
+        openFeaturePopup(layer, props, fields, label, latLng, map, infoWindowRef);
       }
     };
     window.addEventListener(DECK_CLICK_EVENT, onDeckClick);
@@ -1670,7 +1666,22 @@ function renderLivingShorelineChips(popupId: string, veg: NearshoreVegetationRes
  * POPUP_SPECS entry decides the title, facts, chips, story, and action;
  * everything else comes from the layer config and the feature's fields.
  */
-function buildFeaturePopupHtml(
+/** "From Friends" block: related articles from sanjuans.org, with the best one's summary. */
+function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): string {
+  if (!articles.length) return '';
+  const rows = articles.map((a, i) => `
+    <a class="ssx-art" href="${escHtml(a.url)}" target="_blank" rel="noopener noreferrer">
+      ${a.image ? `<img class="ssx-art-img" src="${escHtml(a.image.url)}" alt="" loading="lazy">` : '<span class="ssx-art-img ssx-art-noimg"></span>'}
+      <span class="ssx-art-body">
+        <span class="ssx-art-title">${escHtml(a.title)}</span>
+        <span class="ssx-art-meta">${escHtml(articleDate(a.date))}</span>
+        ${i === 0 && a.summary && a.id !== skipSummaryId ? `<span class="ssx-art-sum">${escHtml(a.summary)}</span>` : ''}
+      </span>
+    </a>`).join('');
+  return `<div class="ssx-from"><div class="ssx-k">From Friends of the San Juans</div>${rows}</div>`;
+}
+
+export function buildFeaturePopupHtml(
   layer: LayerState,
   props: Record<string, unknown>,
   fields: { label: string; value: string }[],
@@ -1683,10 +1694,24 @@ function buildFeaturePopupHtml(
 
   const title = spec?.title?.(props) || (label && label !== 'Feature' ? label : fallbackTitle(config, props));
   const subtitle = spec?.subtitle?.(props);
+  const island = String(props.ISLAND ?? props.Island ?? props.island ?? '');
+
+  // Friends' website content: the feature's own article (projects) or the
+  // best articles for this layer supply photos and a "From Friends" list.
+  const idx = getFriendsContentSync();
+  const own = config.id === 'friends-projects'
+    ? (articleForUrl(idx, typeof props.LINK === 'string' ? props.LINK : undefined) ?? articleForProject(idx, String(props.NAME ?? ''), island))
+    : null;
+  const related = articlesForLayer(idx, config.id, island, 3).filter(a => a.id !== own?.id);
+  const articles = own ? [own, ...related].slice(0, 3) : related;
+
   const photos: PopupPhoto[] = spec?.photos?.(props) ?? [];
+  const articleImages = articles.flatMap(a => a.images.map(im => ({ url: im.url, caption: im.caption || a.title, credit: 'Friends of the San Juans' })));
+  if (!photos.length && articleImages.length) photos.push(...articleImages.slice(0, 6));
   if (!photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
 
   const story = spec?.story?.(props)
+    ?? (own?.summary ? { kicker: 'Why it matters', html: escHtml(own.summary) } : undefined)
     ?? (config.standardMessage ? { kicker: 'Why it matters', html: escHtml(config.standardMessage) } : undefined);
   const link = spec?.link?.(props);
   const footerButtons = link ? [{ label: link.label, href: link.href }] : [];
@@ -1704,10 +1729,33 @@ function buildFeaturePopupHtml(
     chips: spec?.chips?.(props),
     story,
     action: spec?.action,
+    body: fromFriendsHtml(articles, own && !spec?.story?.(props) ? own.id : undefined),
     fields: spec?.noDetails ? [] : fields,
     source: { credit: config.sourceCredit, url: config.sourceUrl },
     footerButtons,
   });
+}
+
+/** Open a feature popup; if the Friends content index hasn't arrived yet, refresh the content once it does. */
+function openFeaturePopup(
+  layer: LayerState,
+  props: Record<string, unknown>,
+  fields: { label: string; value: string }[],
+  label: string,
+  latLng: google.maps.LatLng,
+  map: google.maps.Map,
+  infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
+) {
+  const iw = infoWindowRef.current;
+  if (!iw) return;
+  iw.setContent(buildFeaturePopupHtml(layer, props, fields, label));
+  iw.setPosition(latLng);
+  iw.open(map);
+  if (!getFriendsContentSync()) {
+    preloadFriendsContent().then(idx => {
+      if (idx && infoWindowRef.current === iw && iw.isOpen) iw.setContent(buildFeaturePopupHtml(layer, props, fields, label));
+    });
+  }
 }
 
 function buildAtAGlanceCard(

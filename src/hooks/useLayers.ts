@@ -85,7 +85,7 @@ function lineLength(coords: number[][]): number {
  * county at low zoom.
  */
 function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
-  const points: { lng: number; lat: number; len: number }[] = [];
+  const points: { lng: number; lat: number; len: number; props: GeoJSON.GeoJsonProperties }[] = [];
   for (const f of data.features) {
     const geom = f.geometry;
     if (!geom) continue;
@@ -99,7 +99,7 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.Feature
     }
     for (const coords of coordArrays) {
       const [lng, lat] = lineMidpoint(coords);
-      points.push({ lng, lat, len: lineLength(coords) });
+      points.push({ lng, lat, len: lineLength(coords), props: f.properties ?? {} });
     }
   }
   const order = points.map((p, i) => [p.len, i] as const).sort((a, b) => b[0] - a[0]);
@@ -110,20 +110,33 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.Feature
     features: points.map((p, i) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-      properties: { mid: i, lengthRank: rank[i] },
+      properties: { ...(p.props ?? {}), mid: i, lengthRank: rank[i] },
     })),
   };
 }
 
 /**
  * Screen-grid thinning for midpoint markers. Below zoom 16, only one marker
- * is shown per GRID_PX × GRID_PX cell of the (world-pixel) map, and it's the
+ * is shown per grid cell of the (world-pixel) map (cell size shrinks with zoom, see markerGridPx), and it's the
  * one whose line is longest. Cells are in absolute Mercator pixel space, so
  * the selection only changes with zoom, not with panning. At zoom 16+ every
  * marker shows.
  */
-const MARKER_GRID_PX = 72;
 const MARKER_SHOW_ALL_ZOOM = 16;
+
+/**
+ * Grid cell size in screen pixels at a given zoom: coarse when zoomed out so
+ * only a handful of markers stand for a whole coastline, tightening as the
+ * user zooms in until every marker shows at MARKER_SHOW_ALL_ZOOM.
+ */
+function markerGridPx(zoom: number): number {
+  if (zoom <= 10) return 260;
+  if (zoom <= 11) return 210;
+  if (zoom <= 12) return 165;
+  if (zoom <= 13) return 130;
+  if (zoom <= 14) return 100;
+  return 76;
+}
 
 function worldPixel(lng: number, lat: number, zoom: number): [number, number] {
   const scale = 256 * Math.pow(2, zoom);
@@ -136,13 +149,14 @@ function worldPixel(lng: number, lat: number, zoom: number): [number, number] {
 /** Ids (the `mid` property) of the markers to show at this zoom. null = show all. */
 function selectMarkersForZoom(ml: google.maps.Data, zoom: number): Set<number> | null {
   if (zoom >= MARKER_SHOW_ALL_ZOOM) return null;
+  const gridPx = markerGridPx(zoom);
   const best = new Map<string, { id: number; rank: number }>();
   ml.forEach((feature) => {
     const g = feature.getGeometry();
     if (!g || g.getType() !== 'Point') return;
     const ll = (g as google.maps.Data.Point).get();
     const [x, y] = worldPixel(ll.lng(), ll.lat(), zoom);
-    const key = `${Math.floor(x / MARKER_GRID_PX)}:${Math.floor(y / MARKER_GRID_PX)}`;
+    const key = `${Math.floor(x / gridPx)}:${Math.floor(y / gridPx)}`;
     const id = Number(feature.getProperty('mid'));
     const rank = Number(feature.getProperty('lengthRank') ?? 1);
     const cur = best.get(key);
@@ -151,19 +165,35 @@ function selectMarkersForZoom(ml: google.maps.Data, zoom: number): Set<number> |
   return new Set(Array.from(best.values(), v => v.id));
 }
 
+/** Google icon spec for a layer's marker, honoring markerScale. */
+function markerIconSpec(config: LayerConfig, url: string): google.maps.Icon {
+  const k = config.markerScale ?? 1;
+  return {
+    url,
+    scaledSize: new google.maps.Size(MARKER_W * k, MARKER_H * k),
+    anchor: new google.maps.Point(MARKER_ANCHOR_X * k, MARKER_ANCHOR_Y * k),
+  };
+}
+
+/** Marker icon for a feature: per-property override when configured, else the layer icon. */
+function iconUrlFor(config: LayerConfig, feature: google.maps.Data.Feature): string {
+  const byProp = config.markerIconByProperty;
+  if (byProp) {
+    const v = String(feature.getProperty(byProp.property) ?? '');
+    if (byProp.icons[v]) return byProp.icons[v];
+  }
+  return config.markerIcon!;
+}
+
 function midpointMarkerStyle(
   ml: google.maps.Data,
-  iconUrl: string,
+  config: LayerConfig,
   visible: boolean,
   zoom: number,
 ): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
   const chosen = visible ? selectMarkersForZoom(ml, zoom) : null;
   return (feature) => ({
-    icon: {
-      url: iconUrl,
-      scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
-      anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
-    },
+    icon: markerIconSpec(config, iconUrlFor(config, feature)),
     clickable: false,
     visible: visible && (chosen === null || chosen.has(Number(feature.getProperty('mid')))),
   });
@@ -261,6 +291,12 @@ export function useLayers(
   const [layers, setLayers] = useState<LayerState[]>(() =>
     layerConfigs.map(c => createInitialState(c, initialLayerIds, initialUi?.[c.id]))
   );
+  // Layers the user asked to see regardless of their minZoom (legend "zoom in" click)
+  const zoomOverridesRef = useRef<Set<string>>(new Set());
+  const [zoomOverrides, setZoomOverrides] = useState<Set<string>>(() => new Set());
+  const gateOk = (layerId: string, minZoom: number | undefined, zoom: number) =>
+    minZoom == null || zoom >= minZoom || zoomOverridesRef.current.has(layerId);
+
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const pointLayersRef = useRef<Set<string>>(new Set());
@@ -421,15 +457,14 @@ export function useLayers(
           clickable: visible,
           visible,
         });
-        ml.setStyle(midpointMarkerStyle(ml, config.markerIcon, visible, map?.getZoom() ?? 0));
+        ml.setStyle(midpointMarkerStyle(ml, config, visible, map?.getZoom() ?? 0));
       } else {
         // Point layer: use icon directly
-        dl.setStyle(() => ({
-          icon: {
-            url: config.markerIcon!,
-            scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
-            anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
-          },
+        dl.setStyle((feature: google.maps.Data.Feature) => ({
+          icon: markerIconSpec(config, iconUrlFor(config, feature)),
+          strokeColor: config.style.strokeColor,
+          strokeWeight: config.style.strokeWeight,
+          strokeOpacity: config.style.strokeOpacity,
           clickable: visible,
           visible,
         }));
@@ -506,8 +541,7 @@ export function useLayers(
         const data = viewportDataRef.current.get(layer.config.id);
         if (!dl || !index || !data) continue;
 
-        const minZoom = layer.config.minZoom ?? 0;
-        const shouldShow = layer.visible && zoom >= minZoom && bounds;
+        const shouldShow = layer.visible && gateOk(layer.config.id, layer.config.minZoom, zoom) && bounds;
 
         // Clear existing features from the Data layer
         dl.forEach(f => dl.remove(f));
@@ -827,12 +861,11 @@ export function useLayers(
           );
 
           if (config.markerIcon && hasPoints) {
-            dataLayer.setStyle(() => ({
-              icon: {
-                url: config.markerIcon!,
-                scaledSize: new google.maps.Size(MARKER_W, MARKER_H),
-                anchor: new google.maps.Point(MARKER_ANCHOR_X, MARKER_ANCHOR_Y),
-              },
+            dataLayer.setStyle((feature: google.maps.Data.Feature) => ({
+              icon: markerIconSpec(config, iconUrlFor(config, feature)),
+              strokeColor: config.style.strokeColor,
+              strokeWeight: config.style.strokeWeight,
+              strokeOpacity: config.style.strokeOpacity,
               clickable: shouldShow,
               visible: shouldShow,
             }));
@@ -906,7 +939,7 @@ export function useLayers(
               const midpoints = createMidpointMarkers(data);
               const markerLayer = new google.maps.Data({ map });
               markerLayer.addGeoJson(midpoints);
-              markerLayer.setStyle(midpointMarkerStyle(markerLayer, config.markerIcon, shouldShow, map.getZoom() ?? 0));
+              markerLayer.setStyle(midpointMarkerStyle(markerLayer, config, shouldShow, map.getZoom() ?? 0));
               markerLayersRef.current.set(config.id, markerLayer);
             }
           }
@@ -956,7 +989,7 @@ export function useLayers(
         // Midpoint-marker layers thin out with zoom — re-style on every change
         const ml = layer.config.markerIcon ? markerLayersRef.current.get(layer.config.id) : undefined;
         if (ml && layer.loaded) {
-          ml.setStyle(midpointMarkerStyle(ml, layer.config.markerIcon!, layer.visible, zoom));
+          ml.setStyle(midpointMarkerStyle(ml, layer.config, layer.visible, zoom));
         }
 
         const minZoom = layer.config.minZoom;
@@ -973,14 +1006,14 @@ export function useLayers(
         // Raster layers
         const raster = rasterLayersRef.current.get(layer.config.id);
         if (raster && layer.loaded) {
-          const shouldShow = layer.visible && zoom >= minZoom;
+          const shouldShow = layer.visible && gateOk(layer.config.id, minZoom, zoom);
           raster.setOpacity(shouldShow ? (layer.opacity ?? 0.7) : 0);
           return layer;
         }
 
         // Standard vector layers
         if (!layer.loaded) return layer;
-        const shouldShow = layer.visible && zoom >= minZoom;
+        const shouldShow = layer.visible && gateOk(layer.config.id, minZoom, zoom);
         setVectorVisible(layer.config.id, shouldShow);
         return layer;
       }));
@@ -1000,7 +1033,7 @@ export function useLayers(
         if (raster) {
           const zoom = map?.getZoom() ?? 0;
           const minZoom = layer.config.minZoom;
-          const inRange = minZoom == null || zoom >= minZoom;
+          const inRange = gateOk(layerId, minZoom, zoom);
           raster.setOpacity(newVisible && inRange ? (layer.opacity ?? 0.7) : 0);
         }
         return { ...layer, visible: newVisible };
@@ -1029,7 +1062,7 @@ export function useLayers(
       if (map) {
         const zoom = map.getZoom() ?? 0;
         const minZoom = layer.config.minZoom;
-        const shouldShow = newVisible && (minZoom == null || zoom >= minZoom);
+        const shouldShow = newVisible && gateOk(layerId, minZoom, zoom);
         setVectorVisible(layerId, shouldShow);
       }
       return { ...layer, visible: newVisible };
@@ -1047,7 +1080,7 @@ export function useLayers(
       if (raster) {
         const zoom = map?.getZoom() ?? 0;
         const minZoom = layer.config.minZoom;
-        const inRange = minZoom == null || zoom >= minZoom;
+        const inRange = gateOk(layer.config.id, minZoom, zoom);
         raster.setOpacity(visible && inRange ? (layer.opacity ?? 0.7) : 0);
         return { ...layer, visible };
       }
@@ -1065,7 +1098,7 @@ export function useLayers(
       if (map) {
         const zoom = map.getZoom() ?? 0;
         const minZoom = layer.config.minZoom;
-        const shouldShow = visible && (minZoom == null || zoom >= minZoom);
+        const shouldShow = visible && gateOk(layer.config.id, minZoom, zoom);
         setVectorVisible(layer.config.id, shouldShow);
       }
       return { ...layer, visible };
@@ -1083,7 +1116,7 @@ export function useLayers(
         if (layer.visible) {
           const zoom = map?.getZoom() ?? 0;
           const minZoom = layer.config.minZoom;
-          const inRange = minZoom == null || zoom >= minZoom;
+          const inRange = gateOk(layerId, minZoom, zoom);
           raster.setOpacity(inRange ? opacity : 0);
         }
         return { ...layer, opacity };
@@ -1160,7 +1193,20 @@ export function useLayers(
     setLayers(prev => prev.map(l => (l.config.id === layerId ? { ...l, ...patch } : l)));
   }, []);
 
-  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi, getDataLayer };
+  /** Show (or stop showing) a layer at zooms below its minZoom. */
+  const setZoomOverride = useCallback((layerId: string, on: boolean) => {
+    const cur = zoomOverridesRef.current;
+    if (cur.has(layerId) === on) return;
+    if (on) cur.add(layerId); else cur.delete(layerId);
+    setZoomOverrides(new Set(cur));
+    if (map) {
+      getDeckManager(map).setGateOverride(layerId, on);
+      // Re-evaluate every zoom gate with the new override in place
+      google.maps.event.trigger(map, 'zoom_changed');
+    }
+  }, [map]);
+
+  return { layers, toggleLayer, setAllVisible, setLayerOpacity, setDynamicRasterTileUrl, setLayerDateRange, setLayerUi, getDataLayer, zoomOverrides, setZoomOverride };
 }
 
 // ─── Observation popup HTML builder ─────────────────────────────────────

@@ -30,9 +30,9 @@ function dataLayerHasFeatureIn(dataLayer: google.maps.Data, view: google.maps.La
   return hit;
 }
 
-function inZoomRange(layer: LayerState, zoom: number): boolean {
+function inZoomRange(layer: LayerState, zoom: number, overrides: Set<string>): boolean {
   const { minZoom } = layer.config;
-  return minZoom == null || zoom >= minZoom;
+  return minZoom == null || zoom >= minZoom || overrides.has(layer.config.id);
 }
 
 /**
@@ -42,7 +42,7 @@ function inZoomRange(layer: LayerState, zoom: number): boolean {
  * they are on and inside their zoom range; vector layers need at least one
  * feature whose bounds intersect the viewport.
  */
-export function useLayersInView(map: google.maps.Map | null, layers: LayerState[]): Set<string> {
+export function useLayersInView(map: google.maps.Map | null, layers: LayerState[], zoomOverrides: Set<string> = new Set()): Set<string> {
   const [inView, setInView] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export function useLayersInView(map: google.maps.Map | null, layers: LayerState[
       const next = new Set<string>();
       if (view) {
         for (const layer of layers) {
-          if (!layer.visible || layer.config.placeholder || !inZoomRange(layer, zoom)) continue;
+          if (!layer.visible || layer.config.placeholder || !inZoomRange(layer, zoom, zoomOverrides)) continue;
           const t = layer.config.layerType;
           if (t === 'raster' || t === 'dynamic-raster' || layer.config.tiles) {
             next.add(layer.config.id);
@@ -77,7 +77,7 @@ export function useLayersInView(map: google.maps.Map | null, layers: LayerState[
     const listener = map.addListener('idle', onIdle);
     onIdle();
     return () => google.maps.event.removeListener(listener);
-  }, [map, layers]);
+  }, [map, layers, zoomOverrides]);
 
   return inView;
 }

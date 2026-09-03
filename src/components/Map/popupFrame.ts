@@ -108,7 +108,7 @@ function photoHtml(photos: PopupPhoto[]): string {
         ? `<div class="ssx-cap">${p.caption ? escapeHtml(p.caption) : ''}${p.caption && p.credit ? ' · ' : ''}${p.credit ? `<i>${escapeHtml(p.credit)}</i>` : ''}</div>`
         : '';
       return `<div class="ssx-slide"${i === 0 ? '' : ' hidden'}>
-        <img src="${escapeHtml(p.url)}" alt=""${i === 0 ? '' : ' loading="lazy"'} onerror="this.closest('.ssx-photo').setAttribute('hidden','')">
+        <img src="${escapeHtml(p.url)}" alt=""${i < 2 ? '' : ' loading="lazy"'} onerror="${i === 0 ? "this.closest('.ssx-photo').setAttribute('hidden','')" : "this.closest('.ssx-slide').remove()"}">
         ${cap}
       </div>`;
     })

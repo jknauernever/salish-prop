@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updated_at": "2026-05-17T20:45:00Z",
+  "version": 4,
+  "updated_at": "2026-09-03T17:22:09Z",
   "tree": [
     {
       "id": "friends-data",
@@ -19,10 +19,7 @@
         "friends-mooring-buoys",
         "friends-pilings",
         "friends-docks",
-        "friends-restoration-sites",
-        "friends-iow-structures",
-        "friends-restoration-projects",
-        "friends-riparian-projects",
+        "friends-projects",
         "friends-armor-change-2019",
         "friends-armor-2019"
       ],

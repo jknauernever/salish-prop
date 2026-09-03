@@ -10,6 +10,9 @@ interface MapLegendProps {
   zoom: number;
   /** Ids of visible layers that have something drawn inside the current map frame. */
   inView: Set<string>;
+  /** Layers the user asked to see regardless of their minZoom. */
+  zoomOverrides: Set<string>;
+  onSetZoomOverride: (layerId: string, on: boolean) => void;
 }
 
 function hasInfo(config: LayerConfig): boolean {
@@ -212,12 +215,29 @@ function SourcingModal({ layers, zoom, onClose }: { layers: LayerState[]; zoom: 
  * footer opens the full dataset picker, and "How this is sourced" opens a
  * modal describing every visible dataset.
  */
-export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView }: MapLegendProps) {
+export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoomOverrides, onSetZoomOverride }: MapLegendProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [openInfo, setOpenInfo] = useState<string | null>(null);
   const [showSourcing, setShowSourcing] = useState(false);
-  const on = layers.filter(l => l.visible && !l.config.placeholder);
-  const inViewCount = on.filter(l => inView.has(l.config.id)).length;
+  // Layers hidden from the legend row (click on the name) stay listed until ×
+  const [kept, setKept] = useState<Set<string>>(() => new Set());
+  const on = layers.filter(l => (l.visible || kept.has(l.config.id)) && !l.config.placeholder);
+  const inViewCount = on.filter(l => l.visible && inView.has(l.config.id)).length;
+
+  const hideRow = (id: string) => {
+    setKept(k => new Set(k).add(id));
+    onToggleLayer(id);
+  };
+  const showRow = (id: string, gatedNow: boolean) => {
+    setKept(k => { const n = new Set(k); n.delete(id); return n; });
+    onToggleLayer(id);
+    if (gatedNow) onSetZoomOverride(id, true);
+  };
+  const removeRow = (id: string, visible: boolean) => {
+    setKept(k => { const n = new Set(k); n.delete(id); return n; });
+    onSetZoomOverride(id, false);
+    if (visible) onToggleLayer(id);
+  };
 
   return (
     <>
@@ -248,10 +268,17 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView }: Ma
             )}
             {on.map(layer => {
               const { config } = layer;
-              const gated = config.minZoom != null && zoom < config.minZoom;
-              const visibleNow = inView.has(config.id);
+              const overridden = zoomOverrides.has(config.id);
+              const gated = !overridden && config.minZoom != null && zoom < config.minZoom;
+              const hidden = !layer.visible;
+              const visibleNow = layer.visible && inView.has(config.id);
               const infoOpen = openInfo === config.id;
               const accent = config.style.strokeColor || config.style.fillColor || '#0D4F4F';
+              const nameTitle = hidden
+                ? 'Hidden. Click to show'
+                : gated
+                  ? `Drawn from zoom ${config.minZoom}. Click to show it at this zoom`
+                  : 'Click to hide';
               return (
                 <div
                   key={config.id}
@@ -264,16 +291,26 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView }: Ma
                   )}
                   <div className="flex items-center gap-2">
                     <Swatch config={config} />
-                    <span
-                      className={`flex-1 min-w-0 text-xs leading-tight truncate ${visibleNow ? 'font-semibold text-slate-blue' : 'text-slate-blue/80'}`}
-                      title={config.name}
+                    <button
+                      type="button"
+                      onClick={() => (hidden ? showRow(config.id, gated) : gated ? onSetZoomOverride(config.id, true) : hideRow(config.id))}
+                      className={`flex-1 min-w-0 text-left text-xs leading-tight truncate hover:text-deep-teal ${visibleNow ? 'font-semibold text-slate-blue' : hidden ? 'text-slate-blue/60 line-through decoration-slate-blue/30' : 'text-slate-blue/80'}`}
+                      title={nameTitle}
+                      aria-pressed={!hidden}
                     >
                       {config.name}
-                    </span>
-                    {gated ? (
-                      <span className="text-[10px] text-slate-blue/50 whitespace-nowrap" title={`Drawn at zoom ${config.minZoom} and closer`}>
+                    </button>
+                    {hidden ? (
+                      <span className="text-[10px] text-slate-blue/50 whitespace-nowrap">hidden</span>
+                    ) : gated ? (
+                      <button
+                        type="button"
+                        onClick={() => onSetZoomOverride(config.id, true)}
+                        className="text-[10px] text-slate-blue/50 whitespace-nowrap hover:text-deep-teal underline decoration-dotted"
+                        title={`Drawn from zoom ${config.minZoom}. Click to show it now`}
+                      >
                         zoom in
-                      </span>
+                      </button>
                     ) : !visibleNow ? (
                       <span className="text-[10px] text-slate-blue/50 whitespace-nowrap" title="Nothing from this layer is inside the current map frame">
                         not in view
@@ -297,9 +334,9 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView }: Ma
                     )}
                     <button
                       type="button"
-                      onClick={() => onToggleLayer(config.id)}
-                      aria-label={`Turn off ${config.name}`}
-                      title="Turn off"
+                      onClick={() => removeRow(config.id, layer.visible)}
+                      aria-label={`Remove ${config.name} from the map`}
+                      title="Remove from the map"
                       className="w-5 h-5 shrink-0 inline-flex items-center justify-center rounded text-slate-blue/40 hover:text-slate-blue hover:bg-fog-gray transition-colors"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

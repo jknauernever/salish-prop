@@ -112,10 +112,7 @@ export const LAYER_PHOTOS: Record<string, PopupPhoto> = {
   'friends-armor': { url: `${IMG}/adapt-fortify.jpg`, caption: 'Hard armoring along the shore', credit: FRIENDS },
   'friends-armor-2019': { url: `${IMG}/adapt-fortify.jpg`, caption: 'Hard armoring along the shore', credit: FRIENDS },
   'friends-armor-change-2019': { url: `${IMG}/erosion-after.jpg`, caption: 'Shoreline after armor removal', credit: FRIENDS },
-  'friends-restoration-sites': { url: `${IMG}/restoration-after.jpg`, caption: 'Restored beach and marsh', credit: FRIENDS },
-  'friends-restoration-projects': { url: `${IMG}/restoration-after.jpg`, caption: 'Restored beach and marsh', credit: FRIENDS },
-  'friends-riparian-projects': { url: `${IMG}/trees.jpg`, caption: 'Shoreline trees and riparian cover', credit: FRIENDS },
-  'friends-iow-structures': { url: `${IMG}/clean-water.jpg`, caption: 'Nearshore waters', credit: FRIENDS },
+  'friends-projects': { url: `${IMG}/restoration-after.jpg`, caption: 'Restored beach and marsh', credit: FRIENDS },
   'friends-docks': { url: `${IMG}/preserve.jpg`, caption: 'Shoreline with a dock', credit: FRIENDS },
   'friends-mooring-buoys': { url: `${IMG}/clean-water.jpg`, caption: 'Nearshore waters', credit: FRIENDS },
   'friends-groins': { url: `${IMG}/erosion-before.jpg`, caption: 'Armored shoreline', credit: FRIENDS },
@@ -300,39 +297,25 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
     },
     action: ACTIONS.shoreline,
   },
-  'friends-restoration-sites': {
-    title: () => 'Restoration site',
-    subtitle: p => join(island(p), fmtYear(p.DateTimeS) ? `surveyed ${fmtYear(p.DateTimeS)}` : undefined),
-  },
-
-  'friends-restoration-projects': {
-    title: p => str(p.NAME) || 'Restoration project',
-    subtitle: p => join(island(p), str(p.DATE) ? `completed ${str(p.DATE)}` : undefined),
-    chips: p => [p.HABITAT_TYPE, p.HABITAT_TYPE_2, p.HABITAT_TYPE_3]
-      .map(str).filter(Boolean)
+  'friends-projects': {
+    title: p => str(p.NAME) || str(p.kind) || "Friends' project",
+    subtitle: p => join(str(p.kind), island(p), str(p.DATE) ? `completed ${str(p.DATE)}` : undefined),
+    chips: p => str(p.HABITAT_TYPES).split(',').map(t => t.trim()).filter(Boolean)
       .map(label => ({ label: label.replace(/ Restoration$/i, ''), tone: 'on' as const })),
     stats: p => {
       const ft = num(p.LINEARFEET_SHORELINE);
       const ac = num(p.ACRES_PROTECTED);
       const sq = num(p.SQFT_HABITATRESTORED);
+      const n = num(p.AMOUNT);
       return [
         ...(ft ? [{ ...fmtFeet(ft), label: 'Shoreline restored' }] : []),
         ...(ac ? [{ value: fmtAcresValue(ac), unit: 'ac', label: 'Protected' }] : []),
         ...(sq ? [{ value: fmtInt(sq), unit: 'sq ft', label: 'Habitat restored' }] : []),
+        ...(n && !ft && !ac && !sq ? [{ value: fmtInt(n), label: n === 1 ? 'Structure upgraded' : 'Structures upgraded' }] : []),
       ];
     },
     story: p => (str(p.DESCRIPTION) ? { kicker: 'What was done', html: escapePlain(str(p.DESCRIPTION)) } : undefined),
     link: p => (str(p.LINK) ? { label: 'Project page ↗', href: str(p.LINK) } : undefined),
-  },
-  'friends-riparian-projects': {
-    title: p => str(p.NAME) || 'Riparian project',
-    subtitle: p => join(island(p), str(p.HABITAT_TYPE)),
-    story: p => (str(p.DESCRIPTION) ? { kicker: 'What was done', html: escapePlain(str(p.DESCRIPTION)) } : undefined),
-  },
-  'friends-iow-structures': {
-    title: p => str(p.PROJECT_TYPE) || 'In/over-water structure project',
-    subtitle: p => join(island(p), str(p.HABITAT_TYPE)),
-    story: p => (str(p.DESCRIPTION) ? { kicker: 'What was done', html: escapePlain(str(p.DESCRIPTION)) } : undefined),
   },
 
   'friends-docks': {

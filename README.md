@@ -60,7 +60,9 @@
 ### UI / UX
 - PNW-inspired theme: teals, slate blues, fog grays, forest greens (Source Sans 3 font)
 - Slide-out sidebar with grouped layer controls, feature-count badges, loading spinners
-- Floating map legend (`src/components/Map/MapLegend.tsx`, top-left) listing only the layers currently on: swatch, per-layer info button, "zoom in" hint for zoom-gated layers, "not in view" hint (rows are highlighted only when a feature actually intersects the current map frame — `src/hooks/useLayersInView.ts`, recomputed on map idle with cached per-feature bounds), off switch, an **Explore more data** button that opens the sidebar picker, and a **How this is sourced** link that opens a modal describing every visible dataset with its source credit and link. Hidden while the sidebar is open and in locked preset views.
+- Floating map legend (`src/components/Map/MapLegend.tsx`, top-left) listing only the layers currently on: swatch, per-layer info button, clickable name to hide/show the layer while keeping its row (× removes it), a "zoom in" hint on zoom-gated layers that can be clicked to force the layer on at the current zoom (`setZoomOverride` in `useLayers`), "not in view" hint (rows are highlighted only when a feature actually intersects the current map frame — `src/hooks/useLayersInView.ts`, recomputed on map idle with cached per-feature bounds), off switch, an **Explore more data** button that opens the sidebar picker, and a **How this is sourced** link that opens a modal describing every visible dataset with its source credit and link. Hidden while the sidebar is open and in locked preset views.
+- **Friends' Projects** (`friends-projects`, always on) merges the restoration, riparian, in/over-water structure, and restoration-site files into `public/data/friends-projects.geojson` (owner names dropped) with a `kind` property; markers use a white site-target-over-water glyph on a disc colored by kind (`FRIENDS_PROJECT_ICONS`, via `markerIconByProperty`; chosen from a marker exploration canvas on 2026-09-03) and the legend lists the four colors.
+- Midpoint markers (e.g. eelgrass) thin by a zoom-dependent screen grid (`markerGridPx`): a few per coastline at county zoom, all of them from zoom 16.
 - Point layers use Google-POI-style SVG pins (`src/config/markerIcons.ts`); bull kelp draws through a canvas overlay (`src/components/Map/KelpOverlay.ts`) with a cream wash, animated nautical "kelp squiggle" pattern from zoom 12.5, and a soft band below that.
 - Bull Kelp and Deepwater Edge of Eelgrass are on by default at county zoom; the spawning layers are on by default but only drawn from zoom 12 (`minZoom`).
 - Slide-in report panel with collapsible sections and radius selector
@@ -278,6 +280,14 @@ When a parcel popup opens, two additional spatial queries run:
 - **Shoreline habitat** — buffers the parcel 50 ft, finds intersecting fish habitat segments, aggregates HRM/LRM per species across all seven layers
 
 ---
+
+## Friends Website Content in Popups
+
+Every post and page on sanjuans.org is harvested through the site's WordPress REST API (`scripts/harvest-friends-content.py`, no scraping), enriched per article with a two-sentence summary, topics, islands, places, a project match, and a quality score (Claude, following `ENRICH-INSTRUCTIONS.md` — the brief is embedded in the harvest directory), and merged by `scripts/build-friends-content-index.py` into `public/data/friends-content.json` (~200 items, ~300 KB). `src/services/friendsContent.ts` preloads it at app start.
+
+In the popup (`buildFeaturePopupHtml`): a Friends' Projects feature uses the article its LINK points at (or a project-name match) for its "why it matters" summary and photo album; every other layer draws photos and a **From Friends of the San Juans** list (best three articles by topic, island-aware) from the index. Topic → layer mapping lives in `TOPIC_LAYERS` in the index builder. Re-run the three scripts to refresh after Friends publishes new content; `--since` on the harvester limits the pull to recently modified items.
+
+Project page links are corrected in `scripts/build-friends-projects.py` (`PROJECT_LINKS`) — the source files pointed at retired `/project/<slug>/` URLs; `--check` HEADs every link.
 
 ## Popup Frame (every click)
 
