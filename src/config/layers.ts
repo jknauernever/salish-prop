@@ -540,7 +540,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-herring-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
-    minZoom: 14,
+    minZoom: 12,
     style: {
       fillColor: '#8B5CF6',
       fillOpacity: 0.3,
@@ -618,7 +618,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-potential-forage-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
-    minZoom: 14,
+    minZoom: 12,
     style: {
       fillColor: '#F9A8D4',
       fillOpacity: 0,
@@ -639,7 +639,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-documented-forage-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
-    minZoom: 14,
+    minZoom: 12,
     style: {
       fillColor: '#E11D74',
       fillOpacity: 0,

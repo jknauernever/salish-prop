@@ -62,7 +62,7 @@
 - Slide-out sidebar with grouped layer controls, feature-count badges, loading spinners
 - Floating map legend (`src/components/Map/MapLegend.tsx`, top-left) listing only the layers currently on: swatch, per-layer info button, "zoom in" hint for zoom-gated layers, "not in view" hint (rows are highlighted only when a feature actually intersects the current map frame — `src/hooks/useLayersInView.ts`, recomputed on map idle with cached per-feature bounds), off switch, an **Explore more data** button that opens the sidebar picker, and a **How this is sourced** link that opens a modal describing every visible dataset with its source credit and link. Hidden while the sidebar is open and in locked preset views.
 - Point layers use Google-POI-style SVG pins (`src/config/markerIcons.ts`); bull kelp draws through a canvas overlay (`src/components/Map/KelpOverlay.ts`) with a cream wash, animated nautical "kelp squiggle" pattern from zoom 12.5, and a soft band below that.
-- Bull Kelp and Deepwater Edge of Eelgrass are on by default at county zoom; the spawning layers are on by default but only drawn from zoom 14 (`minZoom`).
+- Bull Kelp and Deepwater Edge of Eelgrass are on by default at county zoom; the spawning layers are on by default but only drawn from zoom 12 (`minZoom`).
 - Slide-in report panel with collapsible sections and radius selector
 - Custom event bridge: clicking an address inside a parcel popup triggers a new search
 
