@@ -111,24 +111,63 @@ function ResourceIcon({ kind }: { kind: ResourceKind }) {
   }
 }
 
+/** The grouped resource links, shared by the desktop dropdown and the phone menu. */
+function ResourceList({ onPick }: { onPick: () => void }) {
+  return (
+    <>
+              {RESOURCE_GROUPS.map((group, gi) => (
+                <div key={group.heading} className={gi > 0 ? 'border-t border-fog-gray mt-1 pt-1' : ''}>
+                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-blue/45">
+                    {group.heading}
+                  </p>
+                  {group.items.map((r) => (
+                    <a
+                      key={r.href}
+                      href={r.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={onPick}
+                      className="flex items-start gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-teal-50 hover:text-deep-teal transition-colors"
+                    >
+                      <ResourceIcon kind={r.kind} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block leading-snug">{r.label}</span>
+                        {r.note && <span className="block text-xs text-slate-blue/55 leading-snug mt-0.5">{r.note}</span>}
+                      </span>
+                      <svg className="w-3 h-3 text-gray-300 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
+              ))}
+    </>
+  );
+}
 
 export function Header({ onToggleSidebar, sidebarOpen, searchBar, hideSidebarToggle = false, extraAction }: HeaderProps) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!resourcesOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setResourcesOpen(false);
-      }
+    if (!resourcesOpen && !mobileMenuOpen) return;
+    function handleClick(e: MouseEvent | TouchEvent) {
+      const t = e.target as Node;
+      if (menuRef.current && !menuRef.current.contains(t)) setResourcesOpen(false);
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(t)) setMobileMenuOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [resourcesOpen]);
+    document.addEventListener('touchstart', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('touchstart', handleClick);
+    };
+  }, [resourcesOpen, mobileMenuOpen]);
 
   return (
-    <header className="h-[84px] bg-slate-blue flex items-center px-4 z-50 relative shadow-md shrink-0">
+    <header className="h-16 sm:h-[84px] bg-slate-blue flex items-center px-3 sm:px-4 z-50 relative shadow-md shrink-0">
       {!hideSidebarToggle && (
         <button
           onClick={onToggleSidebar}
@@ -145,24 +184,46 @@ export function Header({ onToggleSidebar, sidebarOpen, searchBar, hideSidebarTog
         </button>
       )}
 
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="hidden sm:block">
-          <h1 className="text-white font-semibold text-base leading-tight">
+      <div className="flex items-center gap-3 shrink-0 min-w-0">
+        <div className="min-w-0">
+          <h1 className="text-white font-semibold text-sm sm:text-base leading-tight whitespace-nowrap">
             Salish Sea Explorer
           </h1>
-          <p className="text-white/50 text-xs leading-tight">
+          <p className="hidden sm:block text-white/50 text-xs leading-tight">
             Protect this Place&trade;
           </p>
         </div>
       </div>
 
       {searchBar && (
-        <div className="flex-1 mx-4 max-w-lg">
+        <div className="flex-1 mx-2 sm:mx-4 max-w-lg min-w-0">
           {searchBar}
         </div>
       )}
 
-      <div className="ml-auto flex items-center gap-4 shrink-0">
+      {/* Phones: Share and Resources live in one overflow menu */}
+      <div ref={mobileMenuRef} className="relative sm:hidden ml-auto shrink-0">
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(o => !o)}
+          aria-label="More"
+          aria-expanded={mobileMenuOpen}
+          className="w-9 h-9 flex items-center justify-center rounded text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+          </svg>
+        </button>
+        {mobileMenuOpen && (
+          <div className="absolute right-0 top-full mt-1 w-[19rem] max-w-[calc(100vw-1rem)] bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 max-h-[calc(100vh-7rem)] overflow-y-auto">
+            {extraAction && <div className="px-2 py-1 [&_a]:text-slate-blue [&_a]:hover:text-deep-teal">{extraAction}</div>}
+            <ShareButton variant="menu" onDone={() => setMobileMenuOpen(false)} />
+            <ResourceList onPick={() => setMobileMenuOpen(false)} />
+          </div>
+        )}
+      </div>
+
+      <div className="ml-auto hidden sm:flex items-center gap-4 shrink-0">
         {extraAction}
         <ShareButton />
         {/* Resources dropdown */}
@@ -182,32 +243,7 @@ export function Header({ onToggleSidebar, sidebarOpen, searchBar, hideSidebarTog
 
           {resourcesOpen && (
             <div className="absolute right-0 top-full mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 max-h-[calc(100vh-7rem)] overflow-y-auto">
-              {RESOURCE_GROUPS.map((group, gi) => (
-                <div key={group.heading} className={gi > 0 ? 'border-t border-fog-gray mt-1 pt-1' : ''}>
-                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-blue/45">
-                    {group.heading}
-                  </p>
-                  {group.items.map((r) => (
-                    <a
-                      key={r.href}
-                      href={r.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => setResourcesOpen(false)}
-                      className="flex items-start gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-teal-50 hover:text-deep-teal transition-colors"
-                    >
-                      <ResourceIcon kind={r.kind} />
-                      <span className="flex-1 min-w-0">
-                        <span className="block leading-snug">{r.label}</span>
-                        {r.note && <span className="block text-xs text-slate-blue/55 leading-snug mt-0.5">{r.note}</span>}
-                      </span>
-                      <svg className="w-3 h-3 text-gray-300 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  ))}
-                </div>
-              ))}
+              <ResourceList onPick={() => setResourcesOpen(false)} />
             </div>
           )}
         </div>

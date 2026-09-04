@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import * as turf from '@turf/turf';
 import { useMap } from '../../hooks/useMap';
 import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHtml as escHtml } from './popupFrame';
+import { MobileSheetWindow, type PopupHost } from './popupSheet';
+import { isMobileNow } from '../../hooks/useIsMobile';
 import type { PopupPhoto, PopupStat } from './popupFrame';
-import { POPUP_SPECS, LAYER_PHOTOS, PHOTO_SUBJECTS, PHOTO_EXCLUDE, fallbackTitle, fmtAcresValue } from '../../config/popups';
+import { POPUP_SPECS, LAYER_PHOTOS, LAYER_PHOTOS_MORE, PHOTO_SUBJECTS, PHOTO_EXCLUDE, fallbackTitle, fmtAcresValue } from '../../config/popups';
 import type { LayerState } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
@@ -166,7 +168,7 @@ import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighli
 
 export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps) {
   const { map } = useMap();
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const infoWindowRef = useRef<PopupHost | null>(null);
   const layersRef = useRef(layers);
   layersRef.current = layers;
 
@@ -177,7 +179,8 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
   useEffect(() => {
     if (!map) return;
 
-    const iw = new google.maps.InfoWindow();
+    // Phones get the same popup as a bottom sheet instead of a map bubble
+    const iw: PopupHost = isMobileNow() ? new MobileSheetWindow() : new google.maps.InfoWindow();
     infoWindowRef.current = iw;
     installPopupFrameHandlers();
 
@@ -730,7 +733,7 @@ function setAddressLink(
   address: string,
   lat: number,
   lng: number,
-  infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
+  infoWindowRef: React.RefObject<PopupHost | null>,
 ) {
   el.innerHTML = '';
   const link = document.createElement('a');
@@ -762,7 +765,7 @@ function openParcelPopupAtCoords(
   lat: number,
   lng: number,
   map: google.maps.Map,
-  infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
+  infoWindowRef: React.RefObject<PopupHost | null>,
   allLayers: LayerState[],
 ) {
   const parcelLayer = allLayers.find(l => l.config.id === 'tax-parcels');
@@ -804,7 +807,7 @@ function handleParcelClick(
   props: Record<string, unknown>,
   event: google.maps.Data.MouseEvent,
   map: google.maps.Map,
-  infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
+  infoWindowRef: React.RefObject<PopupHost | null>,
   allLayers: LayerState[],
 ) {
   const accentColor = layer.config.style.strokeColor || layer.config.style.fillColor || '#0D4F4F';
@@ -1502,7 +1505,7 @@ function buildTabbedPopupHtml(
       </div>
 
       <div class="ssx-panel" data-panel="summary" style="${panelStyle}">
-        <div style="display:flex;gap:12px;margin-bottom:12px;align-items:stretch;">
+        <div class="ssx-two" style="display:flex;gap:12px;margin-bottom:12px;align-items:stretch;">
           <div id="${popupId}-at-a-glance" style="flex:1;min-width:0;">
             <div style="${CARD};height:100%;box-sizing:border-box;margin-bottom:0;"><p style="font-size:13px;color:${COLOR.light};font-style:italic;">Loading overview...</p></div>
           </div>
@@ -1854,6 +1857,7 @@ export function buildFeaturePopupHtml(
       // Habitat / structure layers: the curated handout photo first, then only
       // Friends photos whose captions name the subject.
       if (LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
+      if (LAYER_PHOTOS_MORE[config.id]) photos.push(...LAYER_PHOTOS_MORE[config.id]);
       const subject = PHOTO_SUBJECTS[config.id];
       if (subject) {
         for (const im of photosForSubject(idx, subject, PHOTO_EXCLUDE, 2)) {
@@ -1898,7 +1902,7 @@ function openFeaturePopup(
   label: string,
   latLng: google.maps.LatLng,
   map: google.maps.Map,
-  infoWindowRef: React.RefObject<google.maps.InfoWindow | null>,
+  infoWindowRef: React.RefObject<PopupHost | null>,
 ) {
   const iw = infoWindowRef.current;
   if (!iw) return;

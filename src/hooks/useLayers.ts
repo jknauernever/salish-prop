@@ -993,8 +993,8 @@ export function useLayers(
           dataLayersRef.current.set(config.id, dataLayer);
 
           // Custom-rendered layers: paint on a canvas overlay above the (transparent) Data layer
-          if (config.renderer === 'kelp-squiggle') {
-            const overlay = createKelpOverlay(data);
+          if (config.renderer === 'kelp-squiggle' || config.renderer === 'herring-school') {
+            const overlay = createKelpOverlay(data, config.renderer === 'kelp-squiggle' ? 'kelp' : 'school');
             overlay.setMap(shouldShow ? map : null);
             patternOverlaysRef.current.set(config.id, overlay);
           }

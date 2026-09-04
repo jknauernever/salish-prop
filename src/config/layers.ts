@@ -543,6 +543,9 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-herring-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
     minZoom: 12,
+    // A drifting school of small fish is painted over the violet fill from
+    // zoom 13 (KelpOverlay, 'school' style).
+    renderer: 'herring-school',
     style: {
       fillColor: '#8B5CF6',
       fillOpacity: 0.3,
@@ -751,6 +754,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-boat-ramps.json',
     visible: false,
+    markerIcon: MARKER_ICONS.ramp,
     style: {
       fillColor: '#4682B4',
       fillOpacity: 1,
@@ -790,7 +794,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'In and overwater moorage facilities',
     category: 'friends-data',
     source: '/data/friends-mooring-buoys.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerIcon: MARKER_ICONS.buoy,
     style: {
       fillColor: '#191970',
@@ -831,7 +836,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Smaller overwater structures (does not include marinas)',
     category: 'friends-data',
     source: '/data/friends-docks.geojson',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerIcon: MARKER_ICONS.dock,
     style: {
       fillColor: '#008B8B',

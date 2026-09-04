@@ -24,6 +24,8 @@ interface IconSpec {
   glyph: string;
   /** Draw the glyph as a 2px white stroke (line icon) instead of a filled shape. */
   strokeGlyph?: boolean;
+  /** Side of the square box the glyph is drawn in (default 24). */
+  box?: number;
 }
 
 // Glyphs are hand-drawn in a 24×24 box, centered.
@@ -45,6 +47,14 @@ const SPECS: Record<string, IconSpec> = {
     color: '#0B8FA8',
     glyph:
       'M4 9h16v2.4H4zM6 11.4h2.2V18H6zM10.9 11.4h2.2V18h-2.2zM15.8 11.4H18V18h-2.2zM4.5 18.5h15v1.5h-15z',
+  },
+  // Boat ramp: "Map icons by Scott de Jonge" boat-ramp glyph, used as-is
+  // (CC BY 4.0, via Wikimedia Commons; 50×50 box).
+  ramp: {
+    color: '#4682B4',
+    box: 50,
+    glyph:
+      'M8.5 7.092l9.565 2.639 5.309-3.731 1.847.455-5.259 3.742 28.985 8.053-2.121 7.882-29.093-8.031c-11.271-3.399-9.216-11.009-9.216-11.009M33.957 27.258c-.035-.658-.16-1.285-.375-1.877l13.281 3.697-.426 1.639-12.48-3.459zm-12.066-3.332c.358-.521.782-.991 1.264-1.398l-22.155-6.12v1.763l20.891 5.755zm5.486 5.836c1.191 0 2.158-.969 2.158-2.16 0-1.195-.967-2.162-2.158-2.162-1.195 0-2.161.967-2.161 2.162 0 1.191.966 2.16 2.161 2.16zm21.623 13.238c-1.051 0-2.051-.238-2.943-.648-.928-.42-1.963-.672-3.047-.672-1.08 0-2.121.252-3.035.672-.905.41-1.903.648-2.955.648-1.051 0-2.053-.238-2.955-.648-.92-.42-1.953-.672-3.035-.672-1.086 0-2.119.252-3.045.672-.893.41-1.905.648-2.951.648-1.045 0-2.051-.238-2.949-.648-.926-.42-1.967-.672-3.046-.672-1.08 0-2.12.252-3.035.672-.898.41-1.909.648-2.956.648-1.045 0-2.051-.238-2.955-.648-.916-.42-1.956-.672-3.036-.672-1.079 0-2.119.252-3.04.672-.897.41-1.909.648-2.949.648l-.068-17.605 24.227 6.686c-1.67-.807-2.83-2.5-2.83-4.479 0-2.754 2.227-4.983 4.979-4.983 2.744 0 4.977 2.229 4.977 4.983 0 2.752-2.232 4.98-4.977 4.98l-.49-.047 22.078 6.088.036 4.377z',
   },
   // Friends' Projects: a site target ring over the water (chosen from the
   // marker exploration canvas, 2026-09-03). Disc color comes per project
@@ -70,12 +80,13 @@ function buildSvg(spec: IconSpec): string {
   // Outer (white) silhouette: circle r=11 with a short nub (≈3 px) at the bottom
   const outer = `M12 0a11 11 0 0 1 4.2 21.2L12 24.2 7.8 21.2A11 11 0 0 1 12 0z`;
   // Inner (colored) shape is a plain circle — only the white outer shape has the nub
-  const g = 16 / 24; // glyph scale: 24-box → 16 px, filling most of the 18 px disc
+  const box = spec.box ?? 24;
+  const g = 16 / box; // glyph scale: box → 16 px, filling most of the 18 px disc
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs><filter id="sh" x="-25%" y="-15%" width="150%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="0.9" flood-color="#000" flood-opacity="0.32"/></filter></defs>
   <path d="${outer}" fill="#FFFFFF" filter="url(#sh)"/>
   <circle cx="${cx}" cy="${cy}" r="9" fill="${spec.color}"/>
-  <g transform="translate(${cx - 12 * g} ${cy - 12 * g}) scale(${g})">${spec.strokeGlyph
+  <g transform="translate(${cx - (box / 2) * g} ${cy - (box / 2) * g}) scale(${g})">${spec.strokeGlyph
     ? `<path d="${spec.glyph}" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`
     : `<path d="${spec.glyph}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/>`}</g>
 </svg>`;

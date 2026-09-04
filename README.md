@@ -245,6 +245,19 @@ Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Rele
 
 ---
 
+### Phone layout
+
+Below the `sm` breakpoint (639 px, `src/hooks/useIsMobile.ts`) the app rearranges itself rather than shrinking:
+
+- **Header** — 64 px, wordmark always visible; Share and Resources fold into a ⋮ menu (`Header.tsx`).
+- **Legend** — starts closed as a "Layers · n/m" pill (bottom-right) and opens as a bottom sheet; its open state survives the dataset picker opening and closing (`MapLegend.tsx`).
+- **Popups** — the same popup HTML renders in a bottom sheet (`popupSheet.ts`, `MobileSheetWindow`) instead of a Google InfoWindow; it fires the same `domready` / `closeclick` events so the tab and snapshot code is unchanged. The map pans so the clicked point sits above the sheet.
+- **Map controls** — no zoom / fullscreen / rotate / camera controls (pinch instead); the basemap picker moves to the bottom-left (`MapContainer.tsx`).
+- **Footer** — copyright and logo only.
+- **Welcome card** — the scroll-wheel line is swapped for pinch wording (`LandingIntro.tsx`).
+
+`public/_mobile-test.html` is a 390×844 iframe harness for checking the phone layout in a desktop browser (desktop Chrome will not shrink a window below 500 px).
+
 ## Vector Tiles (deck.gl on Google Maps)
 
 Parcels and building footprints no longer download as GeoJSON (133 MB + 17 MB). They render from vector tiles through a deck.gl `GoogleMapsOverlay` (`src/components/Map/DeckLayers.ts`), styled from the same layer config so nothing changes visually. A layer opts in with `tiles: { url, sourceLayer, minZoom, maxZoom }` in `src/config/layers.ts`; the hook then skips the fetch, marks the layer loaded, and toggles/zoom-gates it through the deck manager. Clicks are re-broadcast as an `ssx-deck-click` window event that `FeaturePopup` routes like a Data-layer click.

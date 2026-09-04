@@ -202,3 +202,22 @@ body {
 .ssx-art-title { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
 .ssx-art-meta { font-size: 11.5px; font-weight: 600; color: #4A4640; letter-spacing: .02em; }
 .ssx-art-sum { font-size: 13px; line-height: 1.45; color: #2E2B26; margin-top: 2px; }
+
+/* ---- Phone popup: the popup frame as a bottom sheet (popupSheet.ts) ---- */
+.ssx-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; max-height: 62%; display: flex; flex-direction: column; background: #FBF7EF; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(40,30,10,.22); transform: translateY(105%); transition: transform .28s ease-out; }
+.ssx-sheet.is-open { transform: translateY(0); }
+.ssx-sheet-grip { flex: none; height: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ssx-sheet-grip::before { content: ""; width: 40px; height: 4px; border-radius: 2px; background: rgba(26,26,26,.25); }
+.ssx-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.ssx-sheet .ssx { width: 100% !important; max-width: none; }
+.ssx-sheet .ssx-photo img { max-height: 200px; }
+@media (max-width: 639px) {
+  .ssx-two { flex-direction: column; }
+  .ssx-two .ssx-minimap { width: 100% !important; min-width: 0 !important; height: 170px !important; }
+}
+
+/* Address search must shrink with the phone header (the Places element has a wide intrinsic size) */
+.address-search-container { min-width: 0; }
+.address-search-container gmp-place-autocomplete { display: block; width: 100%; min-width: 0; }
+/* In the phone sheet the sheet itself scrolls; tab panels must not add a second scroller */
+.ssx-sheet .ssx-panel { min-height: 0 !important; max-height: none !important; overflow: visible !important; }

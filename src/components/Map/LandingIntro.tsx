@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { isBlankHtml } from '../../services/siteContent';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const DISMISSED_KEY = 'landing_intro_dismissed';
 
@@ -67,6 +68,17 @@ export function LandingIntroCard({ html, onClose, className = '' }: LandingIntro
   );
 }
 
+/**
+ * The admin-written intro talks about scroll wheels and +/− buttons. On a
+ * phone those lines are swapped for touch equivalents; everything else is
+ * left exactly as written.
+ */
+function adaptIntroForTouch(html: string): string {
+  return html
+    .replace(/<strong>Zoom in<\/strong>[\s\S]*?\.(?=\s*<\/(?:li|p)>)/i, '<strong>Pinch</strong> to zoom in on a shoreline, and drag to move around.')
+    .replace(/\(menu icon, top left\)/i, '(☰, top left)');
+}
+
 interface LandingIntroProps {
   html: string;
   /** Start collapsed to the pill (e.g. when the visitor arrived via a shared link). */
@@ -81,6 +93,8 @@ interface LandingIntroProps {
  */
 export function LandingIntro({ html, defaultDismissed = false }: LandingIntroProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => defaultDismissed || readDismissed());
+  const mobile = useIsMobile();
+  const shown = mobile ? adaptIntroForTouch(html) : html;
 
   if (isBlankHtml(html)) return null;
 
@@ -110,7 +124,7 @@ export function LandingIntro({ html, defaultDismissed = false }: LandingIntroPro
 
   return (
     <LandingIntroCard
-      html={html}
+      html={shown}
       onClose={close}
       className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[26rem] max-w-[calc(100%-1.5rem)]"
     />

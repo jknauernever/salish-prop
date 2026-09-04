@@ -102,6 +102,11 @@ const BUOY_TYPE: Record<string, string> = { B: 'Mooring buoy', F: 'Float', R: 'R
 const IMG = '/reports/shoreline-images';
 const FRIENDS = 'Friends of the San Juans';
 
+/** Second and later stand-in photos for a layer, shown after LAYER_PHOTOS. */
+export const LAYER_PHOTOS_MORE: Record<string, PopupPhoto[]> = {
+  'friends-mooring-buoys': [{ url: `${IMG}/boats-on-moorings.jpg`, caption: 'Boats on moorings', credit: `${FRIENDS} · Gardner` }],
+};
+
 export const LAYER_PHOTOS: Record<string, PopupPhoto> = {
   'friends-bull-kelp': { url: `${IMG}/kelp.jpg`, caption: 'Bull kelp canopy at the surface', credit: FRIENDS },
   'friends-deepwater-eelgrass': { url: `${IMG}/eelgrass.jpg`, caption: 'Eelgrass meadow at low tide', credit: FRIENDS },
@@ -113,8 +118,8 @@ export const LAYER_PHOTOS: Record<string, PopupPhoto> = {
   'friends-armor-2019': { url: `${IMG}/adapt-fortify.jpg`, caption: 'Hard armoring along the shore', credit: FRIENDS },
   'friends-armor-change-2019': { url: `${IMG}/erosion-after.jpg`, caption: 'Shoreline after armor removal', credit: FRIENDS },
   'friends-projects': { url: `${IMG}/restoration-after.jpg`, caption: 'Restored beach and marsh', credit: FRIENDS },
-  'friends-docks': { url: `${IMG}/preserve.jpg`, caption: 'Shoreline with a dock', credit: FRIENDS },
-  'friends-mooring-buoys': { url: `${IMG}/clean-water.jpg`, caption: 'Nearshore waters', credit: FRIENDS },
+  'friends-docks': { url: `${IMG}/barlow-dock.jpg`, caption: 'The old dock at Barlow Bay, Lopez Island, before Friends removed it', credit: FRIENDS },
+  'friends-mooring-buoys': { url: `${IMG}/mooring-float.jpg`, caption: 'A mid-line float keeps the mooring line off the eelgrass', credit: FRIENDS },
   'friends-groins': { url: `${IMG}/erosion-before.jpg`, caption: 'Armored shoreline', credit: FRIENDS },
   'friends-boat-ramps': { url: `${IMG}/preserve.jpg`, caption: 'Shoreline access', credit: FRIENDS },
   'friends-marine-railway': { url: `${IMG}/preserve.jpg`, caption: 'Shoreline access', credit: FRIENDS },
@@ -144,7 +149,6 @@ export const PHOTO_SUBJECTS: Record<string, RegExp> = {
   'friends-armor': /armor|bulkhead|riprap|seawall|rock/i,
   'friends-armor-2019': /armor|bulkhead|riprap|seawall|rock/i,
   'friends-armor-change-2019': /armor|bulkhead|riprap|seawall|rock/i,
-  'friends-docks': /\bdock\b|\bpier\b/i,
   'friends-pilings': /piling|creosote/i,
   'friends-mooring-buoys': /buoy|mooring/i,
   'marbled-murrelet-observations': /murrelet/i,

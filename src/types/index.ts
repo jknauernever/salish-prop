@@ -106,10 +106,11 @@ export interface LayerConfig {
   /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
-   * components/Map/KelpOverlay.ts). The Data layer stays as an invisible
-   * click target so popups still work.
+   * components/Map/KelpOverlay.ts); the Data layer stays as an invisible
+   * click target so popups still work. 'herring-school' = a drifting school
+   * of fish glyphs painted over the layer's normal fill.
    */
-  renderer?: 'kelp-squiggle';
+  renderer?: 'kelp-squiggle' | 'herring-school';
   markerIcon?: string;
   styleByProperty?: StyleByProperty;
   /**

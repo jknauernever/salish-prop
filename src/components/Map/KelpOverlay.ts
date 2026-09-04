@@ -17,18 +17,73 @@ export interface KelpOverlay extends google.maps.OverlayView {
   setData(data: GeoJSON.FeatureCollection): void;
 }
 
+/**
+ * 'kelp'   — chart-symbol squiggle pattern fill (the layer's only rendering).
+ * 'school' — a drifting school of small fish glyphs clipped to each polygon,
+ *            painted on top of the layer's own Data-layer fill (herring
+ *            spawning grounds). Nothing is drawn below SCHOOL_MIN_ZOOM.
+ */
+export type OverlayStyle = 'kelp' | 'school';
+
+interface Fish {
+  wx: number; // world px at REF_ZOOM
+  wy: number;
+  phase: number;
+  speed: number; // multiplier
+  wiggle: number; // per-fish wiggle phase
+}
+
 type Ring = [number, number][]; // [lng, lat]
 interface Patch {
   rings: Ring[];
   bbox: [number, number, number, number]; // minLng, minLat, maxLng, maxLat
+  fish?: Fish[];
+  /** Share of the bbox that is inside the polygon (from the fish sampling). */
+  fillRatio?: number;
 }
 
 const PATTERN_MIN_ZOOM = 12.5;
+const SCHOOL_MIN_ZOOM = 13;
+const SCHOOL_PX_PER_FISH = 700; // one fish per ~26×26 px of polygon
+const SCHOOL_MAX_PER_PATCH = 400;
+const FISH_FILL = 'rgba(255, 255, 255, 0.92)'; // white body with a violet edge: reads on dark water and on the pale fill
+const FISH_EDGE = 'rgba(76, 29, 149, 0.8)';
 const REF_ZOOM = 12; // geometry cache zoom (world-pixel precision vs. Path2D float range)
 const CREAM = '#FFF4CC';
 const CREAM_RGB = '255, 244, 204';
 
-let cachedCtor: (new () => KelpOverlay) | null = null;
+let cachedCtor: (new (style: OverlayStyle) => KelpOverlay) | null = null;
+
+/** Deterministic PRNG so fish keep their places across reloads. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** One herring: a slim body with a forked tail, pointing +x. `len` in CSS px. */
+function drawFish(ctx: CanvasRenderingContext2D, x: number, y: number, len: number, tilt: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(tilt);
+  const h = len * 0.28;
+  ctx.beginPath();
+  ctx.moveTo(len * 0.5, 0);
+  ctx.quadraticCurveTo(0, -h, -len * 0.42, 0);
+  ctx.quadraticCurveTo(0, h, len * 0.5, 0);
+  ctx.moveTo(-len * 0.38, 0);
+  ctx.lineTo(-len * 0.62, -h * 0.9);
+  ctx.lineTo(-len * 0.62, h * 0.9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
 
 /**
  * One kelp squiggle: a wavy stem with small leaf ovals, on a transparent tile.
@@ -71,12 +126,17 @@ function makeSquiggleTile(size: number, scale: number, dpr: number): HTMLCanvasE
   return c;
 }
 
-function buildClass(): new () => KelpOverlay {
+function buildClass(): new (style: OverlayStyle) => KelpOverlay {
   if (typeof google === 'undefined' || !google.maps?.OverlayView) {
     throw new Error('KelpOverlay: google.maps.OverlayView is not available yet.');
   }
 
   class KelpOverlayImpl extends google.maps.OverlayView implements KelpOverlay {
+    private style: OverlayStyle;
+    constructor(style: OverlayStyle) {
+      super();
+      this.style = style;
+    }
     private patches: Patch[] = [];
     private canvas: HTMLCanvasElement | null = null;
     private rafId: number | null = null;
@@ -134,7 +194,37 @@ function buildClass(): new () => KelpOverlay {
       this.patches = out;
       this.pathCache = null;
       this.frame = null;
+      if (this.style === 'school') this.seedFish();
       this.draw();
+    }
+
+    /**
+     * Scatter fish inside each polygon once, in world pixels at REF_ZOOM
+     * (rejection sampling against the polygon path). At paint time the
+     * zoom decides how many of them are shown, so the school thins out as
+     * you zoom out and never re-randomizes on pan.
+     */
+    private seedFish(): void {
+      const probe = document.createElement('canvas').getContext('2d');
+      if (!probe) return;
+      const paths = this.worldPaths();
+      const rnd = mulberry32(0x5eed);
+      paths.forEach(({ path, bbox }, i) => {
+        const p = this.patches[i];
+        const [x0, y0, x1, y1] = bbox;
+        const fish: Fish[] = [];
+        let hits = 0, tries = 0;
+        const maxTries = SCHOOL_MAX_PER_PATCH * 12;
+        while (fish.length < SCHOOL_MAX_PER_PATCH && tries < maxTries) {
+          tries++;
+          const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
+          if (!probe.isPointInPath(path, x, y, 'evenodd')) continue;
+          hits++;
+          fish.push({ wx: x, wy: y, phase: rnd() * 1000, speed: 0.7 + rnd() * 0.6, wiggle: rnd() * Math.PI * 2 });
+        }
+        p.fish = fish;
+        p.fillRatio = tries ? hits / tries : 0;
+      });
     }
 
     /**
@@ -202,7 +292,7 @@ function buildClass(): new () => KelpOverlay {
     private frame: {
       left: number; top: number; w: number; h: number; k: number; ox: number; oy: number; zoom: number;
       /** Patch paths already transformed into canvas pixel space (CSS px) for this layout. */
-      screen: { path: Path2D; bbox: [number, number, number, number] }[];
+      screen: { path: Path2D; bbox: [number, number, number, number]; i: number }[];
     } | null = null;
 
     // Synchronous: Google calls draw() exactly when the pane/projection is
@@ -293,13 +383,15 @@ function buildClass(): new () => KelpOverlay {
       // pattern sampled inside a 256× scaled context renders pixelated.
       const m = new DOMMatrix([k, 0, 0, k, ox - left, oy - top]);
       const vx0 = -50, vy0 = -50, vx1 = w + 50, vy1 = h + 50;
-      const screen: { path: Path2D; bbox: [number, number, number, number] }[] = [];
-      for (const { path, bbox } of this.worldPaths()) {
+      const screen: { path: Path2D; bbox: [number, number, number, number]; i: number }[] = [];
+      const wp = this.worldPaths();
+      for (let i = 0; i < wp.length; i++) {
+        const { path, bbox } = wp[i];
         const sb: [number, number, number, number] = [bbox[0] * k + ox - left, bbox[1] * k + oy - top, bbox[2] * k + ox - left, bbox[3] * k + oy - top];
         if (sb[2] < vx0 || sb[0] > vx1 || sb[3] < vy0 || sb[1] > vy1) continue;
         const sp = new Path2D();
         sp.addPath(path, m);
-        screen.push({ path: sp, bbox: sb });
+        screen.push({ path: sp, bbox: sb, i });
       }
       this.frame = { left, top, w, h, k, ox, oy, zoom, screen };
       return true;
@@ -316,6 +408,11 @@ function buildClass(): new () => KelpOverlay {
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+
+      if (this.style === 'school') {
+        this.paintSchool(ctx, now);
+        return;
+      }
 
       const usePattern = zoom >= PATTERN_MIN_ZOOM;
       const pat = usePattern ? this.pattern(ctx, zoom, dpr) : null;
@@ -355,14 +452,61 @@ function buildClass(): new () => KelpOverlay {
         }
       }
     }
+
+    /**
+     * Drifting school: each polygon's seeded fish glide eastward inside it
+     * (clipped to the polygon, wrapping across its bbox) with a slow vertical
+     * wander and a quick tail wiggle. The layer's own violet fill sits
+     * underneath, drawn by the Data layer.
+     */
+    private paintSchool(ctx: CanvasRenderingContext2D, now: number): void {
+      const F = this.frame;
+      if (!F) return;
+      const { zoom, screen, k, ox, oy, left, top } = F;
+      if (zoom < SCHOOL_MIN_ZOOM) { this.stopAnimation(); return; }
+      this.startAnimation();
+
+      const tSec = (now - this.animStart) / 1000;
+      const len = zoom >= 17 ? 13 : zoom >= 15.5 ? 11 : zoom >= 14 ? 9 : 7;
+      const drift = len * 1.4; // px per second at speed 1
+      ctx.fillStyle = FISH_FILL;
+      ctx.strokeStyle = FISH_EDGE;
+      ctx.lineWidth = 0.8;
+      ctx.lineJoin = 'round';
+
+      for (const { path, bbox, i } of screen) {
+        const p = this.patches[i];
+        const fish = p?.fish;
+        if (!fish?.length) continue;
+        const [bx0, by0, bx1, by1] = bbox;
+        const bw = bx1 - bx0, bh = by1 - by0;
+        if (bw < len * 3 || bh < len * 2) continue;
+        const areaPx = bw * bh * (p.fillRatio ?? 0.5);
+        const n = Math.min(fish.length, Math.max(1, Math.round(areaPx / SCHOOL_PX_PER_FISH)));
+
+        ctx.save();
+        ctx.clip(path, 'evenodd');
+        for (let j = 0; j < n; j++) {
+          const f = fish[j];
+          const sx = f.wx * k + ox - left, sy = f.wy * k + oy - top;
+          // advance along +x, wrap inside the polygon's bbox
+          const adv = (tSec * drift * f.speed + f.phase) % bw;
+          const x = bx0 + (((sx - bx0 + adv) % bw) + bw) % bw;
+          const y = sy + Math.sin(tSec * 0.35 + f.wiggle) * len * 0.6;
+          const tilt = Math.sin(tSec * 5 + f.wiggle) * 0.12;
+          drawFish(ctx, x, y, len, tilt);
+        }
+        ctx.restore();
+      }
+    }
   }
 
-  return KelpOverlayImpl as unknown as new () => KelpOverlay;
+  return KelpOverlayImpl as unknown as new (style: OverlayStyle) => KelpOverlay;
 }
 
-export function createKelpOverlay(data?: GeoJSON.FeatureCollection): KelpOverlay {
+export function createKelpOverlay(data?: GeoJSON.FeatureCollection, style: OverlayStyle = 'kelp'): KelpOverlay {
   if (!cachedCtor) cachedCtor = buildClass();
-  const o = new cachedCtor();
+  const o = new cachedCtor(style);
   if (data) o.setData(data);
   return o;
 }

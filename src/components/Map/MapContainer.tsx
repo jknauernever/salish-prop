@@ -3,6 +3,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { MapContext } from '../../hooks/useMap';
 import { Footer } from '../Layout/Footer';
 import { setUrlParams, fmtLatLng } from '../../services/urlState';
+import { MOBILE_QUERY, isMobileNow } from '../../hooks/useIsMobile';
 import type { ReactNode } from 'react';
 
 const SAN_JUAN_CENTER = { lat: 48.605, lng: -123.0 };
@@ -41,23 +42,33 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
       if (!mounted || !mapRef.current) return;
 
       const { Map } = mapsLib as google.maps.MapsLibrary;
+      // Phones: pinch to zoom, no fullscreen (iOS has none), no rotate
+      // control, and the basemap picker at the bottom-left where it does not
+      // fight the welcome card or a popup.
+      const controlsFor = (mobile: boolean): google.maps.MapOptions => ({
+        zoomControl: !mobile,
+        mapTypeControl: true,
+        mapTypeControlOptions: {
+          position: mobile ? google.maps.ControlPosition.LEFT_BOTTOM : google.maps.ControlPosition.TOP_RIGHT,
+          style: google.maps.MapTypeControlStyle.DROPDOWN_MENU,
+        },
+        scaleControl: !mobile,
+        streetViewControl: false,
+        fullscreenControl: !mobile,
+        rotateControl: !mobile,
+        cameraControl: !mobile,
+      });
       const mapInstance = new Map(mapRef.current, {
         center: startCenter,
         zoom: startZoom,
         mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
         mapTypeId: initialMapTypeId ?? google.maps.MapTypeId.HYBRID,
         disableDefaultUI: false,
-        zoomControl: true,
-        mapTypeControl: true,
-        mapTypeControlOptions: {
-          position: google.maps.ControlPosition.TOP_RIGHT,
-          style: google.maps.MapTypeControlStyle.DROPDOWN_MENU,
-        },
-        scaleControl: true,
-        streetViewControl: false,
-        fullscreenControl: true,
         gestureHandling: 'greedy',
+        ...controlsFor(isMobileNow()),
       });
+      const mq = window.matchMedia(MOBILE_QUERY);
+      mq.addEventListener('change', () => mapInstance.setOptions(controlsFor(mq.matches)));
 
       mapInstance.addListener('zoom_changed', () => {
         setZoom(mapInstance.getZoom() ?? DEFAULT_ZOOM);
@@ -93,7 +104,7 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
     <MapContext.Provider value={{ map, isLoaded, zoom }}>
       <div className="h-full flex flex-col bg-fog-gray">
         {header}
-        <div className="relative flex-1">
+        <div className="relative flex-1 overflow-hidden">
           <div ref={mapRef} className="absolute inset-0" />
           {error && (
             <div className="absolute inset-0 flex items-center justify-center bg-fog-gray z-50">
@@ -115,7 +126,7 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
             </div>
           )}
           {isLoaded && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-blue/80 text-white text-xs font-mono px-3 py-1 rounded-full z-10 pointer-events-none">
+            <div className="absolute bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 bg-slate-blue/80 text-white text-xs font-mono px-3 py-1 rounded-full z-10 pointer-events-none">
               Zoom {Math.round(zoom * 10) / 10}
             </div>
           )}
