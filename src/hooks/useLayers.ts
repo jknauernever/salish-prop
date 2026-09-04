@@ -626,11 +626,15 @@ export function useLayers(
   }, [map]);
 
   // Load GeoJSON data for vector layers, create ImageMapType for raster layers
-  useEffect(() => {
+  /**
+   * Fetch and draw one layer. `visibleNow` is whether it should show as soon
+   * as it arrives. Data layers are loaded lazily — only when they are on —
+   * because fetching every dataset up front (tens of MB of GeoJSON turned
+   * into google.maps.Data features) was enough to crash the tab on phones.
+   */
+  const loadLayer = useCallback((config: LayerConfig, visibleNow: boolean) => {
     if (!map) return;
-
-    layerConfigs.forEach(config => {
-      if (config.placeholder || loadedRef.current.has(config.id)) return;
+    if (config.placeholder || loadedRef.current.has(config.id)) return;
 
       // --- Raster tile layers (pre-computed tiles) ---
       if (config.layerType === 'raster' && config.tileUrl) {
@@ -639,7 +643,7 @@ export function useLayers(
         const tileUrl = config.tileUrl;
         const tileMinZoom = config.minZoom ?? 0;
         const tileMaxZoom = 19;
-        const visibleByDefault = isVisibleByDefault(config.id);
+        const visibleByDefault = visibleNow;
         const imageMapType = new google.maps.ImageMapType({
           getTileUrl(coord, zoom) {
             if (zoom < tileMinZoom || zoom > tileMaxZoom) return null;
@@ -722,7 +726,7 @@ export function useLayers(
             opacity: 0,
           });
 
-          const initialVisible = isVisibleByDefault(config.id);
+          const initialVisible = visibleNow;
           const initialRange: DateRange = initialUi?.[config.id]?.dateRange ?? { start: null, end: null };
           speciesObsStateRef.current.set(config.id, {
             visible: initialVisible,
@@ -796,7 +800,7 @@ export function useLayers(
           const dataLayer = new google.maps.Data({ map });
           dataLayer.addGeoJson(data);
 
-          const ebirdVisible = isVisibleByDefault(config.id);
+          const ebirdVisible = visibleNow;
           dataLayer.setStyle(() => ({
             icon: config.markerIcon ? {
               url: config.markerIcon,
@@ -842,7 +846,7 @@ export function useLayers(
         loadedRef.current.add(config.id);
         const deck = getDeckManager(map);
         registerDeckManager(deck);
-        deck.setLayer(config, isVisibleByDefault(config.id));
+        deck.setLayer(config, visibleNow);
         if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
         deck.setZoom(map.getZoom() ?? 0);
         setLayers(prev => prev.map(l =>
@@ -909,8 +913,7 @@ export function useLayers(
           dataLayer.addGeoJson(data);
 
           const currentZoom = map.getZoom() ?? 0;
-          const aboveMinZoom = config.minZoom == null || currentZoom >= config.minZoom;
-          const shouldShow = isVisibleByDefault(config.id) && aboveMinZoom;
+          const shouldShow = visibleNow && gateOk(config.id, config.minZoom, currentZoom);
 
           const hasPoints = data.features.some(f =>
             f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
@@ -1044,8 +1047,18 @@ export function useLayers(
           ));
         }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, updateViewportLayers, applySpeciesObsStyle, initialUi]);
+
+  useEffect(() => {
+    if (!map) return;
+    layerConfigs.forEach(config => {
+      if (config.placeholder || loadedRef.current.has(config.id)) return;
+      const on = isVisibleByDefault(config.id);
+      // Tile and raster layers cost nothing to register; data layers wait until they are on
+      if (on || config.layerType === 'raster' || config.tiles) loadLayer(config, on);
     });
-  }, [map, updateViewportLayers, isVisibleByDefault, applySpeciesObsStyle, initialUi]);
+  }, [map, loadLayer, isVisibleByDefault]);
 
   // Update viewport-filtered layers on map idle (after pan/zoom settles)
   useEffect(() => {
@@ -1109,6 +1122,18 @@ export function useLayers(
   }, [map, setVectorVisible, handleZoomForSpeciesObs]);
 
   const toggleLayer = useCallback((layerId: string) => {
+    // First time on: fetch it now; it draws (and the legend lights up) when the data arrives
+    const cfg = layerConfigs.find(c => c.id === layerId);
+    if (cfg && !cfg.placeholder && !loadedRef.current.has(layerId)) {
+      const zoomNow = map?.getZoom() ?? 0;
+      if (cfg.minZoom != null && zoomNow < cfg.minZoom && !zoomOverridesRef.current.has(layerId)) {
+        zoomOverridesRef.current.add(layerId);
+        setZoomOverrides(new Set(zoomOverridesRef.current));
+      }
+      loadLayer(cfg, true);
+      setLayers(prev => prev.map(l => (l.config.id === layerId ? { ...l, visible: true } : l)));
+      return;
+    }
     setLayers(prev => prev.map(layer => {
       if (layer.config.id !== layerId) return layer;
       const newVisible = !layer.visible;
@@ -1164,10 +1189,15 @@ export function useLayers(
       }
       return { ...layer, visible: newVisible };
     }));
-  }, [map, setVectorVisible, updateViewportLayers]);
+  }, [map, setVectorVisible, updateViewportLayers, loadLayer]);
 
   const setAllVisible = useCallback((layerIds: string[], visible: boolean) => {
     const idSet = new Set(layerIds);
+    if (visible) {
+      for (const cfg of layerConfigs) {
+        if (idSet.has(cfg.id) && !cfg.placeholder && !loadedRef.current.has(cfg.id)) loadLayer(cfg, true);
+      }
+    }
     setLayers(prev => prev.map(layer => {
       if (!idSet.has(layer.config.id)) return layer;
       if (layer.config.placeholder) return layer;
@@ -1203,7 +1233,7 @@ export function useLayers(
 
     // Trigger viewport update for any viewport-filtered layers in this group
     setTimeout(updateViewportLayers, 0);
-  }, [map, setVectorVisible, updateViewportLayers]);
+  }, [map, setVectorVisible, updateViewportLayers, loadLayer]);
 
   const setLayerOpacity = useCallback((layerId: string, opacity: number) => {
     const raster = rasterLayersRef.current.get(layerId);

@@ -228,7 +228,7 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
         <Toggle
           enabled={visible}
           onChange={onToggle}
-          disabled={isPlaceholder || (!loaded && !loading)}
+          disabled={isPlaceholder || !!error}
         />
       </div>
 

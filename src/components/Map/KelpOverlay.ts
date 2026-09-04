@@ -46,7 +46,18 @@ const PATTERN_MIN_ZOOM = 12.5;
 const SCHOOL_MIN_ZOOM = 13;
 const SCHOOL_PX_PER_FISH = 700; // one fish per ~26×26 px of polygon
 const SCHOOL_MAX_PER_PATCH = 400;
-const FISH_FILL = 'rgba(255, 255, 255, 0.92)'; // white body with a violet edge: reads on dark water and on the pale fill
+const FISH_FILL = 'rgba(255, 255, 255, 0.92)';
+
+/**
+ * Canvas memory. Each overlay keeps a bitmap larger than the viewport (the
+ * pad lets pans happen without a repaint). On phones — especially Chrome on
+ * iOS, whose WebKit process has a tight memory cap — a 2× bitmap padded by
+ * half the viewport on every side (~27 MB per overlay) helped crash the tab,
+ * so phones get a 1× bitmap with a quarter-viewport pad (~3 MB).
+ */
+const PHONE = typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+const CANVAS_PAD = PHONE ? 0.25 : 0.5;
+const CANVAS_MAX_DPR = PHONE ? 1 : 2;
 const FISH_EDGE = 'rgba(76, 29, 149, 0.8)';
 const REF_ZOOM = 12; // geometry cache zoom (world-pixel precision vs. Path2D float range)
 const CREAM = '#FFF4CC';
@@ -365,10 +376,10 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
         tl.x >= F.left && tl.y >= F.top && br.x <= F.left + F.w && br.y <= F.top + F.h;
       if (covered) return false;
 
-      const pad = Math.round(Math.max(vw, vh) * 0.5);
+      const pad = Math.round(Math.max(vw, vh) * CANVAS_PAD);
       const left = Math.floor(tl.x) - pad, top = Math.floor(tl.y) - pad;
       const w = vw + 2 * pad, h = vh + 2 * pad;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(CANVAS_MAX_DPR, window.devicePixelRatio || 1);
       if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
         canvas.width = w * dpr;
         canvas.height = h * dpr;
@@ -404,7 +415,7 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
       if (!canvas || !F) return;
       const { w, h, zoom, screen } = F;
 
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(CANVAS_MAX_DPR, window.devicePixelRatio || 1);
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);

@@ -52,6 +52,9 @@ class DeckManager {
       // on this vector map, so everything draws into the top-left corner. The
       // classic overlay (deck's own canvas, sized to the map div) is reliable.
       interleaved: false,
+      // Phones: render deck at 1× — a 3× framebuffer on top of Google's own
+      // WebGL canvas is more GPU memory than iOS Chrome's tab can afford.
+      useDevicePixels: window.matchMedia('(max-width: 639px)').matches ? 1 : true,
       layers: [],
       onClick: info => {
         if (!info.layer || !info.object || !info.coordinate) return;
