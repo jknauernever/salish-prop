@@ -44,6 +44,8 @@ export interface NearshoreParcelRecord {
     scores: Record<string, { hrm: number; lrm: number }>;
     segment: { name: string; geoUnit: string; systemType: string; subType: string; materialClass: string; featureType: string };
   };
+  /** Nearest surveyed shoreline at any distance (every parcel has one). */
+  shore?: { distFt: number; name: string };
   /** Shoreline modifications from Friends' field surveys, within the meta distances. */
   mods?: {
     armor?: { n: number; lengthFt: number; distFt: number };

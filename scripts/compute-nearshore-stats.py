@@ -11,6 +11,7 @@ For every tax parcel (keyed by FID, same as ndvi_parcel_stats.json) this writes:
   fish      Beamer & Fresh fish-use scores (max HRM/LRM per species) for segments within FISH_FT
   mods      shoreline modifications: armor within ARMOR_FT (length), docks / groins / ramps /
             railways / pilings within STRUCTURE_FT, mooring buoys & floats within BUOY_FT
+  shore     nearest surveyed shoreline segment at any distance (feet + place name) — every parcel
 
 Only parcels with at least one hit are written, so the file stays small. The
 property popup reads it (src/services/nearshoreStats.ts) instead of doing live
@@ -318,6 +319,17 @@ def main():
             mods['buoys'] = {'n': len(bh), 'distFt': round(min(d for _, d in bh)), 'types': types}
         if mods:
             rec['mods'] = mods
+
+        # --- Nearest shoreline, any distance (for inland properties: "0.6 mi to Deer Harbor") ---
+        try:
+            ni = fish_t.nearest(pg)
+            if ni is not None:
+                i = fish_i[ni]
+                d = fish_g[i].distance(pg)
+                pname = str((fish[i].get('properties') or {}).get('Name') or '').strip()
+                rec['shore'] = {'distFt': round(d), 'name': pname.title() if pname.isupper() else pname}
+        except Exception:
+            pass
 
         if rec:
             results[fid] = rec

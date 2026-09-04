@@ -15,6 +15,9 @@ import type { LayerConfig } from '../../types';
 
 export const DECK_CLICK_EVENT = 'ssx-deck-click';
 
+/** San Juan County bounding box [west, south, east, north] — the area the tiles cover. */
+const TILE_EXTENT: [number, number, number, number] = [-123.35, 48.33, -122.65, 48.85];
+
 export interface DeckClickDetail {
   layerId: string;
   properties: Record<string, unknown>;
@@ -127,6 +130,10 @@ class DeckManager {
       data: t.url,
       minZoom: t.minZoom,
       maxZoom: t.maxZoom,
+      // With an extent, deck keeps requesting the lowest tile zoom when the
+      // map is zoomed out past it (instead of loading nothing), so a layer
+      // gate like 13.5 works even though the tiles start at z13.
+      extent: TILE_EXTENT,
       loadOptions: { mvt: { layers: [t.sourceLayer] } },
       uniqueIdProperty: t.idProperty ?? 'FID',
       visible: e.visible && !gated,

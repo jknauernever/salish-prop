@@ -128,6 +128,8 @@ export interface NearshoreVegetationResult {
   fish: NearshoreParcelRecord['fish'] | null;
   /** Shoreline modifications from the precompute (null when none within the meta distances). */
   mods: NearshoreParcelRecord['mods'] | null;
+  /** Nearest surveyed shoreline at any distance. */
+  shore: NearshoreParcelRecord['shore'] | null;
   /** Distances the fish / modification numbers were computed with (feet). */
   modDistances: { fishFt: number; armorFt: number; structureFt: number; buoyFt: number; shoreformFt: number };
 }
@@ -166,6 +168,7 @@ export function nearshoreFromStats(
     shoreform: rec?.shoreform ?? null,
     fish: rec?.fish ?? null,
     mods: rec?.mods ?? null,
+    shore: rec?.shore ?? null,
     modDistances: {
       fishFt: meta.fishFt ?? 200,
       armorFt: meta.armorFt ?? 50,

@@ -613,7 +613,7 @@ function openNdviInfoWindow() {
     <tr><th>Component</th><th>Source</th><th>Date</th><th>Resolution</th></tr>
     <tr><td>Aerial imagery</td><td>USDA NAIP via Google Earth Engine</td><td>October 2023</td><td>0.6 m</td></tr>
     <tr><td>NDVI raster</td><td>Computed from NAIP NIR &amp; Red bands</td><td>October 2023</td><td>0.6 m</td></tr>
-    <tr><td>Parcel boundaries</td><td>San Juan County GIS (Tax Parcels)</td><td>2024</td><td>Vector</td></tr>
+    <tr><td>Parcel boundaries</td><td>San Juan County GIS (tax parcels)</td><td>2024</td><td>Vector</td></tr>
     <tr><td>Parcel statistics</td><td>Zonal statistics (mean, std dev, land cover %)</td><td>Computed 2024</td><td>Per-parcel</td></tr>
     <tr><td>Sentinel-2 imagery</td><td>ESA Copernicus via Google Earth Engine</td><td>User-selected</td><td>10 m</td></tr>
     <tr><td>Map tiles</td><td>Pre-rendered to Google Cloud Storage</td><td>—</td><td>Zoom 10–19</td></tr>
@@ -697,19 +697,6 @@ function sectionHeading(text: string): string {
   return `<div style="${HEADING}">${esc(text)}</div>`;
 }
 
-function fmtCurrency(value: unknown): string {
-  const n = Number(value);
-  if (!n || isNaN(n)) return '$0';
-  if (n >= 1_000_000) {
-    const m = n / 1_000_000;
-    return '$' + (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')) + 'M';
-  }
-  if (n >= 1_000) {
-    const k = n / 1_000;
-    return '$' + (k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, '')) + 'k';
-  }
-  return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
-}
 
 function fmtAcres(value: unknown): string {
   const n = Number(value);
@@ -933,7 +920,8 @@ function handleParcelClick(
         renderFishTab(popupId, vegResult);
         renderModsTab(popupId, vegResult);
         const shorelineResult = null;
-        renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null);
+        const islandProjects = projectsOnIsland(islandOfParcel(props, null), allLayers);
+        renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, null, null, null, islandProjects);
 
         Promise.all([ndviPromise, addrPromise, taxAreaPromise]).then(([stats, addrLookup, fidToIsland]) => {
           const ndvi = fid ? (stats[fid] ?? null) : null;
@@ -943,7 +931,7 @@ function handleParcelClick(
             island = index.get(fid) ?? null;
           }
           const addrEntries = pin ? (addrLookup[pin] || null) : null;
-          renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries);
+          renderSummary(popupId, props, buildingResult, shorelineResult, vegResult, ndvi, island, addrEntries, projectsOnIsland(islandOfParcel(props, addrEntries), allLayers));
         });
       });
     });
@@ -955,7 +943,6 @@ function handleParcelClick(
     renderSummary(popupId, props, null, null, null, null, null, null);
   }
   });
-  void allLayers;
 }
 
 
@@ -1598,6 +1585,123 @@ function buildPropertyTab(fields: { label: string; value: string }[], addressRow
 // Summary tab
 // ---------------------------------------------------------------------------
 
+interface IslandProject {
+  name: string;
+  kind: string;
+  island: string;
+  date: string;
+  link: string;
+}
+
+const ISLAND_NAMES = ['San Juan', 'Orcas', 'Lopez', 'Shaw', 'Blakely', 'Decatur', 'Stuart', 'Waldron', 'Sucia', 'Brown', 'Henry', 'Spieden', 'Jones', 'Patos', 'Matia', 'Obstruction', 'Crane', 'Center', 'Pearl', 'Johns', 'Sinclair', 'Cypress'];
+
+/** Which island a parcel is on, from the assessor tax area ("ORCAS/CEMETERY" → "Orcas"). */
+function islandOfParcel(props: Record<string, unknown>, addrEntries: AddressEntry[] | null): string {
+  const cands = [String(props.Tax_Area ?? ''), String(addrEntries?.[0]?.PLACENAME ?? ''), String(addrEntries?.[0]?.MSAG ?? '')];
+  for (const c of cands) {
+    const u = c.toUpperCase();
+    const hit = ISLAND_NAMES.find(n => u.startsWith(n.toUpperCase()) || u.includes(n.toUpperCase() + ' IS'));
+    if (hit) return hit;
+  }
+  return '';
+}
+
+/** Friends' Projects on an island, newest first, from the loaded layer. */
+function projectsOnIsland(island: string, allLayers: LayerState[]): IslandProject[] {
+  if (!island) return [];
+  const layer = allLayers.find(l => l.config.id === 'friends-projects');
+  const feats = layer?.geojsonData?.features ?? [];
+  const out: IslandProject[] = [];
+  for (const f of feats) {
+    const p = f.properties ?? {};
+    const isl = String(p.ISLAND ?? '').trim().toLowerCase();
+    if (!isl || !isl.startsWith(island.toLowerCase())) continue;
+    out.push({ name: String(p.NAME ?? ''), kind: String(p.kind ?? ''), island, date: String(p.DATE ?? ''), link: String(p.LINK ?? '') });
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+const PROJECT_KIND_COLORS: Record<string, string> = {
+  'Restoration project': '#0297BA', 'Riparian project': '#3D6410', 'In/over-water structure project': '#8F6B2E', 'Restoration site': '#0D4F4F',
+};
+
+/** "Distance to the nearest Orcas Island shoreline:" (plain text; the heading escapes it). */
+function shoreHeading(raw: string): string {
+  const name = raw.replace(/\s+Is\.?$/i, ' Island').trim();
+  return name ? `Distance to the nearest ${name} shoreline:` : 'Distance to the nearest shoreline:';
+}
+
+/**
+ * Summary cards for a property that isn't on the shore: how far the water is
+ * and which shoreline, tree cover, Friends' work on the same island, and what
+ * upland stewardship means for the nearshore, with Friends' own articles.
+ */
+function buildInlandCards(
+  props: Record<string, unknown>,
+  veg: NearshoreVegetationResult,
+  ndviStats: NdviStats | null,
+  islandStats: IslandPercentile | null,
+  islandProjects: IslandProject[],
+): string[] {
+  const cards: string[] = [];
+  const island = islandProjects[0]?.island || '';
+
+  // Distance to the water
+  if (veg.shore) {
+    const ft = veg.shore.distFt;
+    const dist = ft >= 5280 ? `${(ft / 5280).toFixed(1)} mi` : `${ft.toLocaleString('en-US')} ft`;
+    cards.push(`
+      <div style="${CARD}">
+        ${sectionHeading(shoreHeading(veg.shore.name))}
+        <div style="${BIG_NUM}">${esc(dist)}</div>
+        <p style="${BODY};margin-top:10px;">Rain that falls here drains toward that shoreline. Forest cover, streamside vegetation, and how runoff leaves the property all shape the beach and the nearshore water below it.</p>
+      </div>`);
+  }
+
+  // Tree cover (also on the Vegetation tab)
+  if (ndviStats) {
+    // Drawn from Friends' shoreline vegetation and restoration pages: roots and canopy
+    // filter runoff before it reaches the water; overhanging vegetation keeps forage
+    // fish eggs cool and moist on the beach.
+    const beachNote = `<p style="${BODY};margin-top:8px;">Trees and native plants also do quiet work for the beach below. Roots and canopy slow rain and filter it before it reaches streams and the shore, keeping sediment and pollutants out of nearshore water, and vegetation that overhangs a beach shades the sand and gravel where forage fish eggs need to stay cool and moist. <a href="https://sanjuans.org/our-work/shoreline-ecosystems/shoreline-vegetation-resources-for-san-juan-county/" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:none;">Friends&#39; vegetation resources &#8599;</a></p>`;
+    cards.push(buildGreeneryCard(ndviStats, false, islandStats, beachNote));
+  }
+
+  // Friends' Projects on this island
+  if (islandProjects.length) {
+    const rows = islandProjects.map(p => `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid ${COLOR.border};">
+        <span style="margin-top:6px;width:10px;height:10px;border-radius:50%;background:${PROJECT_KIND_COLORS[p.kind] ?? COLOR.teal};flex-shrink:0;"></span>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:15px;font-weight:600;color:${COLOR.dark};">${p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer" style="color:${COLOR.dark};text-decoration:none;">${esc(p.name)} &#8599;</a>` : esc(p.name)}</div>
+          <div style="font-size:13px;color:${COLOR.mid};">${esc(p.kind)}${p.date ? ` · ${esc(p.date)}` : ''}</div>
+        </div>
+      </div>`).join('');
+    cards.push(`
+      <div style="${CARD}">
+        ${sectionHeading(`Friends' work on ${esc(island)} Island`)}
+        <p style="${BODY};margin-bottom:6px;">${islandProjects.length === 1 ? 'One Friends of the San Juans project' : `${islandProjects.length} Friends of the San Juans projects`} on ${esc(island)}, most recent first.</p>
+        ${rows}
+      </div>`);
+  }
+
+  // Upland stewardship + Friends' articles
+  const idx = getFriendsContentSync();
+  const articles = articlesForFeature(idx, 'upland-property', { ISLAND: island }, 3).slice().sort((a, b) => b.date.localeCompare(a.date));
+  cards.push(`
+    <div style="${CARD}">
+      ${sectionHeading('Upland stewardship')}
+      <div class="ssx-block ssx-act" style="margin:0 0 ${articles.length ? 12 : 0}px;">
+        <div class="ssx-k">What you can do here</div>
+        Keep native trees and shrubs, especially along streams and wet areas; direct roof and driveway runoff into the ground rather than a ditch; and skip fertilizer and pesticides near water. Friends offers free advice for upland and shoreline landowners alike.
+        <div class="ssx-btn-row"><a class="ssx-btn-sun" href="https://sanjuans.org/our-work/landowner-resources/" target="_blank" rel="noopener noreferrer">Landowner resources</a></div>
+      </div>
+      ${articles.length ? fromFriendsHtml(articles).replace('class="ssx-from"', 'class="ssx-from" style="margin:0"') : ''}
+    </div>`);
+  void props;
+  return cards;
+}
+
 function renderSummary(
   popupId: string,
   props: Record<string, unknown>,
@@ -1607,6 +1711,7 @@ function renderSummary(
   ndviStats: NdviStats | null,
   islandStats: IslandPercentile | null,
   addrEntries: AddressEntry[] | null,
+  islandProjects: IslandProject[] = [],
 ) {
   // At a Glance goes in the left column next to the snapshot
   const glanceEl = document.getElementById(`${popupId}-at-a-glance`);
@@ -1622,15 +1727,21 @@ function renderSummary(
 
   void shorelineResult; // fish scores now live in the Fish tab, from the precompute
 
+  const shore = vegResult ? isShorelineParcel(props, vegResult) : true;
+  if (vegResult && !shore) {
+    hideShoreTabs(popupId);
+    cards.push(...buildInlandCards(props, vegResult, ndviStats, islandStats, islandProjects));
+  }
+
   // --- Shoreline Description: Friends geomorphic shoreform first, Beamer geo-unit as fallback ---
-  if (vegResult?.shoreform) {
+  if (shore && vegResult?.shoreform) {
     cards.push(buildShoreformCard(vegResult.shoreform));
-  } else if (vegResult?.fish?.segment?.geoUnit) {
+  } else if (shore && vegResult?.fish?.segment?.geoUnit) {
     cards.push(buildShorelineDescriptionCard(vegResult.fish.segment));
   }
 
   // --- Nearshore Ecology (Eelgrass & Kelp) ---
-  if (vegResult) {
+  if (vegResult && shore) {
     cards.push(buildNearshoreEcologyCard(vegResult));
     renderLivingShorelineChips(popupId, vegResult);
   }
@@ -1644,6 +1755,30 @@ function renderSummary(
   } else if (greenEl && ndviStats === null && vegResult) {
     greenEl.innerHTML = `<div style="${CARD}">${sectionHeading('Greenery & Tree Cover')}<p style="${BODY};color:${COLOR.mid};">No vegetation index is available for this parcel yet.</p></div>`;
   }
+}
+
+/**
+ * Shoreline property? True when the assessor records waterfront or tidelands,
+ * or the precompute found a shoreform, a surveyed shoreline segment, or any
+ * nearshore habitat within its search distances (500 ft for kelp/eelgrass).
+ * Inland properties hide every shore-specific card and tab.
+ */
+function isShorelineParcel(props: Record<string, unknown>, veg: NearshoreVegetationResult | null): boolean {
+  if ((Number(props.WF_LGTH) || 0) > 0 || (Number(props.TidelandFt) || 0) > 0) return true;
+  if (!veg) return false;
+  return !!(veg.shoreform || veg.fish || veg.bullKelp.present || veg.eelgrass.present || veg.forage.present || veg.herring.present || veg.mods);
+}
+
+/** Hide the shore-specific tabs for an inland property (Summary keeps a note). */
+function hideShoreTabs(popupId: string) {
+  const popupEl = document.getElementById(popupId);
+  if (!popupEl) return;
+  for (const t of ['shoreline', 'fish', 'mods']) {
+    popupEl.querySelector<HTMLElement>(`[data-tab="${t}"]`)?.remove();
+    popupEl.querySelector<HTMLElement>(`[data-panel="${t}"]`)?.remove();
+  }
+  const chips = document.getElementById(`${popupId}-chips`);
+  if (chips) chips.hidden = true;
 }
 
 /** Header chips: what living shoreline is near this parcel, lit when present. */
@@ -1817,13 +1952,8 @@ function buildAtAGlanceCard(
     if (bldgType) details.push(`${compactPill(bldgType)} use`);
   }
 
-  const salePrice = Number(props.Sale_Price) || 0;
-  const saleDate = String(props.Sale_date || '').trim();
-
+  // No dollar values in the Summary (sale price, assessed value): those stay on the Property tab.
   let detailText = details.length > 0 ? `<p style="${COMPACT_BODY}">${details.join(', ')}.</p>` : '';
-  if (salePrice > 0 && saleDate) {
-    detailText += `<p style="${COMPACT_BODY};margin-top:3px;">Last sold for ${compactPill(fmtCurrency(salePrice))} on ${esc(saleDate)}.</p>`;
-  }
 
   if (addrEntries && addrEntries.length > 0) {
     const primary = addrEntries[0];
@@ -2048,7 +2178,7 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
   `;
 }
 
-function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: IslandPercentile | null): string {
+function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: IslandPercentile | null, extraHtml = ''): string {
   const { mean, stdDev, water, bare, sparse, moderate, dense, veryDense } = stats;
   const pct = island?.percentile ?? null;
   const islandName = island?.islandName ?? '';
@@ -2192,6 +2322,7 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
       ${sectionHeading('Greenery & Tree Cover')}
       ${percentileCircle}
       <p style="${BODY}">${description}</p>
+      ${extraHtml}
       ${comparisonBar}
       ${classBreakdown}
       ${variabilityNote}

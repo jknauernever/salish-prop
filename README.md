@@ -32,7 +32,7 @@
 - 20 configurable layers across five categories: Fish Habitat, Ecological, Property, Planning & Infrastructure, Community Science
 - Layer toggle, per-category show/hide, opacity slider for raster layers
 - Viewport-filtered rendering for Tax Parcels and Building Footprints (only draws features in the current view; full dataset stays in memory for spatial queries)
-- Zoom-level enforcement per layer (e.g., parcels appear at zoom 15+)
+- Zoom-level enforcement per layer (e.g., parcels appear at zoom 13.5+)
 
 ### Address Search
 - Google **PlaceAutocompleteElement** (new Places API web component) with a soft location bias to San Juan County bounds (48.40–48.85 lat, -123.25 to -122.75 lng)
@@ -304,6 +304,8 @@ Every feature click renders through one frame, `src/components/Map/popupFrame.ts
 Per-layer content comes from `POPUP_SPECS` in `src/config/popups.ts` (title, subtitle, stats, chips, story, action, link, `noDetails`). Layers without a spec get the fallback: best name field as title, all fields in the table, the layer's `standardMessage` as the story, its `sourceCredit`/`sourceUrl` in the footer. Google's InfoWindow chrome is overridden in CSS (no padding, hidden default close); the frame's own × dispatches `ssx-popup-close` on `window`, which every InfoWindow owner listens for. The parcel report, the two raster popups (`ForestLossPopup`, `DistAlertPopup`), and the species-observation popup in `useLayers.ts` all render through the same builder.
 
 ## Property Popup (FeaturePopup)
+
+The parcel layer is labeled **Properties** in the UI (id stays `tax-parcels`). Inland properties — no waterfront/tideland in the assessor record and nothing from the nearshore precompute within its distances (500 ft kelp/eelgrass, 200 ft shoreform/forage/fish, modifications) — drop the Shoreline, Fish, and Modifications tabs (`isShorelineParcel`, `hideShoreTabs`) and get an inland Summary instead (`buildInlandCards`): distance to the nearest surveyed shoreline by name (`shore` in the precompute, every parcel), the greenery card, Friends' Projects on the same island (from the loaded layer, island parsed from `Tax_Area`), and an upland stewardship card with Friends articles from the `upland-property` bucket of the content index.
 
 Seven tabs, in order: **Summary** (At a Glance, snapshot, shore type, nearshore habitat) · **Shoreline** (shoreform card + kelp/eelgrass) · **Fish** (Beamer & Fresh fish-use scores + forage/herring spawning, all from the precompute) · **Wildlife** (eBird list + an EarthAtlas whale-sightings link at zoom 12 centered on the parcel) · **Modifications** (armor within 50 ft of the parcel line, docks/groins/ramps/railways/pilings within 100 ft, buoys & floats within 300 ft, with the distances printed, plus the Friends site-visit call to action) · **Vegetation** (Greenery & Tree Cover, forest loss, DIST-ALERT) · **Property** (assessor fields with appraised value, buildings). Appraised value is deliberately not featured in the header or At a Glance. All habitat, fish, and modification numbers come from `public/data/nearshore_parcel_stats.json` (`scripts/compute-nearshore-stats.py`), so no layer needs to be on.
 

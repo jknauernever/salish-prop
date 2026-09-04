@@ -33,7 +33,11 @@ TOPIC_LAYERS = {
     'landowner-stewardship': ['tax-parcels', 'friends-shoreline-geology'],
     'water-quality': ['stormwater-pipes'],
     'green-boating': ['friends-mooring-buoys', 'friends-deepwater-eelgrass'],
+    # pseudo-layer used by the inland property summary
+    'climate': ['upland-property'],
 }
+for _t in ('landowner-stewardship', 'water-quality', 'riparian'):
+    TOPIC_LAYERS[_t] = TOPIC_LAYERS.get(_t, []) + ['upland-property']
 
 SKIP_IMG = ('logo', 'icon', 'avatar', 'gravatar', 'button', 'badge', 'emoji', 'spacer', 'pixel')
 
@@ -111,6 +115,10 @@ def main():
                 by_layer.setdefault(lid, []).append(rec['id'])
     # rank: quality desc, has image, newest
     for lid, ids in by_layer.items():
+        if lid == 'upland-property':
+            # upland owners: stewardship, water quality, forest/riparian, climate — not nearshore habitat pieces
+            marine = {'eelgrass', 'kelp', 'herring', 'forage-fish', 'docks-and-moorings', 'green-boating', 'shoreline-armor', 'restoration'}
+            ids = [i for i in ids if items[i]['kind'] != 'project-story' and not (set(items[i]['topics']) & marine)]
         uniq = list(dict.fromkeys(ids))
         uniq.sort(key=lambda i: (-items[i]['quality'], 0 if items[i]['image'] else 1, items[i]['date']), reverse=False)
         uniq.sort(key=lambda i: (-items[i]['quality'], 0 if items[i]['image'] else 1))

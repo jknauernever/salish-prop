@@ -6,7 +6,7 @@ export const layerConfigs: LayerConfig[] = [
   // === Property Layers ===
   {
     id: 'tax-parcels',
-    name: 'Tax Parcels',
+    name: 'Properties',
     description: 'Property boundaries from San Juan County Assessor',
     standardMessage: 'County tax parcel boundaries with assessor attributes (ownership, use, valuation, sale history). Click a parcel for its property report.',
     category: 'property',
@@ -31,7 +31,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Sale_date', label: 'Last Sale Date' },
       { key: 'Sale_Price', label: 'Last Sale Price' },
     ],
-    minZoom: 15,
+    minZoom: 13.5,
     // Rendered from vector tiles (deck.gl); the 133 MB GeoJSON is no longer downloaded.
     // Per-parcel detail comes from storage.googleapis.com/salish-ndvi-tiles/parcels/<FID>.json
     tiles: { url: 'https://storage.googleapis.com/salish-ndvi-tiles/tiles/parcels/{z}/{x}/{y}.pbf', sourceLayer: 'parcels', minZoom: 13, maxZoom: 16 },
