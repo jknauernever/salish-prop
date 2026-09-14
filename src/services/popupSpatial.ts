@@ -97,7 +97,7 @@ export function countIntersectingBuildings(
 
 export interface NearshoreVegetationResult {
   /** Search distances the numbers were computed with (feet). */
-  distances: { kelpFt: number; eelgrassFt: number; forageFt: number; herringFt: number };
+  distances: { kelpFt: number; eelgrassFt: number; forageFt: number; potentialFt: number; herringFt: number };
   bullKelp: {
     present: boolean;
     featureCount: number;
@@ -115,12 +115,16 @@ export interface NearshoreVegetationResult {
   };
   forage: {
     present: boolean;
-    documented: { name: string; species: string; smelt: boolean; sandLance: boolean; distFt: number }[];
+    documented: { name: string; species: string; smelt: boolean; sandLance: boolean; distFt: number; shoreform?: string }[];
     potentialCount: number;
+    /** Nearest potential beach segment fronting the parcel: distance and shoreform class. */
+    potentialDistFt: number | null;
+    potentialForm: string;
   };
   herring: {
     present: boolean;
     names: string[];
+    distFt: number | null;
   };
   /** Nearest Friends geomorphic shoreform segment, if one lies within meta.shoreformFt. */
   shoreform: NearshoreParcelRecord['shoreform'] | null;
@@ -143,7 +147,7 @@ export function nearshoreFromStats(
   const f = rec?.forage;
   const h = rec?.herring ?? [];
   return {
-    distances: { kelpFt: meta.kelpFt, eelgrassFt: meta.eelgrassFt, forageFt: meta.forageFt, herringFt: meta.herringFt ?? 100 },
+    distances: { kelpFt: meta.kelpFt, eelgrassFt: meta.eelgrassFt, forageFt: meta.forageFt, potentialFt: meta.potentialFt ?? 25, herringFt: meta.herringFt ?? 100 },
     bullKelp: {
       present: !!k && k.n > 0,
       featureCount: k?.n ?? 0,
@@ -163,8 +167,10 @@ export function nearshoreFromStats(
       present: !!f && (f.documented.length > 0 || f.potentialN > 0),
       documented: f?.documented ?? [],
       potentialCount: f?.potentialN ?? 0,
+      potentialDistFt: f?.potentialDistFt ?? null,
+      potentialForm: f?.potentialForm ?? '',
     },
-    herring: { present: h.length > 0, names: h },
+    herring: { present: h.length > 0, names: h, distFt: rec?.herringDistFt ?? null },
     shoreform: rec?.shoreform ?? null,
     fish: rec?.fish ?? null,
     mods: rec?.mods ?? null,

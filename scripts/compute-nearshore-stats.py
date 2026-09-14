@@ -5,7 +5,8 @@ Precompute per-parcel proximity to Friends of the San Juans nearshore datasets.
 For every tax parcel (keyed by FID, same as ndvi_parcel_stats.json) this writes:
   kelp      merged bull kelp patches within KELP_FT of the parcel (count, acres, nearest ft)
   eelgrass  deep-water-edge eelgrass segments within EELGRASS_FT (count, length, depths, sites)
-  forage    documented spawning beaches within FORAGE_FT (names, species) + potential beach count
+  forage    documented spawning beaches within FORAGE_FT (names, species); potential beach habitat
+            only where it fronts the parcel (POTENTIAL_FT) and the parcel's own shoreform is not rocky
   herring   herring spawning grounds within HERRING_FT of the parcel
   shoreform nearest Friends geomorphic shoreform segment within SHOREFORM_FT (class + attributes)
   fish      Beamer & Fresh fish-use scores (max HRM/LRM per species) for segments within FISH_FT
@@ -40,7 +41,12 @@ DATA = os.path.join(ROOT, 'public', 'data')
 
 KELP_FT = 500
 EELGRASS_FT = 500
-FORAGE_FT = 200  # widened from 100 (2026-09-02) so parcels behind a road / community lot still read as shoreline
+FORAGE_FT = 200  # documented spawning beaches: widened from 100 (2026-09-02) so parcels behind a road / community lot still read as shoreline
+# Potential (unsurveyed) beach habitat only counts where it actually fronts the parcel, and
+# never for a parcel whose own shoreline is bedrock — Friends' rule (2026-09-14): potential
+# forage fish spawning must not include any rocky geology.
+POTENTIAL_FT = 25
+ROCKY_SHOREFORM = 'Rocky Shoreline'
 HERRING_FT = 100  # herring spawning grounds within this distance (client asked for same as forage fish)
 SHOREFORM_FT = 200  # nearest Friends shoreform segment; widened from 50 for the same reason as FORAGE_FT
 FISH_FT = 200  # Beamer & Fresh shoreline segments (fish use scores) — same reach as the shoreform
@@ -197,8 +203,15 @@ def main():
                 'sites': sites[:5],
             }
 
+        # Nearest shoreform first: it decides whether potential beach habitat may count
+        sh = hits(sf_t, sf_i, sf_g, pg, SHOREFORM_FT)
+        own_form = ''
+        if sh:
+            i0, _ = min(sh, key=lambda x: x[1])
+            own_form = str((sf[i0].get('properties') or {}).get('PIAT_shoreforms') or '').strip()
+
         dh = hits(doc_t, doc_i, doc_g, pg, FORAGE_FT)
-        ph = hits(pot_t, pot_i, pot_g, pg, FORAGE_FT)
+        ph = [] if own_form == ROCKY_SHOREFORM else hits(pot_t, pot_i, pot_g, pg, POTENTIAL_FT)
         if dh or ph:
             beaches = []
             seen = set()
@@ -215,8 +228,13 @@ def main():
                     'smelt': str(p.get('SMELT_IND') or '').strip().upper() in ('Y', 'YES', '1', 'TRUE'),
                     'sandLance': str(p.get('SAND_LANCE_IND') or '').strip().upper() in ('Y', 'YES', '1', 'TRUE'),
                     'distFt': round(d),
+                    'shoreform': str(p.get('C_Type_FOSJ') or '').strip(),
                 })
             rec['forage'] = {'documented': beaches[:6], 'potentialN': len(ph)}
+            if ph:
+                pi, pd = min(ph, key=lambda x: x[1])
+                rec['forage']['potentialDistFt'] = round(pd)
+                rec['forage']['potentialForm'] = str((pot[pi].get('properties') or {}).get('C_Type_FOSJ') or '').strip()
 
         hh = hits(her_t, her_i, her_g, pg, HERRING_FT)
         if hh:
@@ -226,8 +244,8 @@ def main():
                 if nm and nm not in names:
                     names.append(nm)
             rec['herring'] = names or ['Herring spawning ground']
+            rec['herringDistFt'] = round(min(d for _, d in hh))
 
-        sh = hits(sf_t, sf_i, sf_g, pg, SHOREFORM_FT)
         if sh:
             i, d = min(sh, key=lambda x: x[1])
             p = sf[i].get('properties') or {}
@@ -343,6 +361,7 @@ def main():
             'kelpFt': KELP_FT,
             'eelgrassFt': EELGRASS_FT,
             'forageFt': FORAGE_FT,
+            'potentialFt': POTENTIAL_FT,
             'herringFt': HERRING_FT,
             'shoreformFt': SHOREFORM_FT,
             'fishFt': FISH_FT,

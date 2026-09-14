@@ -1793,8 +1793,8 @@ function renderLivingShorelineChips(popupId: string, veg: NearshoreVegetationRes
   el.innerHTML = [
     chip(veg.bullKelp.present, veg.bullKelp.present && veg.bullKelp.distFt != null ? `Bull kelp ${veg.bullKelp.distFt} ft` : 'bull kelp'),
     chip(veg.eelgrass.present, veg.eelgrass.present && veg.eelgrass.distFt != null ? `Eelgrass ${veg.eelgrass.distFt} ft` : 'eelgrass'),
-    chip(veg.forage.present, veg.forage.present ? 'Forage fish beach' : 'forage fish beach'),
-    chip(veg.herring.present, veg.herring.present ? 'Herring ground' : 'herring ground'),
+    chip(veg.herring.present, veg.herring.present ? `Herring ${veg.herring.distFt != null && veg.herring.distFt > 0 ? `${veg.herring.distFt} ft` : 'spawning'}` : 'herring spawning'),
+    chip(veg.forage.present, veg.forage.present ? (veg.forage.documented.length ? 'Smelt & sand lance beach' : 'Potential smelt & sand lance beach') : 'smelt & sand lance beach'),
   ].join('');
   el.hidden = false;
 }
@@ -2082,6 +2082,16 @@ const EELGRASS_TEXT = `Eelgrass, a flowering marine plant, requires sandy substr
 const FORAGE_TEXT = `Surf smelt and Pacific sand lance lay their eggs in the upper beach on sand and fine gravel. These small fish feed salmon, seabirds and marine mammals, so spawning beaches are among the most important — and most easily damaged — shoreline habitats.`;
 const HERRING_TEXT = `Pacific herring spawn on eelgrass and algae in sheltered bays. Herring are a keystone forage fish, a primary food for salmon, seabirds and marine mammals.`;
 
+/** Survey codes → plain names: "SurfSmelt", "SL", "Smelt/SL". */
+function speciesLabel(code: string): string {
+  const c = code.trim().toLowerCase();
+  if (!c) return '';
+  const parts: string[] = [];
+  if (/smelt|^ss$/.test(c)) parts.push('surf smelt');
+  if (/\bsl\b|lance/.test(c)) parts.push('Pacific sand lance');
+  return parts.join(', ') || code;
+}
+
 function forageSummary(f: NearshoreVegetationResult['forage']): string {
   const docs = f.documented;
   if (docs.length > 0) {
@@ -2089,13 +2099,13 @@ function forageSummary(f: NearshoreVegetationResult['forage']): string {
     for (const d of docs) {
       if (d.smelt) species.add('surf smelt');
       if (d.sandLance) species.add('Pacific sand lance');
-      if (!d.smelt && !d.sandLance && d.species) species.add(d.species.toLowerCase());
+      if (!d.smelt && !d.sandLance && d.species) species.add(speciesLabel(d.species));
     }
     const names = docs.map(d => d.name).filter(Boolean);
     const sp = species.size > 0 ? ` (${Array.from(species).join(', ')})` : '';
     return `Documented spawning beach${docs.length > 1 ? 'es' : ''}${names.length ? `: ${esc(names.slice(0, 3).join(', '))}` : ''}${esc(sp)}`;
   }
-  if (f.potentialCount > 0) return 'Potential spawning beach — substrate suitable for surf smelt or sand lance';
+  if (f.potentialCount > 0) return `Potential spawning beach fronting the parcel${f.potentialForm ? ` (${(SHOREFORM_TYPES[f.potentialForm]?.label ?? f.potentialForm).toLowerCase()})` : ''} — substrate suitable for surf smelt or sand lance`;
   return '';
 }
 
@@ -2126,15 +2136,15 @@ function buildNearshoreEcologyCard(veg: NearshoreVegetationResult): string {
     : `deep-water edge not mapped within ${distances.eelgrassFt} ft`;
   const forageDetail = forage.present ? forageSummary(forage) : `none mapped within ${distances.forageFt} ft`;
   const herringDetail = herring.present
-    ? `${esc(herring.names.join(', '))} within ${distances.herringFt} ft`
+    ? `${esc(herring.names.join(', '))}${herring.distFt != null && herring.distFt > 0 ? `, ${herring.distFt} ft away` : ' along the parcel'}`
     : `no mapped spawning ground within ${distances.herringFt} ft`;
 
   const rows = `
     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
       ${row(hasKelp, 'Bull kelp', kelpDetail)}
       ${row(hasEelgrass, 'Eelgrass', eelDetail)}
-      ${row(forage.present, 'Forage fish spawning beach', forageDetail)}
-      ${row(herring.present, 'Herring spawning ground', herringDetail)}
+      ${row(herring.present, 'Forage fish: herring spawning', herringDetail)}
+      ${row(forage.present, 'Forage fish: smelt & sand lance beach', forageDetail)}
     </div>`;
 
   const paragraphs: string[] = [];
@@ -2477,57 +2487,65 @@ function buildNearshoreVegetationHtml(veg: NearshoreVegetationResult, mode: 'veg
     eelgrassHtml = absent(`No eelgrass deep-water edge mapped within ${distances.eelgrassFt} ft`);
   }
 
-  // --- Forage fish spawning beaches ---
-  let forageHtml = '';
-  if (forage.present) {
-    const beachRows = forage.documented.map(d => {
-      const sp = [d.smelt ? 'surf smelt' : '', d.sandLance ? 'Pacific sand lance' : ''].filter(Boolean).join(', ') || d.species;
-      return `<li style="margin:2px 0;">${esc(d.name || 'Unnamed beach')}${sp ? ` &mdash; ${esc(sp)}` : ''}${d.distFt > 0 ? ` <span style="color:${COLOR.light};">(${d.distFt} ft)</span>` : ''}</li>`;
-    }).join('');
-    forageHtml = `
-      <div style="padding:12px;background:#FDE9C8;border-radius:8px;border:1px solid #F3CF98;margin-bottom:10px;">
-        <div style="display:flex;align-items:center;margin-bottom:6px;">
-          ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#6E3D03;">Forage Fish Spawning Beach</span>
-        </div>
-        ${forage.documented.length > 0 ? `
-          <p style="${BODY};color:#6E3D03;margin-bottom:6px;">Documented spawning within ${distances.forageFt} ft of this property:</p>
-          <ul style="margin:0 0 8px 18px;padding:0;font-size:14px;color:${COLOR.dark};">${beachRows}</ul>` : `
-          <p style="${BODY};color:#6E3D03;margin-bottom:6px;">Potential spawning habitat within ${distances.forageFt} ft &mdash; beach substrate suitable for surf smelt or Pacific sand lance.</p>`}
-        ${forage.documented.length > 0 && forage.potentialCount > 0 ? `<p style="font-size:14px;color:${COLOR.mid};margin:0 0 6px;">Also mapped as potential spawning habitat.</p>` : ''}
-        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${FORAGE_TEXT}</p>
-      </div>
-    `;
-  } else {
-    forageHtml = absent(`No forage fish spawning beach mapped within ${distances.forageFt} ft`);
-  }
+  // --- Forage fish: herring (spawning grounds), then beach spawners (smelt & sand lance) ---
+  const formLabel = (code: string) => SHOREFORM_TYPES[code]?.label ?? code;
+  const reason = (text: string) => `<p style="font-size:13.5px;color:${COLOR.mid};margin:4px 0 0;line-height:1.4;">${text}</p>`;
 
-  // --- Herring spawning grounds ---
   let herringHtml = '';
   if (herring.present) {
     herringHtml = `
       <div style="padding:12px;background:#D8F0F7;border-radius:8px;border:1px solid #A9D9E8;margin-bottom:10px;">
         <div style="display:flex;align-items:center;margin-bottom:6px;">
           ${vegIcon(true)}
-          <span style="font-size:14px;font-weight:700;color:#045A6E;">Herring Spawning Ground</span>
+          <span style="font-size:14px;font-weight:700;color:#045A6E;">Herring &mdash; spawning ground</span>
         </div>
-        <p style="${BODY};color:#045A6E;margin-bottom:6px;">${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic), lies within ${distances.herringFt} ft of this property.</p>
-        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:4px;line-height:1.45;">${HERRING_TEXT}</p>
+        <p style="${BODY};color:#045A6E;margin-bottom:6px;">${esc(herring.names.join(', '))}, a mapped Pacific herring spawning ground (present or historic).</p>
+        ${reason(`Why it is here: the ground is ${herring.distFt != null && herring.distFt > 0 ? `${herring.distFt} ft from the parcel line` : 'along this parcel'} (grounds within ${distances.herringFt} ft are counted).`)}
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:6px;line-height:1.45;">${HERRING_TEXT}</p>
       </div>
     `;
   } else {
-    herringHtml = absent(`No herring spawning ground mapped within ${distances.herringFt} ft`);
+    herringHtml = absent(`Herring: no spawning ground mapped within ${distances.herringFt} ft`);
+  }
+
+  let forageHtml = '';
+  if (forage.present) {
+    const beachRows = forage.documented.map(d => {
+      const sp = [d.smelt ? 'surf smelt' : '', d.sandLance ? 'Pacific sand lance' : ''].filter(Boolean).join(', ') || speciesLabel(d.species);
+      const where = [d.shoreform ? formLabel(d.shoreform).toLowerCase() : '', d.distFt > 0 ? `${d.distFt} ft` : 'along this parcel'].filter(Boolean).join(', ');
+      return `<li style="margin:2px 0;">${esc(d.name || 'Unnamed beach')}${sp ? ` &mdash; ${esc(sp)}` : ''}${where ? ` <span style="color:${COLOR.light};">(${esc(where)})</span>` : ''}</li>`;
+    }).join('');
+    const potentialLine = forage.potentialCount > 0
+      ? `Potential habitat: ${forage.potentialForm ? `${esc(formLabel(forage.potentialForm).toLowerCase())} ` : ''}beach substrate suitable for surf smelt or Pacific sand lance ${forage.potentialDistFt != null && forage.potentialDistFt > 0 ? `${forage.potentialDistFt} ft from the parcel line` : 'along this parcel'}.`
+      : '';
+    forageHtml = `
+      <div style="padding:12px;background:#FDE9C8;border-radius:8px;border:1px solid #F3CF98;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;margin-bottom:6px;">
+          ${vegIcon(true)}
+          <span style="font-size:14px;font-weight:700;color:#6E3D03;">Beach spawning &mdash; smelt &amp; sand lance</span>
+        </div>
+        ${forage.documented.length > 0 ? `
+          <p style="${BODY};color:#6E3D03;margin-bottom:6px;">Documented spawning ${forage.documented.length === 1 ? 'beach' : 'beaches'}:</p>
+          <ul style="margin:0 0 6px 18px;padding:0;font-size:14px;color:${COLOR.dark};">${beachRows}</ul>
+          ${reason(`Why it is here: surveyed spawning beaches within ${distances.forageFt} ft of the parcel line are counted.`)}` : ''}
+        ${potentialLine ? `<p style="${BODY};color:#6E3D03;margin:${forage.documented.length ? '8px' : '0'} 0 0;">${potentialLine}</p>
+          ${reason(`Why it is here: potential habitat counts only where it fronts the parcel (within ${distances.potentialFt} ft) and never on rocky shoreline.`)}` : ''}
+        <p style="font-size:14.5px;color:${COLOR.mid};margin-top:6px;line-height:1.45;">${FORAGE_TEXT}</p>
+      </div>
+    `;
+  } else {
+    forageHtml = absent(`Beach spawning: no surf smelt or sand lance beach mapped within ${distances.forageFt} ft, and no potential habitat fronting this parcel`);
   }
 
   if (mode === 'spawn') {
     return `
     <div style="${CARD}">
-      ${sectionHeading('Spawning Habitat')}
+      ${sectionHeading('Forage Fish Spawning')}
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">
-        Friends of the San Juans and WDFW survey data: forage fish spawning beaches within ${distances.forageFt} ft of the property and herring spawning grounds within ${distances.herringFt} ft.
+        Friends of the San Juans and WDFW survey data. Herring spawn on eelgrass and algae in sheltered bays; surf smelt and Pacific sand lance spawn on the upper beach.
       </p>
-      ${forageHtml}
       ${herringHtml}
+      ${forageHtml}
     </div>
   `;
   }

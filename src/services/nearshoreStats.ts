@@ -22,10 +22,14 @@ export interface NearshoreParcelRecord {
     sites: string[];
   };
   forage?: {
-    documented: { name: string; species: string; smelt: boolean; sandLance: boolean; distFt: number }[];
+    documented: { name: string; species: string; smelt: boolean; sandLance: boolean; distFt: number; shoreform?: string }[];
+    /** Potential beach segments fronting the parcel (within meta.potentialFt; never on rocky shoreline). */
     potentialN: number;
+    potentialDistFt?: number;
+    potentialForm?: string;
   };
   herring?: string[];
+  herringDistFt?: number;
   shoreform?: {
     code: string;
     unitId: string;
@@ -63,6 +67,8 @@ export interface NearshoreStatsMeta {
   kelpFt: number;
   eelgrassFt: number;
   forageFt: number;
+  /** Potential beach habitat must front the parcel within this distance (absent in older files). */
+  potentialFt?: number;
   herringFt: number;
   shoreformFt?: number;
   fishFt?: number;

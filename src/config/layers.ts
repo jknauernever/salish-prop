@@ -537,7 +537,7 @@ export const layerConfigs: LayerConfig[] = [
   // -- Habitat --
   {
     id: 'friends-herring-spawning',
-    name: 'Herring Spawning Grounds',
+    name: 'Forage Fish Spawning: Herring',
     description: 'Areas (present or historic) where Pacific Herring spawn (WDFW)',
     category: 'friends-data',
     source: '/data/friends-herring-spawning.json',
@@ -618,7 +618,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-potential-forage-spawning',
-    name: 'Potential Forage Fish Spawning',
+    name: 'Forage Fish Beach Spawning: Smelt & Sand Lance (potential)',
     description: 'Beach substrate suitable to support spawning by Pacific sand lance or surf smelt',
     category: 'friends-data',
     source: '/data/friends-potential-forage-spawning.json',
@@ -639,7 +639,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-documented-forage-spawning',
-    name: 'Documented Forage Fish Spawning',
+    name: 'Forage Fish Beach Spawning: Smelt & Sand Lance (documented)',
     description: 'Beaches where Pacific sand lance, surf smelt, or both have been found spawning',
     category: 'friends-data',
     source: '/data/friends-documented-forage-spawning.json',
