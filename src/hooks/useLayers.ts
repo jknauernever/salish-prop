@@ -84,6 +84,37 @@ function lineLength(coords: number[][]): number {
  * markerVisibleAtZoom), so a layer with hundreds of icons doesn't carpet the
  * county at low zoom.
  */
+/**
+ * A point guaranteed to be inside a ring: scan the horizontal line through
+ * the ring's vertical middle, and take the midpoint of the widest span that
+ * lies inside. (The vertex centroid of a crescent-shaped kelp bed wrapped
+ * around a headland lands on the rock, not the kelp.)
+ */
+function interiorPoint(rings: number[][][]): [number, number] {
+  const ring = rings[0];
+  let minY = Infinity, maxY = -Infinity;
+  for (const [, y] of ring) { if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  const cy = (minY + maxY) / 2;
+  // Crossings of every ring (holes included) so the even-odd spans are truly inside
+  const xs: number[] = [];
+  for (const r of rings) {
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [x1, y1] = r[j], [x2, y2] = r[i];
+      if ((y1 <= cy) !== (y2 <= cy)) xs.push(x1 + ((cy - y1) * (x2 - x1)) / (y2 - y1));
+    }
+  }
+  xs.sort((a, b) => a - b);
+  let bestX = NaN, bestW = -1;
+  for (let k = 0; k + 1 < xs.length; k += 2) {
+    const w = xs[k + 1] - xs[k];
+    if (w > bestW) { bestW = w; bestX = (xs[k] + xs[k + 1]) / 2; }
+  }
+  if (Number.isFinite(bestX)) return [bestX, cy];
+  let sx = 0, sy = 0;
+  for (const [x, y] of ring) { sx += x; sy += y; }
+  return [sx / ring.length, sy / ring.length];
+}
+
 /** Shoelace area of a ring in degree² — only used to rank patches against each other. */
 function ringArea(ring: number[][]): number {
   let a = 0;
@@ -103,17 +134,16 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection, minAcres = 0): G
       // One marker per polygon (largest part of a multipolygon), at the outer
       // ring's vertex centroid; ranked by area so big patches win the thinning.
       const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
-      let best: { ring: number[][]; area: number } | null = null;
+      let best: { rings: number[][][]; area: number } | null = null;
       for (const rings of polys) {
         const ring = rings[0];
         if (!ring?.length) continue;
         const area = Math.abs(ringArea(ring));
-        if (!best || area > best.area) best = { ring, area };
+        if (!best || area > best.area) best = { rings, area };
       }
       if (!best) continue;
-      let sx = 0, sy = 0;
-      for (const [x, y] of best.ring) { sx += x; sy += y; }
-      points.push({ lng: sx / best.ring.length, lat: sy / best.ring.length, len: best.area, props: f.properties ?? {} });
+      const [lng, lat] = interiorPoint(best.rings);
+      points.push({ lng, lat, len: best.area, props: f.properties ?? {} });
       continue;
     }
     let coordArrays: number[][][];
