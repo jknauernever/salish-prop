@@ -3,9 +3,10 @@
  *
  * Slots, top to bottom: photo (album with ‹ › arrows when there is more than
  * one), header (layer eyebrow in the layer's map color, title, subtitle),
- * key facts, "why it matters" story block, "what you can do" action block,
- * chips, an optional custom body (the parcel report's tabs), the all-details
- * table, and a footer with source credit and quiet actions.
+ * chips (the facts that distinguish this feature — first thing after the
+ * title), key numbers, "why it matters" story block, "what you can do"
+ * action block, an optional custom body (the parcel report's tabs), the
+ * all-details table, and a footer with source credit and quiet actions.
  *
  * Styling lives in `src/index.css` under `.ssx-*` (Friends of the San Juans'
  * palette: sea blue, driftwood, kelp lime, chartreuse). This module only
@@ -180,10 +181,10 @@ export function buildPopupFrame(o: PopupFrameOptions): string {
       <div class="ssx-ttl"${o.titleId ? ` id="${escapeHtml(o.titleId)}"` : ''}>${escapeHtml(o.title)}</div>
       ${o.subtitle ? `<div class="ssx-sub">${escapeHtml(o.subtitle)}</div>` : ''}
     </div>
+    ${chipsHtml}
     ${statsHtml}
     ${o.story ? blockHtml('ssx-story', o.story) : ''}
     ${o.action ? blockHtml('ssx-act', o.action) : ''}
-    ${chipsHtml}
     ${o.body ?? ''}
     ${detailsHtml}
     <div class="ssx-foot">${src}${btns}</div>

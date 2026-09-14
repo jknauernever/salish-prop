@@ -363,7 +363,7 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
     action: ACTIONS.shoreline,
   },
   'friends-armor-change-2019': {
-    title: () => 'Armor change, 2009 to 2019',
+    title: p => (str(p.Year_originalArmorMapping) === '2019' ? 'New armor since 2009' : 'Armor mapped in 2009'),
     subtitle: p => join(str(p.FSJ_2012shoreform), str(p.FSJ_2012shoreformID) ? `unit ${str(p.FSJ_2012shoreformID)}` : undefined),
     chips: p => {
       const chips: PopupChip[] = [];
@@ -371,10 +371,19 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       if (YN(p.ArmorContainsConcrete)) chips.push({ label: 'Concrete' });
       if (YN(p.ArmorContainsWood)) chips.push({ label: 'Wood' });
       if (YN(p.ArmorContainsCreosotesWood)) chips.push({ label: 'Creosote wood', tone: 'warn' });
-      const c = str(p.ConditionArmor);
-      if (c) chips.push({ label: `Condition: ${c}` });
+      const c = str(p.ConditionArmor).toLowerCase();
+      if (c === 'o.k.') chips.push({ label: 'Condition OK', tone: 'on' });
+      else if (c === 'functionalbutfailing') chips.push({ label: 'Functional but failing', tone: 'warn' });
+      else if (c === 'derelict') chips.push({ label: 'Derelict', tone: 'warn' });
+      if (str(p.TidalElev_Armor) === '-HW') chips.push({ label: 'Toe below the high water line', tone: 'warn' });
       return chips;
     },
+    story: p => ({
+      kicker: 'Since 2009',
+      html: str(p.Year_originalArmorMapping) === '2019'
+        ? '<p>Not in the 2009 shoreline inventory; first identified in the 2019 countywide armor survey. One of 298 segments added between the two surveys.</p>'
+        : '<p>Mapped in the 2009 shoreline inventory and still in place in the 2019 countywide armor survey.</p>',
+    }),
     action: ACTIONS.shoreline,
   },
   'friends-projects': {
