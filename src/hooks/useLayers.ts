@@ -91,12 +91,15 @@ function ringArea(ring: number[][]): number {
   return a / 2;
 }
 
-function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+function createMidpointMarkers(data: GeoJSON.FeatureCollection, minAcres = 0): GeoJSON.FeatureCollection {
   const points: { lng: number; lat: number; len: number; props: GeoJSON.GeoJsonProperties }[] = [];
   for (const f of data.features) {
     const geom = f.geometry;
     if (!geom) continue;
     if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') {
+      // Slivers (merged-raster remnants) get no pin: half the kelp patches are under 0.03 ac
+      const acres = Number((f.properties as Record<string, unknown> | null)?.acres);
+      if (minAcres > 0 && Number.isFinite(acres) && acres < minAcres) continue;
       // One marker per polygon (largest part of a multipolygon), at the outer
       // ring's vertex centroid; ranked by area so big patches win the thinning.
       const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
@@ -1071,7 +1074,7 @@ export function useLayers(
               f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
             );
             if (hasLines) {
-              const midpoints = createMidpointMarkers(data);
+              const midpoints = createMidpointMarkers(data, config.markerMinAcres ?? 0);
               const markerLayer = new google.maps.Data({ map });
               markerLayer.addGeoJson(midpoints);
               // A pin click opens the same popup as clicking the line it marks

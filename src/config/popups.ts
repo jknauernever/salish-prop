@@ -220,7 +220,9 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
     stats: p => {
       const ac = num(p.acres);
       return [
-        ...(ac != null ? [{ value: fmtAcresValue(ac), unit: 'ac', label: 'Canopy area' }] : []),
+        ...(ac != null
+          ? [ac < 0.05 && num(p.sqft) ? { value: fmtInt(num(p.sqft)!), unit: 'sq ft', label: 'Canopy area' } : { value: fmtAcresValue(ac), unit: 'ac', label: 'Canopy area' }]
+          : []),
         { value: '2007', label: 'Survey year' },
       ];
     },

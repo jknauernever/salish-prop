@@ -103,6 +103,8 @@ export interface LayerConfig {
   markerIconByProperty?: { property: string; icons: Record<string, string> };
   /** Multiplier on the standard 24×26 px marker size (e.g. 2 for a hero layer). */
   markerScale?: number;
+  /** Polygon layers: no marker for features whose `acres` property is below this. */
+  markerMinAcres?: number;
   /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see

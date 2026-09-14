@@ -638,6 +638,7 @@ export const layerConfigs: LayerConfig[] = [
     // Clickable pins on the larger patches (thinned by zoom like the eelgrass pins),
     // so kelp reads as a feature you can open, not just a texture
     markerIcon: MARKER_ICONS.kelp,
+    markerMinAcres: 0.05, // ~2,200 sq ft; skips the sliver patches left over from merging raster cells
     style: {
       fillColor: '#FFF4CC',
       fillOpacity: 0.01,
