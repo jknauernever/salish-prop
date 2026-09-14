@@ -966,7 +966,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-projects',
-    name: "Friends' Projects",
+    name: "Friends habitat restoration projects",
     description: 'Restoration, riparian, and in/over-water structure projects by Friends of the San Juans',
     category: 'friends-data',
     source: '/data/friends-projects.geojson',
