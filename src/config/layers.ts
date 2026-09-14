@@ -724,7 +724,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorMaterial', label: 'Material' },
       { key: 'ArmorCondition', label: 'Condition' },
     ],
-    standardMessage: 'Hard armor — bulkheads, riprap, and seawalls — cuts a beach off from the bluff that feeds it. Waves reflect off the wall and scour sand and gravel from the upper beach, the bank stops supplying new sediment, and the drift logs, wrack, and shade that forage fish eggs and young salmon depend on disappear. Armor built below the high tide line buries spawning habitat outright. Setting armor back, removing it, or using soft-shore techniques lets the beach rebuild.',
+    standardMessage: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
   // -- Shoreline Infrastructure --
@@ -932,7 +932,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorContainsCreosotesWood', label: 'Contains Creosote' },
       { key: 'TidalElev_Armor', label: 'Tidal Elevation' },
     ],
-    standardMessage: 'Hard armor — bulkheads, riprap, and seawalls — cuts a beach off from the bluff that feeds it. Waves reflect off the wall and scour sand and gravel from the upper beach, the bank stops supplying new sediment, and the drift logs, wrack, and shade that forage fish eggs and young salmon depend on disappear. Armor built below the high tide line buries spawning habitat outright. Setting armor back, removing it, or using soft-shore techniques lets the beach rebuild.',
+    standardMessage: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
 
