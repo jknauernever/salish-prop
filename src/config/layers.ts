@@ -635,6 +635,9 @@ export const layerConfigs: LayerConfig[] = [
     // Rendered by KelpOverlay (chart-style kelp squiggles); this Data-layer
     // style is transparent and only serves as the click target for popups.
     renderer: 'kelp-squiggle',
+    // Clickable pins on the larger patches (thinned by zoom like the eelgrass pins),
+    // so kelp reads as a feature you can open, not just a texture
+    markerIcon: MARKER_ICONS.kelp,
     style: {
       fillColor: '#FFF4CC',
       fillOpacity: 0.01,

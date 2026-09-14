@@ -84,11 +84,35 @@ function lineLength(coords: number[][]): number {
  * markerVisibleAtZoom), so a layer with hundreds of icons doesn't carpet the
  * county at low zoom.
  */
+/** Shoelace area of a ring in degree² — only used to rank patches against each other. */
+function ringArea(ring: number[][]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+  return a / 2;
+}
+
 function createMidpointMarkers(data: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
   const points: { lng: number; lat: number; len: number; props: GeoJSON.GeoJsonProperties }[] = [];
   for (const f of data.features) {
     const geom = f.geometry;
     if (!geom) continue;
+    if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') {
+      // One marker per polygon (largest part of a multipolygon), at the outer
+      // ring's vertex centroid; ranked by area so big patches win the thinning.
+      const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+      let best: { ring: number[][]; area: number } | null = null;
+      for (const rings of polys) {
+        const ring = rings[0];
+        if (!ring?.length) continue;
+        const area = Math.abs(ringArea(ring));
+        if (!best || area > best.area) best = { ring, area };
+      }
+      if (!best) continue;
+      let sx = 0, sy = 0;
+      for (const [x, y] of best.ring) { sx += x; sy += y; }
+      points.push({ lng: sx / best.ring.length, lat: sy / best.ring.length, len: best.area, props: f.properties ?? {} });
+      continue;
+    }
     let coordArrays: number[][][];
     if (geom.type === 'LineString') {
       coordArrays = [(geom as GeoJSON.LineString).coordinates];
@@ -1039,10 +1063,12 @@ export function useLayers(
             setTimeout(() => google.maps.event.trigger(map, 'zoom_changed'), 0);
           }
 
-          // For LineString layers with a markerIcon, add midpoint markers
+          // For line and polygon layers with a markerIcon, add clickable
+          // midpoint / centroid markers (thinned by zoom, see selectMarkersForZoom)
           if (config.markerIcon) {
             const hasLines = data.features.some(f =>
-              f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString'
+              f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString' ||
+              f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
             );
             if (hasLines) {
               const midpoints = createMidpointMarkers(data);
