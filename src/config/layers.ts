@@ -724,7 +724,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorMaterial', label: 'Material' },
       { key: 'ArmorCondition', label: 'Condition' },
     ],
-    standardMessage: 'Shoreline armoring — bulkheads, riprap, sea walls, and bank stabilization installed to control erosion (or sediment supply) from the bank. Armor disrupts natural sediment processes and can eliminate forage fish spawning habitat.',
+    standardMessage: 'Hard armor — bulkheads, riprap, and seawalls — cuts a beach off from the bluff that feeds it. Waves reflect off the wall and scour sand and gravel from the upper beach, the bank stops supplying new sediment, and the drift logs, wrack, and shade that forage fish eggs and young salmon depend on disappear. Armor built below the high tide line buries spawning habitat outright. Setting armor back, removing it, or using soft-shore techniques lets the beach rebuild.',
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
   // -- Shoreline Infrastructure --
@@ -932,7 +932,7 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorContainsCreosotesWood', label: 'Contains Creosote' },
       { key: 'TidalElev_Armor', label: 'Tidal Elevation' },
     ],
-    standardMessage: 'Shoreline armor change analysis — amber segments were mapped in the 2009 shoreline inventory; red segments are armor newly identified in the 2019 survey.',
+    standardMessage: 'Hard armor — bulkheads, riprap, and seawalls — cuts a beach off from the bluff that feeds it. Waves reflect off the wall and scour sand and gravel from the upper beach, the bank stops supplying new sediment, and the drift logs, wrack, and shade that forage fish eggs and young salmon depend on disappear. Armor built below the high tide line buries spawning habitat outright. Setting armor back, removing it, or using soft-shore techniques lets the beach rebuild.',
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
 

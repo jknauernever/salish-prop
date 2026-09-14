@@ -340,30 +340,18 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       if (YN(p.FB)) chips.push({ label: 'On a feeder bluff', tone: 'warn' });
       if (YN(p.Doc_FF)) chips.push({ label: 'On a forage fish spawning beach', tone: 'warn' });
       if (YN(p.Creosote)) chips.push({ label: 'Creosote', tone: 'warn' });
-      return chips;
-    },
-    story: p => {
       const change = str(p.ArmorNEW).toLowerCase();
-      const had2009 = YN(p.SurveyData_2009);
-      let line: string;
-      if (change === 'y') line = 'New since the 2009 survey.';
-      else if (change === 'increase') line = 'Enlarged since the 2009 survey.';
-      else if (change === 'removed') line = 'Removed since 2009.';
-      else if (had2009) line = 'Present in the 2009 survey and unchanged in 2019.';
-      else line = 'First mapped in the 2019 survey; not covered by the 2009 inventory.';
-      const notes: Record<string, string> = {
-        'low quality methods but not degraded.': 'Built with low-quality methods but not degraded.',
-        'low quality methods or materials.': 'Built with low-quality methods or materials.',
-        'in between condition': 'In-between condition.',
-      };
-      const raw = str(p.ArmorCond_unknown_DESC);
-      const why = raw && raw !== 'None' ? (notes[raw.toLowerCase()] ?? raw) : '';
-      return { kicker: 'Since 2009', html: `<p>${line}${why ? ` ${why}` : ''}</p>` };
+      if (change === 'y') chips.push({ label: 'New since 2009', tone: 'warn' });
+      else if (change === 'increase') chips.push({ label: 'Enlarged since 2009', tone: 'warn' });
+      else if (change === 'removed') chips.push({ label: 'Removed since 2009', tone: 'on' });
+      else if (YN(p.SurveyData_2009)) chips.push({ label: 'Unchanged since 2009' });
+      if (/low quality/i.test(str(p.ArmorCond_unknown_DESC))) chips.push({ label: 'Low-quality construction' });
+      return chips;
     },
     action: ACTIONS.shoreline,
   },
   'friends-armor-change-2019': {
-    title: p => (str(p.Year_originalArmorMapping) === '2019' ? 'New armor since 2009' : 'Armor mapped in 2009'),
+    title: () => 'Shoreline armor',
     subtitle: p => join(str(p.FSJ_2012shoreform), str(p.FSJ_2012shoreformID) ? `unit ${str(p.FSJ_2012shoreformID)}` : undefined),
     chips: p => {
       const chips: PopupChip[] = [];
@@ -376,14 +364,9 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       else if (c === 'functionalbutfailing') chips.push({ label: 'Functional but failing', tone: 'warn' });
       else if (c === 'derelict') chips.push({ label: 'Derelict', tone: 'warn' });
       if (str(p.TidalElev_Armor) === '-HW') chips.push({ label: 'Toe below the high water line', tone: 'warn' });
+      chips.unshift(str(p.Year_originalArmorMapping) === '2019' ? { label: 'New since 2009', tone: 'warn' } : { label: 'Mapped in 2009' });
       return chips;
     },
-    story: p => ({
-      kicker: 'Since 2009',
-      html: str(p.Year_originalArmorMapping) === '2019'
-        ? '<p>Not in the 2009 shoreline inventory; first identified in the 2019 countywide armor survey. One of 298 segments added between the two surveys.</p>'
-        : '<p>Mapped in the 2009 shoreline inventory and still in place in the 2019 countywide armor survey.</p>',
-    }),
     action: ACTIONS.shoreline,
   },
   'friends-projects': {
