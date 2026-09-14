@@ -1804,7 +1804,7 @@ function renderLivingShorelineChips(popupId: string, veg: NearshoreVegetationRes
  * POPUP_SPECS entry decides the title, facts, chips, story, and action;
  * everything else comes from the layer config and the feature's fields.
  */
-/** "From Friends" block: related articles from sanjuans.org, with the best one's summary. */
+/** "Related content from Friends" block: related articles from sanjuans.org, with the best one's summary. */
 function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): string {
   if (!articles.length) return '';
   const rows = articles.map((a, i) => `
@@ -1816,7 +1816,7 @@ function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): strin
         ${i === 0 && a.summary && a.id !== skipSummaryId ? `<span class="ssx-art-sum">${escHtml(a.summary)}</span>` : ''}
       </span>
     </a>`).join('');
-  return `<div class="ssx-from"><div class="ssx-k">From Friends of the San Juans</div>${rows}</div>`;
+  return `<div class="ssx-from"><div class="ssx-k">Related content from Friends of the San Juans</div>${rows}</div>`;
 }
 
 export function buildFeaturePopupHtml(
@@ -1835,7 +1835,7 @@ export function buildFeaturePopupHtml(
   const island = String(props.ISLAND ?? props.Island ?? props.island ?? '');
 
   // Friends' website content: the feature's own article (projects) or the
-  // best articles for this layer supply photos and a "From Friends" list.
+  // best articles for this layer supply photos and a "Related content from Friends" list.
   const idx = getFriendsContentSync();
   const own = config.id === 'friends-projects'
     ? (articleForUrl(idx, typeof props.LINK === 'string' ? props.LINK : undefined) ?? articleForProject(idx, String(props.NAME ?? ''), island))
