@@ -350,7 +350,7 @@ Building count and total footprint sq ft. Lists individual buildings with their 
 - **NDVI mean** for the parcel
 - **Percentile circle** — compares parcel greenness to all other parcels on the same island (Tax_Area field)
 - **Rating label** — Well Below Average (0–9%), Below Average (10–24%), Average (25–49%), Above Average (50–74%), Well Above Average (75–89%), Among the Greenest (90–100%)
-- **Land cover breakdown** — stacked bar chart: Water (blue), Bare/Paved (red), Grass/shrubs/open woodland (orange, NDVI 0.15–0.3), Tree canopy/forest (green, NDVI > 0.3). Breaks are calibrated to the October 2023 NAIP scene, where mature conifer canopy reads ~0.3–0.45 and the county-wide parcel maximum is 0.41; the original 0.5 / 0.7 "Trees" / "Dense Forest" bands never occur in it.
+- **Land cover breakdown** — stacked bar chart of six classes with NDVI breaks calibrated to the October 2023 NAIP scene against NLCD 2021 land cover (`scripts/ee-ndvi-parcel-stats.py`): Water < −0.1, Bare/Paved −0.1–0.08, Grass/pasture/lawn 0.08–0.20, Shrubs/open woodland 0.20–0.29, Tree canopy 0.29–0.35, Dense forest > 0.35. Autumn light compresses NDVI here (evergreen forest median 0.32), so textbook 0.5 / 0.7 tree breaks never occur.
 
 ---
 
@@ -724,7 +724,7 @@ If you want to test against a different password, deploy the function with a new
 | > 0.75 | `#006837` (dark green) | Very dense |
 
 ### Per-Parcel Statistics (`ndvi_parcel_stats.json`)
-Pre-computed from NAIP imagery. Each of the 19,020 parcels has: `mean`, `stdDev`, `water`, `bare`, `sparse`, `moderate`, `dense`, `veryDense` (all as percentages of parcel area).
+Computed by `scripts/ee-ndvi-parcel-stats.py` (Earth Engine `reduceRegions` over the NAIP 2023 mosaic at 2 m, batches of 250 parcels, ~3 min). Each of the 19,020 parcels has: `mean`, `stdDev`, `water`, `bare`, `sparse`, `moderate`, `dense`, `veryDense` (percentages of parcel area; breaks in the script header).
 
 ---
 
