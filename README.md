@@ -350,7 +350,7 @@ Building count and total footprint sq ft. Lists individual buildings with their 
 - **NDVI mean** for the parcel
 - **Percentile circle** — compares parcel greenness to all other parcels on the same island (Tax_Area field)
 - **Rating label** — Well Below Average (0–9%), Below Average (10–24%), Average (25–49%), Above Average (50–74%), Well Above Average (75–89%), Among the Greenest (90–100%)
-- **Land cover breakdown** — stacked bar chart: Water (blue), Bare/Paved (red), Grass/Low Plants (orange), Shrubs/Garden (yellow-green), Trees (green), Dense Forest (dark green)
+- **Land cover breakdown** — stacked bar chart: Water (blue), Bare/Paved (red), Grass/shrubs/open woodland (orange, NDVI 0.15–0.3), Tree canopy/forest (green, NDVI > 0.3). Breaks are calibrated to the October 2023 NAIP scene, where mature conifer canopy reads ~0.3–0.45 and the county-wide parcel maximum is 0.41; the original 0.5 / 0.7 "Trees" / "Dense Forest" bands never occur in it.
 
 ---
 

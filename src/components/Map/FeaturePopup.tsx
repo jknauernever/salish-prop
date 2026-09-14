@@ -524,8 +524,8 @@ function openNdviInfoWindow() {
   </ul>
   <p>NAIP imagery is collected by aircraft flying at relatively low altitude, producing much sharper images than satellite sensors like Landsat (30 m) or Sentinel-2 (10 m). This allows the Salish Sea Explorer to show vegetation detail at the individual-parcel level.</p>
 
-  <h3>Why October Imagery?</h3>
-  <p>The San Juan Islands were captured in early October 2023. While this is late in the growing season, coniferous trees (Douglas fir, western red cedar, shore pine) — the dominant tree species in the San Juans — retain their needles year-round and show strong NDVI values. Deciduous species may show slightly lower values than a mid-summer capture would produce, but the overall vegetation structure is well-represented.</p>
+  <h3>Why October Imagery, and Why the Numbers Run Low</h3>
+  <p>The San Juan Islands were captured in early October 2023. Coniferous trees (Douglas fir, western red cedar, shore pine) — the dominant tree species in the San Juans — keep their needles year-round, so forest structure is well represented. But autumn light and low sun angles compress NDVI in this scene: mature conifer canopy reads around <strong>0.3 to 0.45</strong> rather than the 0.6 to 0.8 a mid-summer satellite scene would give, and the highest parcel-average NDVI anywhere in the county is 0.41. The land-cover classes below are therefore calibrated to this scene, not to the textbook ranges above. Comparisons <em>between</em> parcels (the island percentile) are unaffected.</p>
 
   <h2>How the Greenery Score Is Calculated</h2>
 
@@ -533,15 +533,13 @@ function openNdviInfoWindow() {
   <p>The raw NAIP near-infrared and red bands are used to compute NDVI for every 0.6 m pixel across San Juan County. The result is a continuous raster surface where each pixel has a value between \u22121 and +1.</p>
 
   <h3>Step 2: Classify Land Cover</h3>
-  <p>Each pixel is classified into one of six land cover categories based on its NDVI value:</p>
+  <p>Each pixel is classified into a land cover category by its NDVI value, with the breaks set for this October scene:</p>
   <table>
     <tr><th>Class</th><th>NDVI Range</th><th>Typical Cover</th></tr>
     <tr><td><span class="swatch" style="background:#3B82F6;"></span>Water</td><td>&lt; 0</td><td>Open water, tidal pools</td></tr>
     <tr><td><span class="swatch" style="background:#d73027;"></span>Bare / Paved</td><td>0 &ndash; 0.15</td><td>Rooftops, driveways, bare soil, rock</td></tr>
-    <tr><td><span class="swatch" style="background:#fc8d59;"></span>Grass / Low Plants</td><td>0.15 &ndash; 0.3</td><td>Lawns, dry grass, sparse groundcover</td></tr>
-    <tr><td><span class="swatch" style="background:#a3d977;"></span>Shrubs / Garden</td><td>0.3 &ndash; 0.5</td><td>Ornamental plantings, native shrubs, young trees</td></tr>
-    <tr><td><span class="swatch" style="background:#66bd63;"></span>Trees</td><td>0.5 &ndash; 0.7</td><td>Established tree canopy, mixed woodland</td></tr>
-    <tr><td><span class="swatch" style="background:#006837;"></span>Dense Forest</td><td>&gt; 0.7</td><td>Mature coniferous or dense mixed forest</td></tr>
+    <tr><td><span class="swatch" style="background:#fc8d59;"></span>Grass, shrubs, open woodland</td><td>0.15 &ndash; 0.3</td><td>Lawns, pasture, dry grass, shrubs, scattered trees</td></tr>
+    <tr><td><span class="swatch" style="background:#1F7A3A;"></span>Tree canopy / forest</td><td>&gt; 0.3</td><td>Established tree canopy, conifer and mixed forest</td></tr>
   </table>
 
   <h3>Step 3: Compute Parcel-Level Statistics</h3>
@@ -549,7 +547,7 @@ function openNdviInfoWindow() {
   <ul>
     <li><strong>Mean NDVI</strong> — the average greenness across the entire parcel</li>
     <li><strong>Standard deviation</strong> — how variable the vegetation is (a high value means a mix of open and forested areas)</li>
-    <li><strong>Land cover percentages</strong> — what fraction of the parcel falls into each of the six classes above</li>
+    <li><strong>Land cover percentages</strong> — what fraction of the parcel falls into each of the classes above</li>
   </ul>
 
   <h3>Step 4: Island Percentile Ranking</h3>
@@ -2291,13 +2289,15 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
   const hasClasses = (water + bare + sparse + moderate + dense + veryDense) > 0;
   let classBreakdown = '';
   if (hasClasses) {
+    // Labels calibrated to the October 2023 NAIP scene: autumn conifer canopy in
+    // this imagery sits around NDVI 0.3–0.45 (the county-wide parcel maximum is
+    // 0.41), so 0.3 and up is tree canopy, not "shrubs". The two highest bands
+    // never occur in this scene and are folded into the canopy class.
     const classes = [
       { label: 'Water', pct: water, color: '#3B82F6' },
       { label: 'Bare / Paved', pct: bare, color: '#d73027' },
-      { label: 'Grass / Low Plants', pct: sparse, color: '#fc8d59' },
-      { label: 'Shrubs / Garden', pct: moderate, color: '#a3d977' },
-      { label: 'Trees', pct: dense, color: '#66bd63' },
-      { label: 'Dense Forest', pct: veryDense, color: '#006837' },
+      { label: 'Grass, shrubs, open woodland', pct: sparse, color: '#fc8d59' },
+      { label: 'Tree canopy / forest', pct: moderate + dense + veryDense, color: '#1F7A3A' },
     ].filter(c => c.pct >= 1);
 
     if (classes.length > 0) {
