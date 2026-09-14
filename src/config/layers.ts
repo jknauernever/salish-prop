@@ -603,6 +603,7 @@ export const layerConfigs: LayerConfig[] = [
     // zoom 13 (KelpOverlay, 'school' style).
     renderer: 'herring-school',
     style: {
+      zIndex: 1,
       fillColor: '#8B5CF6',
       fillOpacity: 0.3,
       strokeColor: '#6D28D9', // violet — no clash with cream kelp or orange parcels
@@ -667,6 +668,7 @@ export const layerConfigs: LayerConfig[] = [
     visible: true, // on by default — the client wants nearshore habitat visible while browsing
     markerIcon: MARKER_ICONS.eelgrass,
     style: {
+      zIndex: 2,
       fillColor: '#20B2AA',
       fillOpacity: 0,
       strokeColor: '#20B2AA',
@@ -697,7 +699,9 @@ export const layerConfigs: LayerConfig[] = [
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
     minZoom: 12,
     renderer: 'beach-school-outline',
+    haloByZoom: { zoomWide: 15, weightWide: 8, zoomNarrow: 18, weightNarrow: 5 }, // band slims once the beach itself is visible
     style: {
+      zIndex: 3,
       fillColor: '#F9A8D4',
       fillOpacity: 0,
       strokeColor: '#F9A8D4', // light pink — same family as documented, lighter = "potential"
@@ -725,7 +729,9 @@ export const layerConfigs: LayerConfig[] = [
     minZoom: 12,
     // Wide translucent band with a drifting school of solid white fish (KelpOverlay 'beach-solid')
     renderer: 'beach-school',
+    haloByZoom: { zoomWide: 15, weightWide: 10, zoomNarrow: 18, weightNarrow: 6 },
     style: {
+      zIndex: 4,
       fillColor: '#E11D74',
       fillOpacity: 0,
       strokeColor: '#E11D74', // raspberry — distinct from the orange parcel lines
@@ -759,6 +765,7 @@ export const layerConfigs: LayerConfig[] = [
     minZoom: 13,
     hitStrokeWeight: 14, // the colored line is 3 px; give it a forgiving click target
     style: {
+      zIndex: 5,
       fillColor: '#708090',
       fillOpacity: 0,
       strokeColor: '#708090',
@@ -802,6 +809,7 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-armor.json',
     visible: false,
     style: {
+      zIndex: 7,
       fillColor: '#8B0000',
       fillOpacity: 0,
       strokeColor: '#8B0000',
@@ -829,6 +837,7 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-groins.json',
     visible: false,
     style: {
+      zIndex: 8,
       fillColor: '#8B4513',
       fillOpacity: 1,
       strokeColor: '#8B4513',
@@ -1009,6 +1018,7 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-armor-change-2019.json',
     visible: false,
     style: {
+      zIndex: 6,
       strokeColor: '#DC2626',
       strokeWeight: 2.5,
       strokeOpacity: 0.8,

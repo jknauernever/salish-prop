@@ -3,10 +3,12 @@ import * as turf from '@turf/turf';
 import { useMap } from '../../hooks/useMap';
 import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHtml as escHtml } from './popupFrame';
 import { MobileSheetWindow, type PopupHost } from './popupSheet';
+import { featuresNear, type HitCandidate } from '../../services/hitTest';
+import { getDeckRenderedFeatures } from './DeckLayers';
 import { isMobileNow } from '../../hooks/useIsMobile';
 import type { PopupPhoto, PopupStat } from './popupFrame';
 import { POPUP_SPECS, LAYER_PHOTOS, LAYER_PHOTOS_MORE, PHOTO_SUBJECTS, PHOTO_EXCLUDE, fallbackTitle, fmtAcresValue } from '../../config/popups';
-import type { LayerState } from '../../types';
+import type { LayerState, LayerConfig } from '../../types';
 import { extractAllFeatureProperties, getFeatureLabel } from '../../utils/geojson';
 import { reverseGeocode } from '../../services/geocode';
 import { countIntersectingBuildings, nearshoreFromStats } from '../../services/popupSpatial';
@@ -238,22 +240,47 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
         const fields = extractAllFeatureProperties(geoFeature, layer.config.popupFields);
         const isParcel = layer.config.id === 'tax-parcels';
 
-        if (isParcel) {
-          handleParcelClick(
-            label, layer, fields, props, event, map,
-            infoWindowRef, layersRef.current,
-          );
+        const openThis = () => {
+          if (isParcel) {
+            handleParcelClick(label, layer, fields, props, event, map, infoWindowRef, layersRef.current);
+          } else {
+            // Highlight the clicked feature so users can see what their popup describes.
+            // toGeoJson is async (callback-based); fire-and-forget — popup opens immediately.
+            feature.toGeoJson((json) => {
+              highlightFeatureGeometry(json as GeoJSON.Feature, map);
+            });
+            openFeaturePopup(layer, props, fields, label, event.latLng!, map, infoWindowRef);
+          }
+        };
+
+        // Shorelines stack several layers on one line: if anything else is
+        // within reach of the click, let the person choose.
+        const ll = event.latLng!;
+        const others = chooserRows(map, infoWindowRef, layersRef.current, ll, propertyClick, { layerId: layer.config.id, props });
+        if (others.length) {
+          openClickChooser(map, infoWindowRef, ll, [{ ...rowFor(layer, props), open: openThis }, ...others]);
         } else {
-          // Highlight the clicked feature so users can see what their popup describes.
-          // toGeoJson is async (callback-based); fire-and-forget — popup opens immediately.
-          feature.toGeoJson((json) => {
-            highlightFeatureGeometry(json as GeoJSON.Feature, map);
-          });
-          openFeaturePopup(layer, props, fields, label, event.latLng!, map, infoWindowRef);
+          openThis();
         }
       });
-
       listeners.push(listener);
+
+      // Hover: brighten the line under the cursor and name it (desktop only)
+      if (!isMobileNow() && layer.config.id !== 'tax-parcels') {
+        const dl = layer.dataLayer;
+        listeners.push(dl.addListener('mouseover', (e: google.maps.Data.MouseEvent) => {
+          const props: Record<string, unknown> = {};
+          e.feature.forEachProperty((v, k) => { props[k] = v; });
+          const st = layer.config.style;
+          dl.overrideStyle(e.feature, { strokeWeight: (st.strokeWeight ?? 2) + 2, strokeOpacity: 1, zIndex: 1000 });
+          showHoverLabel(map, e, `${layer.config.name} · ${rowFor(layer, props).title}`);
+        }));
+        listeners.push(dl.addListener('mousemove', (e: google.maps.Data.MouseEvent) => moveHoverLabel(map, e)));
+        listeners.push(dl.addListener('mouseout', (e: google.maps.Data.MouseEvent) => {
+          dl.revertStyle(e.feature);
+          hideHoverLabel();
+        }));
+      }
     });
 
     // Register global handlers for "More info" links in popup cards
@@ -281,17 +308,36 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
       const label = getFeatureLabel(geoFeature, layerId);
       const fields = extractAllFeatureProperties(geoFeature, layer.config.popupFields);
       const latLng = new google.maps.LatLng(lat, lng);
-      if (layerId === 'tax-parcels') {
-        if (!propertyClick) return;
-        handleParcelClick(label, layer, fields, props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, layersRef.current);
-      } else {
-        clearFeatureHighlight();
-        openFeaturePopup(layer, props, fields, label, latLng, map, infoWindowRef);
-      }
+      const openThis = () => {
+        if (layerId === 'tax-parcels') {
+          handleParcelClick(label, layer, fields, props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, layersRef.current);
+        } else {
+          clearFeatureHighlight();
+          openFeaturePopup(layer, props, fields, label, latLng, map, infoWindowRef);
+        }
+      };
+      if (layerId === 'tax-parcels' && !propertyClick) return;
+      // Tile layers (parcels, buildings) only get the click when no line sits on top;
+      // lines a few pixels away still deserve a mention. Marker pins open directly.
+      const others = layer.config.tiles ? chooserRows(map, infoWindowRef, layersRef.current, latLng, propertyClick, { layerId, props }) : [];
+      if (others.length) openClickChooser(map, infoWindowRef, latLng, [{ ...rowFor(layer, props), open: openThis }, ...others]);
+      else openThis();
     };
     window.addEventListener(DECK_CLICK_EVENT, onDeckClick);
 
+    // "What's here" chooser rows
+    const onPick = (e: Event) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ssx-pick]');
+      if (!btn) return;
+      e.preventDefault();
+      const row = chooserOpen[Number(btn.dataset.ssxPick)];
+      if (row) row.open();
+    };
+    document.addEventListener('click', onPick);
+
     return () => {
+      document.removeEventListener('click', onPick);
+      hideHoverLabel();
       window.removeEventListener(DECK_CLICK_EVENT, onDeckClick);
       listeners.forEach(l => google.maps.event.removeListener(l));
       delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
@@ -760,6 +806,172 @@ function setAddressLink(
 // ---------------------------------------------------------------------------
 // Programmatic parcel popup (triggered by address search)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// "What's here" chooser — several features under one click
+// ---------------------------------------------------------------------------
+
+interface ChooserRow {
+  swatch: string; // small inline HTML swatch
+  layerName: string;
+  title: string;
+  open: () => void;
+}
+
+const CHOOSER_TOL_PX = 12;
+let chooserOpen: ChooserRow[] = [];
+
+function swatchFor(config: LayerConfig): string {
+  const color = config.style.strokeColor || config.style.fillColor || '#0D4F4F';
+  if (config.markerIcon && !config.renderer) return `<img src="${config.markerIcon}" alt="" style="width:14px;height:15px;object-fit:contain">`;
+  const fill = (config.style.fillOpacity ?? 0) > 0.05;
+  return fill
+    ? `<span style="display:inline-block;width:14px;height:10px;border-radius:2px;background:${escHtml(config.style.fillColor ?? color)};box-shadow:inset 0 0 0 1.5px ${escHtml(color)}"></span>`
+    : `<span style="display:inline-block;width:14px;height:4px;border-radius:2px;background:${escHtml(color)}"></span>`;
+}
+
+function rowFor(layer: LayerState, props: Record<string, unknown>): Omit<ChooserRow, 'open'> {
+  const spec = POPUP_SPECS[layer.config.id];
+  const title = (spec?.title?.(props) || fallbackTitle(layer.config, props)).replace(/\s+/g, ' ');
+  return { swatch: swatchFor(layer.config), layerName: layer.config.name, title };
+}
+
+function sameProps(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  for (const k of ['OBJECTID', 'FID', 'id', 'ID', 'OBJECTID_1', 'Armor_ID', 'WayPoint']) {
+    if (a[k] != null && b[k] != null) return String(a[k]) === String(b[k]);
+  }
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Everything else within reach of the click: nearby vector features on every
+ * visible layer, plus the property under the point when parcels are showing.
+ * The clicked feature itself (`skip`) is left out.
+ */
+function chooserRows(
+  map: google.maps.Map,
+  infoWindowRef: React.RefObject<PopupHost | null>,
+  allLayers: LayerState[],
+  latLng: google.maps.LatLng,
+  propertyClick: boolean,
+  skip: { layerId: string; props: Record<string, unknown> },
+): ChooserRow[] {
+  const lat = latLng.lat(), lng = latLng.lng();
+  const zoom = map.getZoom() ?? 0;
+  const rows: ChooserRow[] = [];
+  const seen = new Set<string>();
+  const hits: HitCandidate[] = featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX);
+  for (const h of hits) {
+    const props = (h.feature.properties ?? {}) as Record<string, unknown>;
+    if (h.layer.config.id === skip.layerId && sameProps(props, skip.props)) continue;
+    const key = `${h.layer.config.id}|${JSON.stringify(props).slice(0, 200)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const layer = h.layer;
+    const geo: GeoJSON.Feature = { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [0, 0] } };
+    const label = getFeatureLabel(geo, layer.config.id);
+    const fields = extractAllFeatureProperties(geo, layer.config.popupFields);
+    rows.push({
+      ...rowFor(layer, props),
+      open: () => {
+        highlightFeatureGeometry(h.feature, map);
+        openFeaturePopup(layer, props, fields, label, latLng, map, infoWindowRef);
+      },
+    });
+  }
+  // The property under the point (from the parcel tiles already on screen)
+  const parcels = allLayers.find(l => l.config.id === 'tax-parcels');
+  if (propertyClick && parcels?.visible && skip.layerId !== 'tax-parcels') {
+    const pt = turf.point([lng, lat]);
+    const here = getDeckRenderedFeatures('tax-parcels').find(f => {
+      try { return f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') && turf.booleanPointInPolygon(pt, f as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>); } catch { return false; }
+    });
+    if (here) {
+      const props = (here.properties ?? {}) as Record<string, unknown>;
+      const geo: GeoJSON.Feature = { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [0, 0] } };
+      rows.push({
+        swatch: swatchFor(parcels.config),
+        layerName: parcels.config.name,
+        title: props.PIN ? `Parcel ${String(props.PIN)}` : 'Property report',
+        open: () => handleParcelClick(getFeatureLabel(geo, 'tax-parcels'), parcels, extractAllFeatureProperties(geo, parcels.config.popupFields), props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, allLayers),
+      });
+    }
+  }
+  return rows;
+}
+
+/** The chooser popup's HTML (exported for the popup harness). */
+export function chooserHtml(rows: Omit<ChooserRow, 'open'>[]): string {
+  const body = `<div class="ssx-picks">${rows.map((r, i) => `
+    <button type="button" class="ssx-pick" data-ssx-pick="${i}">
+      <span class="ssx-pick-sw">${r.swatch}</span>
+      <span class="ssx-pick-body"><span class="ssx-pick-layer">${escHtml(r.layerName)}</span><span class="ssx-pick-title">${escHtml(r.title)}</span></span>
+      <span class="ssx-pick-go">&#8250;</span>
+    </button>`).join('')}</div>`;
+  return buildPopupFrame({
+    id: 'ssx-chooser',
+    accent: '#0D4F4F',
+    layerName: "What's here",
+    title: `${rows.length} things at this spot`,
+    subtitle: 'Choose one to open',
+    body,
+    width: 320,
+  });
+}
+
+/** Rows for a click at `lat,lng` with nothing pre-selected (exported for the popup harness). */
+export function chooserRowsAt(allLayers: LayerState[], lat: number, lng: number, zoom: number): Omit<ChooserRow, 'open'>[] {
+  return featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX).map(h => rowFor(h.layer, (h.feature.properties ?? {}) as Record<string, unknown>));
+}
+
+function openClickChooser(map: google.maps.Map, infoWindowRef: React.RefObject<PopupHost | null>, latLng: google.maps.LatLng, rows: ChooserRow[]): void {
+  chooserOpen = rows;
+  clearFeatureHighlight();
+  const html = chooserHtml(rows);
+  const iw = infoWindowRef.current;
+  if (!iw) return;
+  iw.setContent(html);
+  iw.setPosition(latLng);
+  iw.open(map);
+}
+
+// ---------------------------------------------------------------------------
+// Hover label — names the line under the cursor before it is clicked
+// ---------------------------------------------------------------------------
+
+let hoverEl: HTMLDivElement | null = null;
+
+function hoverHost(map: google.maps.Map): HTMLElement {
+  return map.getDiv().parentElement ?? document.body;
+}
+
+function placeHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent): void {
+  if (!hoverEl) return;
+  const dom = e.domEvent as MouseEvent | undefined;
+  if (!dom || dom.clientX == null) return;
+  const r = hoverHost(map).getBoundingClientRect();
+  hoverEl.style.left = `${dom.clientX - r.left + 14}px`;
+  hoverEl.style.top = `${dom.clientY - r.top + 16}px`;
+}
+
+function showHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent, text: string): void {
+  if (!hoverEl) {
+    hoverEl = document.createElement('div');
+    hoverEl.className = 'ssx-hover';
+    hoverHost(map).appendChild(hoverEl);
+  }
+  hoverEl.textContent = text;
+  hoverEl.hidden = false;
+  placeHoverLabel(map, e);
+}
+
+function moveHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent): void {
+  if (hoverEl && !hoverEl.hidden) placeHoverLabel(map, e);
+}
+
+function hideHoverLabel(): void {
+  if (hoverEl) hoverEl.hidden = true;
+}
 
 function openParcelPopupAtCoords(
   lat: number,

@@ -11,6 +11,19 @@ await preloadFriendsContent();
 const q = new URLSearchParams(location.search);
 const ids = (q.get('l') || 'friends-shoreline-geology,friends-boat-ramps,friends-projects').split(',');
 const out = document.getElementById('out');
+// ?hit=lat,lng&z=18&l=a,b,c → the "What's here" chooser for that click
+if (q.get('hit')) {
+  const { chooserHtml, chooserRowsAt } = await import('/src/components/Map/FeaturePopup.tsx');
+  const [lat, lng] = q.get('hit').split(',').map(Number);
+  const states = [];
+  for (const id of ids) {
+    const cfg = layerConfigs.find(c => c.id === id); if (!cfg) continue;
+    states.push({ config: cfg, visible: true, loaded: true, geojsonData: await fetch(cfg.source).then(r => r.json()) });
+  }
+  const rows = chooserRowsAt(states, lat, lng, Number(q.get('z') || 17));
+  const el = document.createElement('div'); el.innerHTML = chooserHtml(rows); out.appendChild(el);
+  window.__rows = rows; document.title = 'ready';
+} else {
 for (const id of ids) {
   const cfg = layerConfigs.find(c => c.id === id); if (!cfg) continue;
   const data = await fetch(cfg.source).then(r => r.json());
@@ -18,6 +31,7 @@ for (const id of ids) {
   const el = document.createElement('div');
   el.innerHTML = buildFeaturePopupHtml({ config: cfg, geojsonData: data }, f.properties, [], cfg.name);
   out.appendChild(el);
+}
 }
 document.title = 'ready';
 </script>

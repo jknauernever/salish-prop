@@ -10,6 +10,7 @@ import {
 } from '../services/speciesObservations';
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
+import { warmHitCache } from '../services/hitTest';
 import { getDeckManager, registerDeckManager, DECK_CLICK_EVENT } from '../components/Map/DeckLayers';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
@@ -567,7 +568,7 @@ export function useLayers(
           }
           return {
             fillColor: config.style.fillColor,
-            fillOpacity: config.style.fillOpacity,
+            fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
             strokeColor: config.style.strokeColor,
             strokeWeight: config.style.strokeWeight,
             clickable: visible,
@@ -609,7 +610,7 @@ export function useLayers(
         const override = sbp.values[val] ?? sbp.defaultStyle ?? {};
         return {
           fillColor: override.fillColor ?? config.style.fillColor,
-          fillOpacity: override.fillOpacity ?? config.style.fillOpacity,
+          fillOpacity: override.fillOpacity ?? config.style.fillOpacity, zIndex: config.style.zIndex,
           strokeColor: override.strokeColor ?? config.style.strokeColor,
           strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
           strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
@@ -625,7 +626,7 @@ export function useLayers(
             icon: {
               path: google.maps.SymbolPath.CIRCLE,
               fillColor: config.style.fillColor ?? config.style.strokeColor,
-              fillOpacity: config.style.fillOpacity ?? 1,
+              fillOpacity: config.style.fillOpacity ?? 1, zIndex: config.style.zIndex,
               strokeColor: config.style.strokeColor,
               strokeWeight: config.style.strokeWeight,
               scale: 7,
@@ -636,7 +637,7 @@ export function useLayers(
         }
         return {
           fillColor: config.style.fillColor,
-          fillOpacity: config.style.fillOpacity,
+          fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
           strokeColor: config.style.strokeColor,
           strokeWeight: config.style.strokeWeight,
           clickable: visible,
@@ -646,7 +647,7 @@ export function useLayers(
     } else {
       dl.setStyle({
         fillColor: config.style.fillColor,
-        fillOpacity: config.style.fillOpacity,
+        fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
         ...strokeAtZoom(config, map?.getZoom() ?? 0),
         clickable: visible,
         visible,
@@ -959,7 +960,7 @@ export function useLayers(
           const dataLayer = new google.maps.Data({ map });
           dataLayer.setStyle({
             fillColor: config.style.fillColor,
-            fillOpacity: config.style.fillOpacity,
+            fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
             strokeColor: config.style.strokeColor,
             strokeWeight: config.style.strokeWeight,
             clickable: true,
@@ -1023,7 +1024,7 @@ export function useLayers(
               const override = sbp.values[val] ?? sbp.defaultStyle ?? {};
               return {
                 fillColor: override.fillColor ?? config.style.fillColor,
-                fillOpacity: override.fillOpacity ?? config.style.fillOpacity,
+                fillOpacity: override.fillOpacity ?? config.style.fillOpacity, zIndex: config.style.zIndex,
                 strokeColor: override.strokeColor ?? config.style.strokeColor,
                 strokeWeight: override.strokeWeight ?? config.style.strokeWeight,
                 strokeOpacity: override.strokeOpacity ?? config.style.strokeOpacity,
@@ -1040,7 +1041,7 @@ export function useLayers(
                   icon: {
                     path: google.maps.SymbolPath.CIRCLE,
                     fillColor: config.style.fillColor ?? config.style.strokeColor,
-                    fillOpacity: config.style.fillOpacity ?? 1,
+                    fillOpacity: config.style.fillOpacity ?? 1, zIndex: config.style.zIndex,
                     strokeColor: config.style.strokeColor,
                     strokeWeight: config.style.strokeWeight,
                     scale: 7,
@@ -1051,7 +1052,7 @@ export function useLayers(
               }
               return {
                 fillColor: config.style.fillColor,
-                fillOpacity: config.style.fillOpacity,
+                fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
                 strokeColor: config.style.strokeColor,
                 strokeWeight: config.style.strokeWeight,
                 clickable: shouldShow,
@@ -1061,7 +1062,7 @@ export function useLayers(
           } else {
             dataLayer.setStyle({
               fillColor: config.style.fillColor,
-              fillOpacity: config.style.fillOpacity,
+              fillOpacity: config.style.fillOpacity, zIndex: config.style.zIndex,
               ...strokeAtZoom(config, currentZoom),
               clickable: shouldShow,
               visible: shouldShow,
@@ -1069,14 +1070,17 @@ export function useLayers(
           }
 
           dataLayersRef.current.set(config.id, dataLayer);
+          warmHitCache(data); // so the first "what's here" click is instant
 
           if (config.hitStrokeWeight) {
             const hitLayer = new google.maps.Data({ map });
             hitLayer.addGeoJson(data);
             hitLayer.setStyle(hitStyle(config, shouldShow));
-            hitLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
-              google.maps.event.trigger(dataLayer, 'click', event);
-            });
+            for (const ev of ['click', 'mouseover', 'mouseout', 'mousemove'] as const) {
+              hitLayer.addListener(ev, (event: google.maps.Data.MouseEvent) => {
+                google.maps.event.trigger(dataLayer, ev, event);
+              });
+            }
             hitLayersRef.current.set(config.id, hitLayer);
             // Debug handle (harmless): lets the console poke the click targets
             (window as unknown as Record<string, unknown>).__ssxHit = hitLayersRef.current;

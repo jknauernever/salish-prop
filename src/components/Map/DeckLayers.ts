@@ -146,7 +146,8 @@ class DeckManager {
       getFillColor: [fill[0], fill[1], fill[2], fillA],
       getLineColor: [stroke[0], stroke[1], stroke[2], strokeA],
       lineWidthUnits: 'pixels',
-      getLineWidth: st.strokeWeight ?? 1,
+      // From zoom 17 the ground itself shows the lot lines; keep ours hairline so shore layers stay legible
+      getLineWidth: this.zoom >= 17 ? Math.min(st.strokeWeight ?? 1, 1) : (st.strokeWeight ?? 1),
       lineWidthMinPixels: Math.min(st.strokeWeight ?? 1, 1),
       pointRadiusUnits: 'pixels',
       getPointRadius: 4,

@@ -14,6 +14,11 @@ export interface LayerStyle {
   strokeColor: string;
   strokeWeight: number;
   strokeOpacity?: number;
+  /**
+   * Draw order among vector layers (higher on top). Shorelines carry several
+   * layers on one line: wide translucent bands low, thin identifying lines high.
+   */
+  zIndex?: number;
 }
 
 export interface StyleByProperty {
