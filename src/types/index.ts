@@ -110,9 +110,11 @@ export interface LayerConfig {
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
    * components/Map/KelpOverlay.ts); the Data layer stays as an invisible
    * click target so popups still work. 'herring-school' = a drifting school
-   * of fish glyphs painted over the layer's normal fill.
+   * of fish glyphs painted over the layer's normal fill. 'beach-school' /
+   * 'beach-school-outline' = a small school (solid / outlined white fish)
+   * drifting along each line, over the layer's own wide translucent band.
    */
-  renderer?: 'kelp-squiggle' | 'herring-school';
+  renderer?: 'kelp-squiggle' | 'herring-school' | 'beach-school' | 'beach-school-outline';
   /**
    * "Why it matters" text for the popup story block. Only Friends of the
    * San Juans' own words go here (handouts, sanjuans.org), with the source

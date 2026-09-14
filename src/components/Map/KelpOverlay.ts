@@ -23,7 +23,14 @@ export interface KelpOverlay extends google.maps.OverlayView {
  *            painted on top of the layer's own Data-layer fill (herring
  *            spawning grounds). Nothing is drawn below SCHOOL_MIN_ZOOM.
  */
-export type OverlayStyle = 'kelp' | 'school';
+export type OverlayStyle = 'kelp' | 'school' | 'beach-solid' | 'beach-outline';
+
+/** A beach line in world px at REF_ZOOM, with cumulative lengths for walking along it. */
+interface WorldLine {
+  pts: [number, number][];
+  cum: number[]; // cum[i] = length from pts[0] to pts[i]
+  bbox: [number, number, number, number];
+}
 
 interface Fish {
   wx: number; // world px at REF_ZOOM
@@ -75,6 +82,19 @@ function mulberry32(seed: number): () => number {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/** Fish outline only (no transform, no fill): body pointing +x, forked tail. */
+function drawFishPath(ctx: CanvasRenderingContext2D, len: number): void {
+  const h = len * 0.28;
+  ctx.beginPath();
+  ctx.moveTo(len * 0.5, 0);
+  ctx.quadraticCurveTo(0, -h, -len * 0.42, 0);
+  ctx.quadraticCurveTo(0, h, len * 0.5, 0);
+  ctx.moveTo(-len * 0.38, 0);
+  ctx.lineTo(-len * 0.62, -h * 0.9);
+  ctx.lineTo(-len * 0.62, h * 0.9);
+  ctx.closePath();
 }
 
 /** One herring: a slim body with a forked tail, pointing +x. `len` in CSS px. */
@@ -149,6 +169,8 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
       this.style = style;
     }
     private patches: Patch[] = [];
+    private lines: [number, number][][] = []; // [lng, lat] polylines (beach styles)
+    private worldLines: WorldLine[] | null = null;
     private canvas: HTMLCanvasElement | null = null;
     private rafId: number | null = null;
     private tileCache = new Map<string, CanvasPattern>();
@@ -186,9 +208,12 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
 
     setData(data: GeoJSON.FeatureCollection): void {
       const out: Patch[] = [];
+      const lines: [number, number][][] = [];
       for (const f of data.features) {
         const g = f.geometry;
         if (!g) continue;
+        if (g.type === 'LineString') lines.push(g.coordinates as [number, number][]);
+        else if (g.type === 'MultiLineString') for (const l of g.coordinates) lines.push(l as [number, number][]);
         const polys: Ring[][] =
           g.type === 'Polygon' ? [g.coordinates as Ring[]] : g.type === 'MultiPolygon' ? (g.coordinates as Ring[][]) : [];
         for (const rings of polys) {
@@ -203,10 +228,35 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
         }
       }
       this.patches = out;
+      this.lines = lines;
+      this.worldLines = null;
       this.pathCache = null;
       this.frame = null;
       if (this.style === 'school') this.seedFish();
       this.draw();
+    }
+
+    private worldLineList(): WorldLine[] {
+      if (this.worldLines) return this.worldLines;
+      const scale = 256 * Math.pow(2, REF_ZOOM);
+      const out: WorldLine[] = [];
+      for (const line of this.lines) {
+        const pts: [number, number][] = [];
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const [lng, lat] of line) {
+          const sLat = Math.sin((lat * Math.PI) / 180);
+          const x = ((lng + 180) / 360) * scale;
+          const y = (0.5 - Math.log((1 + sLat) / (1 - sLat)) / (4 * Math.PI)) * scale;
+          pts.push([x, y]);
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        if (pts.length < 2) continue;
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+        out.push({ pts, cum, bbox: [x0, y0, x1, y1] });
+      }
+      this.worldLines = out;
+      return out;
     }
 
     /**
@@ -304,6 +354,8 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
       left: number; top: number; w: number; h: number; k: number; ox: number; oy: number; zoom: number;
       /** Patch paths already transformed into canvas pixel space (CSS px) for this layout. */
       screen: { path: Path2D; bbox: [number, number, number, number]; i: number }[];
+      /** Beach lines in canvas px (beach styles only). */
+      lines: WorldLine[];
     } | null = null;
 
     // Synchronous: Google calls draw() exactly when the pane/projection is
@@ -404,7 +456,16 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
         sp.addPath(path, m);
         screen.push({ path: sp, bbox: sb, i });
       }
-      this.frame = { left, top, w, h, k, ox, oy, zoom, screen };
+      // Beach styles: lines in canvas px, only those touching the padded viewport
+      const lines: WorldLine[] = [];
+      if (this.style === 'beach-solid' || this.style === 'beach-outline') {
+        for (const wl of this.worldLineList()) {
+          const sb: [number, number, number, number] = [wl.bbox[0] * k + ox - left, wl.bbox[1] * k + oy - top, wl.bbox[2] * k + ox - left, wl.bbox[3] * k + oy - top];
+          if (sb[2] < vx0 || sb[0] > vx1 || sb[3] < vy0 || sb[1] > vy1) continue;
+          lines.push({ pts: wl.pts.map(([x, y]) => [x * k + ox - left, y * k + oy - top] as [number, number]), cum: wl.cum.map(c => c * k), bbox: sb });
+        }
+      }
+      this.frame = { left, top, w, h, k, ox, oy, zoom, screen, lines };
       return true;
     }
 
@@ -422,6 +483,10 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
 
       if (this.style === 'school') {
         this.paintSchool(ctx, now);
+        return;
+      }
+      if (this.style === 'beach-solid' || this.style === 'beach-outline') {
+        this.paintBeach(ctx, now, this.style === 'beach-outline');
         return;
       }
 
@@ -460,6 +525,66 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
           ctx.stroke(path);
           ctx.fillStyle = `rgba(${CREAM_RGB}, 0.8)`;
           ctx.fill(path, 'evenodd');
+        }
+      }
+    }
+
+    /**
+     * Beach school: two to four small white fish per spawning beach, sitting
+     * on the layer's translucent band and drifting slowly back and forth
+     * along the beach. Solid fish for documented beaches, outlined for
+     * potential habitat. Nothing below SCHOOL_MIN_ZOOM (the band still shows).
+     */
+    private paintBeach(ctx: CanvasRenderingContext2D, now: number, outline: boolean): void {
+      const F = this.frame;
+      if (!F) return;
+      const { zoom, lines } = F;
+      if (zoom < SCHOOL_MIN_ZOOM) { this.stopAnimation(); return; }
+      this.startAnimation();
+      const tSec = (now - this.animStart) / 1000;
+      const len = zoom >= 17 ? 16 : zoom >= 15.5 ? 14 : zoom >= 14 ? 12 : 10;
+      ctx.fillStyle = outline ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.95)';
+      ctx.strokeStyle = outline ? 'rgba(255, 255, 255, 1)' : 'rgba(120, 20, 70, 0.75)';
+      ctx.lineWidth = outline ? 1.4 : 0.9;
+      ctx.lineJoin = 'round';
+
+      // Point and heading at a fraction of the line's length
+      const at = (l: WorldLine, frac: number): [number, number, number] => {
+        const total = l.cum[l.cum.length - 1];
+        const d = Math.min(total, Math.max(0, frac * total));
+        let i = 1;
+        while (i < l.cum.length - 1 && l.cum[i] < d) i++;
+        const a = l.pts[i - 1], b = l.pts[i];
+        const seg = l.cum[i] - l.cum[i - 1] || 1;
+        const t = (d - l.cum[i - 1]) / seg;
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, Math.atan2(b[1] - a[1], b[0] - a[0])];
+      };
+
+      let seed = 0;
+      for (const l of lines) {
+        const total = l.cum[l.cum.length - 1];
+        seed++;
+        if (total < len * 3) continue;
+        const n = outline ? Math.min(3, Math.max(1, Math.round(total / 90))) : Math.min(5, Math.max(1, Math.round(total / 50)));
+        for (let i = 0; i < n; i++) {
+          const phase = (seed * 7 + i * 13) % 17;
+          const base = (i + 0.5) / n;
+          const drift = Math.sin(tSec * 0.35 + phase) * 0.06;
+          const frac = Math.min(0.95, Math.max(0.05, base + drift));
+          const [x, y, ang] = at(l, frac);
+          // Fish face the way they are drifting; the tail flicks faster
+          const forward = Math.cos(tSec * 0.35 + phase) >= 0;
+          const wiggle = Math.sin(tSec * 5 + phase) * 0.1;
+          const size = len * (i % 2 ? 0.85 : 1);
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(ang + (forward ? 0 : Math.PI) + wiggle);
+          // offset alternate fish slightly across the band so they don't overlap
+          ctx.translate(0, (i % 2 ? 1 : -1) * size * 0.35);
+          drawFishPath(ctx, size);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
         }
       }
     }

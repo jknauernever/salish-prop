@@ -696,11 +696,13 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-potential-forage-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
     minZoom: 12,
+    renderer: 'beach-school-outline',
     style: {
       fillColor: '#F9A8D4',
       fillOpacity: 0,
       strokeColor: '#F9A8D4', // light pink — same family as documented, lighter = "potential"
-      strokeWeight: 4,
+      strokeWeight: 8, // soft band; outlined fish (renderer) mark it as potential
+      strokeOpacity: 0.3,
     },
     popupFields: [
       { key: 'C_Type_FOSJ', label: 'Shore Type' },
@@ -721,11 +723,14 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-documented-forage-spawning.json',
     visible: true, // on by default, but only drawn once zoomed in (see minZoom)
     minZoom: 12,
+    // Wide translucent band with a drifting school of solid white fish (KelpOverlay 'beach-solid')
+    renderer: 'beach-school',
     style: {
       fillColor: '#E11D74',
       fillOpacity: 0,
       strokeColor: '#E11D74', // raspberry — distinct from the orange parcel lines
-      strokeWeight: 5,
+      strokeWeight: 10, // soft band; the fish school (renderer) sits on it
+      strokeOpacity: 0.38,
     },
     popupFields: [
       { key: 'NAME', label: 'Beach Name' },

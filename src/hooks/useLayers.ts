@@ -1083,8 +1083,9 @@ export function useLayers(
           }
 
           // Custom-rendered layers: paint on a canvas overlay above the (transparent) Data layer
-          if (config.renderer === 'kelp-squiggle' || config.renderer === 'herring-school') {
-            const overlay = createKelpOverlay(data, config.renderer === 'kelp-squiggle' ? 'kelp' : 'school');
+          if (config.renderer) {
+            const styleFor = { 'kelp-squiggle': 'kelp', 'herring-school': 'school', 'beach-school': 'beach-solid', 'beach-school-outline': 'beach-outline' } as const;
+            const overlay = createKelpOverlay(data, styleFor[config.renderer]);
             overlay.setMap(shouldShow ? map : null);
             patternOverlaysRef.current.set(config.id, overlay);
           }
