@@ -115,7 +115,6 @@ export const LAYER_PHOTOS: Record<string, PopupPhoto> = {
   'friends-potential-forage-spawning': { url: `${IMG}/forage-fish.jpg`, caption: 'Sand and pea-gravel beach, the substrate forage fish need', credit: FRIENDS },
   'friends-shoreline-geology': { url: `${IMG}/feeder-bluffs.jpg`, caption: 'A feeder bluff supplying the beaches downdrift', credit: FRIENDS },
   'friends-armor': { url: `${IMG}/adapt-fortify.jpg`, caption: 'Hard armoring along the shore', credit: FRIENDS },
-  'friends-armor-2019': { url: `${IMG}/adapt-fortify.jpg`, caption: 'Hard armoring along the shore', credit: FRIENDS },
   'friends-armor-change-2019': { url: `${IMG}/erosion-after.jpg`, caption: 'Shoreline after armor removal', credit: FRIENDS },
   'friends-projects': { url: `${IMG}/restoration-after.jpg`, caption: 'Restored beach and marsh', credit: FRIENDS },
   'friends-docks': { url: `${IMG}/barlow-dock.jpg`, caption: 'The old dock at Barlow Bay, Lopez Island, before Friends removed it', credit: FRIENDS },
@@ -147,7 +146,6 @@ export const PHOTO_SUBJECTS: Record<string, RegExp> = {
   'pink-salmon': /salmon/i,
   'friends-shoreline-geology': /bluff|beach|shoreline/i,
   'friends-armor': /armor|bulkhead|riprap|seawall|rock/i,
-  'friends-armor-2019': /armor|bulkhead|riprap|seawall|rock/i,
   'friends-armor-change-2019': /armor|bulkhead|riprap|seawall|rock/i,
   'friends-pilings': /piling|creosote/i,
   'friends-mooring-buoys': /buoy|mooring/i,
@@ -306,13 +304,62 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
   },
 
   'friends-armor': {
-    title: () => 'Shoreline armor',
-    subtitle: p => join(island(p), fmtYear(p.DateTimeS) ? `surveyed ${fmtYear(p.DateTimeS)}` : undefined),
-    action: ACTIONS.shoreline,
-  },
-  'friends-armor-2019': {
-    title: () => 'Shoreline armor',
-    subtitle: p => join(island(p), fmtYear(p.DateTimeS) ? `surveyed ${fmtYear(p.DateTimeS)}` : undefined),
+    // "Rock bulkhead", "Concrete seawall", "Wood bulkhead" — material first, then what kind of structure
+    title: p => {
+      const m = str(p.ArmorMaterial).toLowerCase();
+      const parts: string[] = [];
+      if (/rock/.test(m)) parts.push('Rock');
+      if (/concrete/.test(m)) parts.push('Concrete');
+      if (/wood/.test(m)) parts.push('Wood');
+      if (!parts.length && /other/.test(m)) {
+        const d = str(p.ArmorMaterial_otherDESC);
+        parts.push(d && d.length <= 16 ? d.charAt(0).toUpperCase() + d.slice(1) : 'Mixed-material');
+      }
+      // "Rock and wood", "Rock, concrete and wood"
+      const lower = parts.map((x, i) => (i === 0 ? x : x.toLowerCase()));
+      const material = !lower.length ? 'Shoreline'
+        : lower.length === 1 ? lower[0]
+        : `${lower.slice(0, -1).join(', ')} and ${lower[lower.length - 1]}`;
+      const noun = !parts.length ? 'armor'
+        : YN(p.Bulkhead) === false && !/bulkhead/i.test(str(p.ArmorAssoc)) ? 'armor'
+        : parts.length === 1 && parts[0] === 'Concrete' ? 'seawall' : 'bulkhead';
+      return `${material} ${noun}`;
+    },
+    subtitle: p => {
+      const ft = num(p.ArmorLength_Value);
+      const cond = str(p.ArmorCondition).toLowerCase().replace(/^unknown.*/, 'condition not rated');
+      return join(island(p), ft && ft > 0 ? `${fmtInt(ft)} ft` : undefined, cond && cond !== 'none' ? (cond.startsWith('condition') ? cond : `${cond} condition`) : undefined);
+    },
+    chips: p => {
+      const chips: PopupChip[] = [];
+      const protects: [string, string][] = [['House', 'House'], ['Cabin', 'Cabin'], ['Road', 'Road'], ['RoadEnd', 'Road end'], ['Dock', 'Dock'], ['Boathouse', 'Boathouse'], ['Boatramp', 'Boat ramp'], ['BeachAccess', 'Beach access'], ['StormwaterOutfall', 'Stormwater outfall'], ['Groin', 'Groin'], ['Jetty', 'Jetty'], ['Breakwater', 'Breakwater']];
+      for (const [key, label] of protects) if (YN(p[key])) chips.push({ label });
+      const bin = str(p.ArmorToeElev_BIN);
+      const below = /^below/i.test(str(p.ArmorToeElev_AboveBelow)) || bin === 'BelowOrAtMeanSeaLevel' || bin === 'MeanSeaLevelToMeanHigherHighWater';
+      if (below) chips.push({ label: 'Toe below the high tide line', tone: 'warn' });
+      if (YN(p.FB)) chips.push({ label: 'On a feeder bluff', tone: 'warn' });
+      if (YN(p.Doc_FF)) chips.push({ label: 'On a forage fish spawning beach', tone: 'warn' });
+      if (YN(p.Creosote)) chips.push({ label: 'Creosote', tone: 'warn' });
+      return chips;
+    },
+    story: p => {
+      const change = str(p.ArmorNEW).toLowerCase();
+      const had2009 = YN(p.SurveyData_2009);
+      let line: string;
+      if (change === 'y') line = 'New since the 2009 survey.';
+      else if (change === 'increase') line = 'Enlarged since the 2009 survey.';
+      else if (change === 'removed') line = 'Removed since 2009.';
+      else if (had2009) line = 'Present in the 2009 survey and unchanged in 2019.';
+      else line = 'First mapped in the 2019 survey; not covered by the 2009 inventory.';
+      const notes: Record<string, string> = {
+        'low quality methods but not degraded.': 'Built with low-quality methods but not degraded.',
+        'low quality methods or materials.': 'Built with low-quality methods or materials.',
+        'in between condition': 'In-between condition.',
+      };
+      const raw = str(p.ArmorCond_unknown_DESC);
+      const why = raw && raw !== 'None' ? (notes[raw.toLowerCase()] ?? raw) : '';
+      return { kicker: 'Since 2009', html: `<p>${line}${why ? ` ${why}` : ''}</p>` };
+    },
     action: ACTIONS.shoreline,
   },
   'friends-armor-change-2019': {

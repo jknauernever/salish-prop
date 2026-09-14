@@ -26,7 +26,7 @@ TOPIC_LAYERS = {
     'herring': ['friends-herring-spawning', 'pacific-herring'],
     'salmon': ['chinook-salmon', 'chum-salmon', 'pink-salmon'],
     'seabirds': ['marbled-murrelet-observations', 'marbled-murrelet-breeding', 'marbled-murrelet-winter', 'ebird-hotspots'],
-    'shoreline-armor': ['friends-armor', 'friends-armor-2019', 'friends-armor-change-2019', 'friends-shoreline-geology', 'friends-groins'],
+    'shoreline-armor': ['friends-armor', 'friends-armor-change-2019', 'friends-shoreline-geology', 'friends-groins'],
     'docks-and-moorings': ['friends-docks', 'friends-mooring-buoys', 'friends-pilings', 'friends-boat-ramps', 'friends-marine-railway'],
     'restoration': ['friends-projects'],
     'riparian': ['friends-projects', 'ndvi', 'forest-loss', 'opera-dist-alert'],

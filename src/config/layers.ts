@@ -707,7 +707,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-armor',
-    name: 'Shoreline Armor',
+    name: 'Shoreline Armor (2019 survey)',
     description: 'Shoreline armoring — bulkheads, riprap, sea walls, bank stabilization installed to control erosion',
     category: 'friends-data',
     source: '/data/friends-armor.json',
@@ -934,31 +934,6 @@ export const layerConfigs: LayerConfig[] = [
     ],
     standardMessage: 'Shoreline armor change analysis — amber segments were mapped in the 2009 shoreline inventory; red segments are armor newly identified in the 2019 survey.',
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
-  },
-  {
-    id: 'friends-armor-2019',
-    name: 'Shoreline Armor (2019)',
-    description: 'Shoreline armor survey (Friends 2019)',
-    category: 'friends-data',
-    source: '/data/friends-armor-2019.json',
-    visible: false,
-    style: {
-      strokeColor: '#B91C1C',
-      strokeWeight: 2.5,
-      strokeOpacity: 0.8,
-    },
-    popupFields: [
-      { key: 'Island', label: 'Island' },
-      { key: 'Notes', label: 'Notes' },
-      { key: 'ConditionArmor', label: 'Condition' },
-      { key: 'ArmorContainsRock', label: 'Contains Rock' },
-      { key: 'ArmorContainsConcrete', label: 'Contains Concrete' },
-      { key: 'ArmorContainsWood', label: 'Contains Wood' },
-      { key: 'ArmorContainsCreosotesWood', label: 'Contains Creosote' },
-      { key: 'TidalElev_Armor', label: 'Tidal Elevation' },
-    ],
-    standardMessage: 'Shoreline armoring also known as bulkheads, riprap, sea walls, bank stabilization \u2014 installed to control erosion (or sediment supply) from the bank. Surveyed by Friends of the San Juans in 2019.',
-    sourceCredit: 'Friends of the San Juans armor change survey, 2019',
   },
 
   // === Community Science Layers ===
