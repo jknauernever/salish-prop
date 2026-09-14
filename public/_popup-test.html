@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>popup harness</title>
+<link rel="stylesheet" href="/src/index.css">
+<style>body{background:#ddd;padding:20px;font-family:sans-serif}#out{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}#out>div{width:400px;background:#FBF7EF;border-radius:14px;overflow:hidden}</style>
+<div id="out"></div>
+<script type="module">
+import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => (t) => t; window.__vite_plugin_react_preamble_installed__ = true;
+const { buildFeaturePopupHtml } = await import('/src/components/Map/FeaturePopup.tsx');
+const { layerConfigs } = await import('/src/config/layers.ts');
+const { preloadFriendsContent } = await import('/src/services/friendsContent.ts');
+await preloadFriendsContent();
+const q = new URLSearchParams(location.search);
+const ids = (q.get('l') || 'friends-shoreline-geology,friends-boat-ramps,friends-projects').split(',');
+const out = document.getElementById('out');
+for (const id of ids) {
+  const cfg = layerConfigs.find(c => c.id === id); if (!cfg) continue;
+  const data = await fetch(cfg.source).then(r => r.json());
+  const f = data.features[Number(q.get('i') || 0)];
+  const el = document.createElement('div');
+  el.innerHTML = buildFeaturePopupHtml({ config: cfg, geojsonData: data }, f.properties, [], cfg.name);
+  out.appendChild(el);
+}
+document.title = 'ready';
+</script>

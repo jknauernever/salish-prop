@@ -96,6 +96,7 @@ def main():
             'date': (it.get('date') or '')[:10],
             'type': it['type'],
             'summary': e.get('summary', '').strip(),
+            'excerpt': (it.get('excerpt') or '').strip(),
             'topics': e.get('topics', []),
             'islands': e.get('islands', []),
             'places': e.get('places', []),

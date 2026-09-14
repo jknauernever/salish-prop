@@ -112,6 +112,12 @@ export interface LayerConfig {
    */
   renderer?: 'kelp-squiggle' | 'herring-school';
   /**
+   * "Why it matters" text for the popup story block. Only Friends of the
+   * San Juans' own words go here (handouts, sanjuans.org), with the source
+   * they came from; layers without sourced text show no story block.
+   */
+  whyItMatters?: { text: string; source: { credit: string; url: string } };
+  /**
    * For thin line layers: width in px of an invisible second line drawn
    * underneath, so a click near the line still opens its popup.
    */

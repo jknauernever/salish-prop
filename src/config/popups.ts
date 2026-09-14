@@ -298,7 +298,14 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
     },
     story: p => {
       const t = SHOREFORM_TYPES[str(p.PIAT_shoreforms)];
-      return t ? { kicker: t.label, html: t.description } : undefined;
+      if (!t) return undefined;
+      // Class definition from Friends' shoreform mapping, then Friends' own
+      // words on why bluffs and beaches matter (Living with the Shoreline).
+      return {
+        kicker: t.label,
+        html: `<p>${t.description}</p><div class="ssx-cite">&mdash; Friends of the San Juans geomorphic shoreform mapping</div><p style="margin-top:10px">Feeder bluffs provide the sand that forms and maintains beaches and marine habitats. Experts estimate that over 90% of the sand and gravel that comprise the beaches of Puget Sound and the San Juans comes from eroding banks and bluffs. If your property has a feeder bluff, be sure to set structures far away from the bluff.</p>`,
+        source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+      };
     },
     action: ACTIONS.shoreline,
   },

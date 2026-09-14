@@ -1666,7 +1666,7 @@ function buildInlandCards(
     // Drawn from Friends' shoreline vegetation and restoration pages: roots and canopy
     // filter runoff before it reaches the water; overhanging vegetation keeps forage
     // fish eggs cool and moist on the beach.
-    const beachNote = `<p style="${BODY};margin-top:8px;">Trees and native plants also do quiet work for the beach below. Roots and canopy slow rain and filter it before it reaches streams and the shore, keeping sediment and pollutants out of nearshore water, and vegetation that overhangs a beach shades the sand and gravel where forage fish eggs need to stay cool and moist. <a href="https://sanjuans.org/our-work/shoreline-ecosystems/shoreline-vegetation-resources-for-san-juan-county/" target="_blank" rel="noopener noreferrer" style="color:${COLOR.teal};font-weight:600;text-decoration:none;">Friends&#39; vegetation resources &#8599;</a></p>`;
+    const beachNote = `<p style="${BODY};margin-top:8px;">An undisturbed forest can intercept up to 40% of rainfall, protecting against erosion while also slowing surface runoff, increasing infiltration, and protecting water quality. Overhanging vegetation also provides shade, a key factor in keeping beach conditions cool, moist, and organically rich. The insects that live in the trees and shrubs then become food for small fish. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span></p>`;
     cards.push(buildGreeneryCard(ndviStats, false, islandStats, beachNote));
   }
 
@@ -1696,7 +1696,7 @@ function buildInlandCards(
       ${sectionHeading('Upland stewardship')}
       <div class="ssx-block ssx-act" style="margin:0 0 ${articles.length ? 12 : 0}px;">
         <div class="ssx-k">What you can do here</div>
-        Keep native trees and shrubs, especially along streams and wet areas; direct roof and driveway runoff into the ground rather than a ditch; and skip fertilizer and pesticides near water. Friends offers free advice for upland and shoreline landowners alike.
+        You can help by maintaining or restoring native vegetation along the shore to slow and filter runoff, installing pervious walks and driveways to allow filtration, directing stormwater flow from gutters and roads into vegetated areas, maintaining onsite sewage systems, and using compost instead of chemical fertilizers. Maintaining native vegetation will also help reduce the impact of heavy rains and provide habitat for wildlife. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span>
         <div class="ssx-btn-row"><a class="ssx-btn-sun" href="https://sanjuans.org/our-work/landowner-resources/" target="_blank" rel="noopener noreferrer">Landowner resources</a></div>
       </div>
       ${articles.length ? fromFriendsHtml(articles).replace('class="ssx-from"', 'class="ssx-from" style="margin:0"') : ''}
@@ -1804,7 +1804,7 @@ function renderLivingShorelineChips(popupId: string, veg: NearshoreVegetationRes
  * POPUP_SPECS entry decides the title, facts, chips, story, and action;
  * everything else comes from the layer config and the feature's fields.
  */
-/** "Related content from Friends" block: related articles from sanjuans.org, with the best one's summary. */
+/** "Related content from Friends" block: related articles from sanjuans.org, with the best one's own excerpt (Friends' words, never a paraphrase). */
 function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): string {
   if (!articles.length) return '';
   const rows = articles.map((a, i) => `
@@ -1813,7 +1813,7 @@ function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): strin
       <span class="ssx-art-body">
         <span class="ssx-art-title">${escHtml(a.title)}</span>
         <span class="ssx-art-meta">${escHtml(articleDate(a.date))}</span>
-        ${i === 0 && a.summary && a.id !== skipSummaryId ? `<span class="ssx-art-sum">${escHtml(a.summary)}</span>` : ''}
+        ${i === 0 && a.excerpt && a.id !== skipSummaryId ? `<span class="ssx-art-sum">${escHtml(a.excerpt)}</span>` : ''}
       </span>
     </a>`).join('');
   return `<div class="ssx-from"><div class="ssx-k">Related content from Friends of the San Juans</div>${rows}</div>`;
@@ -1868,9 +1868,12 @@ export function buildFeaturePopupHtml(
   }
   if (!photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
 
+  // "Why it matters" only ever carries Friends' own words: a project's own
+  // article (its WordPress excerpt), or the layer's sourced whyItMatters text.
+  // Layers without sourced text show no story block at all.
   const story = spec?.story?.(props)
-    ?? (own?.summary ? { kicker: 'Why it matters', html: escHtml(own.summary) } : undefined)
-    ?? (config.standardMessage ? { kicker: 'Why it matters', html: escHtml(config.standardMessage) } : undefined);
+    ?? (own?.excerpt ? { kicker: 'About this project', html: escHtml(own.excerpt), source: { credit: own.title, url: own.url } } : undefined)
+    ?? (config.whyItMatters ? { kicker: 'Why it matters', html: escHtml(config.whyItMatters.text), source: config.whyItMatters.source } : undefined);
   const link = spec?.link?.(props);
   const footerButtons = link ? [{ label: link.label, href: link.href }] : [];
 
@@ -2077,10 +2080,11 @@ function buildShorelineDescriptionCard(desc: NonNullable<ShorelineQueryResult['s
   `;
 }
 
-const KELP_TEXT = `Bull (canopy) kelp is a highly productive macroalgae that grows on rocky substrates in relatively high energy environments. Bull kelp absorbs carbon, mitigates wave energy and provides vital nursery habitat for coastal marine species.`;
-const EELGRASS_TEXT = `Eelgrass, a flowering marine plant, requires sandy substrate, clear, clean and relatively protected waters and plenty of light to grow. Eelgrass provides habitat for a range of invertebrates, fish and wildlife, including rearing out-migrating juvenile salmon and spawning Pacific herring. It also sequesters carbon and helps buffer the impacts of waves and coastal erosion.`;
-const FORAGE_TEXT = `Surf smelt and Pacific sand lance lay their eggs in the upper beach on sand and fine gravel. These small fish feed salmon, seabirds and marine mammals, so spawning beaches are among the most important — and most easily damaged — shoreline habitats.`;
-const HERRING_TEXT = `Pacific herring spawn on eelgrass and algae in sheltered bays. Herring are a keystone forage fish, a primary food for salmon, seabirds and marine mammals.`;
+// Friends of the San Juans' own words (Living with the Shoreline handout), cited under each card.
+const KELP_TEXT = `The San Juans are home to one-third of all floating kelp in the inland waters of Washington State. Kelp helps reduce wave energy that causes beach erosion and provides protected feeding areas for marine mammals, birds, and fish. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span>`;
+const EELGRASS_TEXT = `Eelgrass provides food and shelter for many juvenile fish and shellfish of ecological, cultural, commercial, and recreational importance. In addition, eelgrass mitigates wave energy and traps sediments, protecting shorelines from wave driven erosion. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span>`;
+const FORAGE_TEXT = `Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span>`;
+const HERRING_TEXT = `Pacific herring deposit transparent, adhesive eggs on eelgrass and marine algae. Salmon and forage fish need the protection of eelgrass and kelp. <span class="ssx-cite">&mdash; <a href="/reports/living-with-the-shoreline.html" target="_blank" rel="noopener noreferrer">Living with the Shoreline</a>, Friends of the San Juans</span>`;
 
 /** Survey codes → plain names: "SurfSmelt", "SL", "Smelt/SL". */
 function speciesLabel(code: string): string {

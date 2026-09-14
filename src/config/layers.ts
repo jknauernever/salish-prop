@@ -90,6 +90,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Instl_Year', label: 'Install Year' },
     ],
     standardMessage: 'Stormwater infrastructure carries runoff from roads and developed areas to nearby water bodies. Pollutants in stormwater—oils, heavy metals, nutrients—can degrade nearshore habitat quality for salmon, forage fish, and shellfish.',
+    whyItMatters: {
+      text: 'Stormwater that runs off the land (runoff) carries sediments, debris, and pollutants like fecal coliform bacteria, petroleum, and heavy metals directly to local waters. Individual and onsite efforts to control stormwater and the pollutants it carries are essential in San Juan County, as public infrastructure is extremely limited. You can help by maintaining or restoring native vegetation along the shore to slow and filter runoff, installing pervious walks and driveways to allow filtration, directing stormwater flow from gutters and roads into vegetated areas, maintaining onsite sewage systems, and using compost instead of chemical fertilizers.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'San Juan County GIS',
   },
 
@@ -116,6 +120,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Chinook salmon are listed as threatened under the Endangered Species Act. Nearshore habitat is critical for juvenile Chinook rearing and migration. Shoreline modification can reduce prey availability and disrupt migration corridors.',
+    whyItMatters: {
+      text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -140,6 +148,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Chum salmon depend on nearshore habitats during early marine life stages. Estuaries and pocket beaches provide critical transition zones where juveniles feed and grow before moving offshore.',
+    whyItMatters: {
+      text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -164,6 +176,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Pink salmon are the most abundant Pacific salmon species. Their juveniles spend minimal time in freshwater, making nearshore marine habitat especially critical during outmigration.',
+    whyItMatters: {
+      text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -188,6 +204,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Pacific herring are a keystone forage fish species, spawning on eelgrass and algae in nearshore areas. Herring are a primary food source for salmon, seabirds, and marine mammals throughout the Salish Sea.',
+    whyItMatters: {
+      text: 'Herring, crucial for marine food webs, spawn on eelgrass habitat in just a few locations in San Juan County that are also popular with boaters including Eastsound and West Sound, Blind Bay, Mud Bay, and Hunter Bay. Eelgrass, a vital marine habitat in the Salish Sea, supports Dungeness crabs, Chinook salmon, Pacific herring, and ultimately the Southern Resident killer whales.',
+      source: { credit: 'Become a Green Boater Today (sanjuans.org)', url: 'https://sanjuans.org/become-a-green-boater-today/' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -212,6 +232,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Sand lance spawn in the upper intertidal zone on sand-gravel beaches. Shoreline armoring and beach modification directly destroy spawning habitat for this essential forage fish.',
+    whyItMatters: {
+      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -236,6 +260,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RITT_SubTy', label: 'Sub Type' },
     ],
     standardMessage: 'Surf smelt spawn on mixed sand-gravel beaches in the upper intertidal zone. Like sand lance, their spawning habitat is directly threatened by shoreline hardening and development.',
+    whyItMatters: {
+      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
   {
@@ -273,6 +301,10 @@ export const layerConfigs: LayerConfig[] = [
     ],
     standardMessage:
       'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. These values are spring/summer at-sea density estimates from WDFW boat surveys (MRB), aggregated to large biogeographic strata — they represent abundance for the stratum as a whole, not the point you clicked. The companion 30m raster surfaces published by WDFW are interpolated display products, not raw observations.',
+    whyItMatters: {
+      text: 'From marbled murrelets to cormorants, seabirds rely on abundant fish, intact kelp forests, and undisturbed nesting areas.',
+      source: { credit: 'Shoreline Ecosystems (sanjuans.org)', url: 'https://sanjuans.org/our-work/shoreline-ecosystems/' },
+    },
     sourceCredit: 'Washington Department of Fish and Wildlife at-sea surveys (MRB)',
     sourceUrl:
       'https://geodataservices.wdfw.wa.gov/arcgis/rest/services/WP_WildlifeSurveys/MRB/MapServer',
@@ -308,6 +340,10 @@ export const layerConfigs: LayerConfig[] = [
     ],
     standardMessage:
       'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. These values are winter at-sea density estimates from PSEMP aerial surveys, aggregated to ~36 basins — they represent abundance for the basin as a whole, not the point you clicked. Confidence intervals are 90% bootstrap rather than 95% normal-CL, reflecting the distance-sampling methodology of the aerial program.',
+    whyItMatters: {
+      text: 'From marbled murrelets to cormorants, seabirds rely on abundant fish, intact kelp forests, and undisturbed nesting areas.',
+      source: { credit: 'Shoreline Ecosystems (sanjuans.org)', url: 'https://sanjuans.org/our-work/shoreline-ecosystems/' },
+    },
     sourceCredit: 'Washington Department of Fish and Wildlife / Puget Sound Ecosystem Monitoring Program (PSEMP) surveys',
     sourceUrl:
       'https://geodataservices.wdfw.wa.gov/arcgis/rest/services/WP_WildlifeSurveys/PSEMP/MapServer',
@@ -353,6 +389,10 @@ export const layerConfigs: LayerConfig[] = [
     },
     popupFields: [],
     standardMessage: 'NDVI measures vegetation density and health from aerial imagery. Green areas indicate healthy, dense vegetation; yellow indicates sparse or stressed vegetation; red indicates bare ground, water, or impervious surfaces.',
+    whyItMatters: {
+      text: 'Trees and shrubs do a lot of work. An undisturbed forest can intercept up to 40% of rainfall, protecting against erosion while also slowing surface runoff, increasing infiltration, and protecting water quality. Overhanging vegetation also provides shade, a key factor in keeping beach conditions cool, moist, and organically rich. The insects that live in the trees and shrubs then become food for small fish. Shoreline vegetation is feeding, nesting, roosting, breeding, and migratory habitat for hundreds of wildlife species including eagles, herons, and osprey.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'USDA NAIP aerial imagery (October 2023, 0.6 m), processed in Google Earth Engine',
     layerType: 'raster',
     tileUrl: 'https://storage.googleapis.com/salish-ndvi-tiles/ndvi/{z}/{x}/{y}.png',
@@ -374,6 +414,10 @@ export const layerConfigs: LayerConfig[] = [
     },
     popupFields: [],
     standardMessage: 'Sentinel-2 NDVI computed on-the-fly from cloud-free satellite composites. Use the date range controls to compare vegetation health across seasons and years.',
+    whyItMatters: {
+      text: 'Trees and shrubs do a lot of work. An undisturbed forest can intercept up to 40% of rainfall, protecting against erosion while also slowing surface runoff, increasing infiltration, and protecting water quality. Overhanging vegetation also provides shade, a key factor in keeping beach conditions cool, moist, and organically rich. The insects that live in the trees and shrubs then become food for small fish. Shoreline vegetation is feeding, nesting, roosting, breeding, and migratory habitat for hundreds of wildlife species including eagles, herons, and osprey.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'ESA Copernicus Sentinel-2 (10 m), cloud-free seasonal composites processed in Google Earth Engine',
     layerType: 'dynamic-raster',
     apiEndpoint: 'https://us-west1-salish-sea-property-mapper.cloudfunctions.net/ee-ndvi-tiles',
@@ -395,6 +439,10 @@ export const layerConfigs: LayerConfig[] = [
     },
     popupFields: [],
     standardMessage: 'Annual forest cover loss from the UMD Hansen Global Forest Change dataset. Pixels are colored by the year the loss occurred — pale pink for early loss (2001), bright red for recent loss (2025). Source data is derived from Landsat at 30m resolution. Click any colored pixel for the loss patch size.',
+    whyItMatters: {
+      text: 'Trees and shrubs do a lot of work. An undisturbed forest can intercept up to 40% of rainfall, protecting against erosion while also slowing surface runoff, increasing infiltration, and protecting water quality. Overhanging vegetation also provides shade, a key factor in keeping beach conditions cool, moist, and organically rich. The insects that live in the trees and shrubs then become food for small fish. Shoreline vegetation is feeding, nesting, roosting, breeding, and migratory habitat for hundreds of wildlife species including eagles, herons, and osprey.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Hansen/UMD/Google/USGS/NASA Global Forest Change (Landsat, 30 m)',
     sourceUrl: 'https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2025_v1_13',
     legend: {
@@ -424,6 +472,10 @@ export const layerConfigs: LayerConfig[] = [
     },
     popupFields: [],
     standardMessage: 'Near-real-time forest/vegetation disturbance alerts derived from Harmonized Landsat-Sentinel-2 imagery. Choose a view: Recency shows when each disturbance was detected (bright = recent); Status shows whether an alert is provisional or confirmed; Severity shows the magnitude of vegetation loss (0–100%). Complements the Hansen layer above, which is an annual cumulative product. Detects all vegetation cover loss including agriculture, landslides, and tree clearing; not all alerts are deforestation. Verify before drawing conclusions.',
+    whyItMatters: {
+      text: 'Trees and shrubs do a lot of work. An undisturbed forest can intercept up to 40% of rainfall, protecting against erosion while also slowing surface runoff, increasing infiltration, and protecting water quality. Overhanging vegetation also provides shade, a key factor in keeping beach conditions cool, moist, and organically rich. The insects that live in the trees and shrubs then become food for small fish. Shoreline vegetation is feeding, nesting, roosting, breeding, and migratory habitat for hundreds of wildlife species including eagles, herons, and osprey.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'NASA OPERA DIST-ALERT (Harmonized Landsat–Sentinel-2)',
     sourceUrl: 'https://www.earthdata.nasa.gov/data/catalog/lpcloud-opera-l3-dist-alert-hls-v1-1',
     legend: {
@@ -489,6 +541,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'area_sqm', label: 'Area (sq m)' },
     ],
     standardMessage: 'Eelgrass beds are critical nursery habitat for juvenile salmon, forage fish, and Dungeness crab. They also sequester carbon and stabilize shoreline sediments. Development or activity that disturbs eelgrass is regulated under the Shoreline Management Act.',
+    whyItMatters: {
+      text: 'Eelgrass is a flowering plant that grows in shallow, light-filled marine waters. Eelgrass provides food and shelter for many juvenile fish and shellfish of ecological, cultural, commercial, and recreational importance. The long blades of eelgrass are home to incubating eggs and animals, including crabs and juvenile fish. In addition, eelgrass mitigates wave energy and traps sediments, protecting shorelines from wave driven erosion.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     placeholder: true,
   },
   {
@@ -557,6 +613,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'OBJECTID', label: 'Object ID' },
     ],
     standardMessage: 'Pacific Herring Spawning — areas (present or historic) where Pacific herring spawn. Herring lay eggs on eelgrass and algae in the nearshore and are a primary food source for salmon, seabirds, and marine mammals.',
+    whyItMatters: {
+      text: 'Herring, crucial for marine food webs, spawn on eelgrass habitat in just a few locations in San Juan County that are also popular with boaters including Eastsound and West Sound, Blind Bay, Mud Bay, and Hunter Bay. Eelgrass, a vital marine habitat in the Salish Sea, supports Dungeness crabs, Chinook salmon, Pacific herring, and ultimately the Southern Resident killer whales.',
+      source: { credit: 'Become a Green Boater Today (sanjuans.org)', url: 'https://sanjuans.org/become-a-green-boater-today/' },
+    },
     sourceCredit: 'Washington Department of Fish and Wildlife; compiled by Friends of the San Juans',
   },
   {
@@ -587,6 +647,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'sqft', label: 'Square feet' },
     ],
     standardMessage: 'Bull Kelp — canopy (floating) kelp mapped by the Washington Department of Natural Resources and Friends of the San Juans. Bull kelp grows on rocky substrate in higher-energy water, absorbs carbon, dampens wave energy, and is vital nursery habitat for coastal marine species. Note: the many understory kelps along rocky shores have not been mapped.',
+    whyItMatters: {
+      text: 'The San Juans are home to one-third of all floating kelp in the inland waters of Washington State. Kelp helps reduce wave energy that causes beach erosion and provides protected feeding areas for marine mammals, birds, and fish. Kelp shelters urchins, crabs, juvenile rockfish, anemones, starfish, sea cucumbers, octopuses, and many other marine creatures. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Washington Department of Natural Resources and Friends of the San Juans',
     minZoom: 10,
   },
@@ -614,6 +678,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'COMMENTS', label: 'Comments' },
     ],
     standardMessage: 'Deep Water Edge of Eelgrass — the deepest (waterward) edge of eelgrass meadows, based on a countywide study by Friends of the San Juans, the Washington Department of Natural Resources, and Friday Harbor Labs. Eelgrass is a flowering marine plant that shelters juvenile salmon and spawning herring, stores carbon, and buffers waves and erosion.',
+    whyItMatters: {
+      text: 'Eelgrass is a flowering plant that grows in shallow, light-filled marine waters. Eelgrass provides food and shelter for many juvenile fish and shellfish of ecological, cultural, commercial, and recreational importance. The long blades of eelgrass are home to incubating eggs and animals, including crabs and juvenile fish. In addition, eelgrass mitigates wave energy and traps sediments, protecting shorelines from wave driven erosion.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans, Washington DNR, and Friday Harbor Labs (countywide eelgrass study)',
   },
   {
@@ -635,6 +703,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ShoreForm_Unit_ID', label: 'Shoreform Unit' },
     ],
     standardMessage: 'Forage Fish Potential Spawning Habitat — beaches whose substrate is suitable (non-bedrock shores) to support spawning by Pacific sand lance or surf smelt.',
+    whyItMatters: {
+      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans',
   },
   {
@@ -661,6 +733,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'RecordsSource', label: 'Source' },
     ],
     standardMessage: 'Documented Forage Fish Beach Spawning Habitat — beaches where Pacific sand lance, surf smelt, or both have been found spawning. Forage fish are a cornerstone of the marine food web, feeding salmon, seabirds, and marine mammals.',
+    whyItMatters: {
+      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans forage fish egg surveys, with WDFW records',
   },
   // -- Shoreline --
@@ -703,6 +779,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'SLR_Restore', label: 'SLR Restoration' },
     ],
     standardMessage: 'Geomorphic Shoreforms — the primary geologic features of the marine shoreline. Coastal processes affect different shore form types in different ways, resulting in different management concerns and priorities. Feeder Bluff Exceptional: highly erosive in its natural state, an important sediment source for down-drift beaches. Feeder Bluff: episodically erosive, supplying sediment that forms and maintains down-drift beaches. Transport Zone: neither eroding nor accreting; sediment moves through from feeder bluffs to accretionary beaches. Barrier Beach: typically wide with extended backshores, where material from sediment-supply bluffs is deposited. Embayment – Estuary: a relatively closed bay with a freshwater source. Embayment – Lagoon: open or closed to the sea but lacking a consistent freshwater source. Pocket Beach: sand and gravel between two rocky headlands; material seldom leaves the system. Rocky Shoreline: lacks appreciable sediment drift or erosion. Artificial: altered so much that the historic shore type is not known.',
+    whyItMatters: {
+      text: 'Feeder bluffs provide the sand that forms and maintains beaches and marine habitats. Experts estimate that over 90% of the sand and gravel that comprise the beaches of Puget Sound and the San Juans comes from eroding banks and bluffs. Within its 400+ miles of shoreline, there are 30 miles of feeder bluffs, 34 miles of transport zones, 25 miles of barrier or accretionary beaches and spits, 48 miles of pocket beaches, 17 miles of embayment estuaries and lagoons, and 250 miles of rocky shores. If your property has a feeder bluff, be sure to set structures far away from the bluff.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans geomorphic shoreform mapping',
   },
   {
@@ -724,7 +804,11 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorMaterial', label: 'Material' },
       { key: 'ArmorCondition', label: 'Condition' },
     ],
-    standardMessage: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
+    standardMessage: 'Shoreline armoring — bulkheads, riprap, sea walls, and bank stabilization mapped in Friends of the San Juans\' 2019 countywide armor survey, with material, condition, toe elevation, and what each structure protects.',
+    whyItMatters: {
+      text: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
   // -- Shoreline Infrastructure --
@@ -810,6 +894,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'OBJECTID', label: 'Object ID' },
     ],
     standardMessage: 'Mooring Buoys & Floats — in- and overwater moorage facilities.',
+    whyItMatters: {
+      text: 'Around the world and here at home, boat anchors and mooring buoys are known to damage eelgrass when chains drag across the seafloor. Divers inspected 150 buoys and found many located in eelgrass habitat lacked mid-line floats—the simple devices that keep chains from scouring the bottom. With support from the National Fish and Wildlife Foundation, Friends and Frog Marine worked with interested mooring buoy owners to install mid-line floats on 81 moorings, immediately removing this source of damage to eelgrass.',
+      source: { credit: 'Restoring Eelgrass to Protect Herring and Salmon (sanjuans.org)', url: 'https://sanjuans.org/restoring-eelgrass-to-protect-herring-and-salmon/' },
+    },
     sourceCredit: 'Friends of the San Juans shoreline inventory',
   },
   {
@@ -830,6 +918,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Creosote', label: 'Creosote' },
     ],
     standardMessage: 'Pilings not associated with a dock or marina. Creosote-treated pilings leach toxic compounds into the marine environment.',
+    whyItMatters: {
+      text: 'While the San Juans do not have large industrial sources of pollution, cars, creosote pilings, failing septic systems, sedimentation, fertilizers, and household chemicals all cause water quality issues. Removal of degraded structures such as derelict docks, boathouses, and creosote pilings can reduce known sources of toxic materials in our waters and recover habitat for fish, shellfish, and people.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans shoreline inventory',
   },
   {
@@ -857,6 +949,10 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'Waypoint', label: 'Waypoint' },
     ],
     standardMessage: 'Docks — smaller overwater structures (this layer does not include marinas). Dock shading and creosote-treated materials can degrade nearshore habitat.',
+    whyItMatters: {
+      text: 'Juvenile salmon often avoid swimming under docks, and instead move out into deeper waters where they are at risk from predators. Since eelgrass needs light to grow, use a marina or mooring buoy instead of building a new dock which can shade out marine vegetation. If you already have a dock, look into improvements that can increase light penetration such as grating. Removal of degraded structures such as derelict docks, boathouses, and creosote pilings can reduce known sources of toxic materials in our waters and recover habitat for fish, shellfish, and people.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans shoreline inventory',
   },
   {
@@ -932,7 +1028,11 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'ArmorContainsCreosotesWood', label: 'Contains Creosote' },
       { key: 'TidalElev_Armor', label: 'Tidal Elevation' },
     ],
-    standardMessage: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
+    standardMessage: 'Shoreline armor change analysis, 2009 to 2019 — amber segments were mapped in the 2009 shoreline inventory; red segments are armor newly identified in the 2019 survey.',
+    whyItMatters: {
+      text: 'Hard shoreline armoring can reduce short-term wave erosion hazards, but it also starves nearby beaches, impacts fish and wildlife habitat, requires maintenance, and does not address flooding. Bulkheads cause erosion of the beach itself when waves reflect off the hard structure, and they interrupt the processes that maintain beaches over the long term. A NOAA Fisheries study found surf smelt egg survival cut by half where beaches were warmer and drier because of hard armored bulkheads and the absence of trees and shrubs. Hundreds of bulkheads in San Juan County are unnecessary, placed where natural erosion rates are low, and can be removed or redesigned to better protect property and help feed forage fish, salmon, and orca.',
+      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    },
     sourceCredit: 'Friends of the San Juans shoreline inventory (2009) and armor change survey (2019)',
   },
 
@@ -976,6 +1076,10 @@ export const layerConfigs: LayerConfig[] = [
     popupFields: [],
     standardMessage:
       'Marbled murrelets are listed as Threatened under the federal Endangered Species Act. Markers combine three sources: GBIF (global biodiversity records), iNaturalist (photo-verified citizen science), and eBird (recent checklists, last 30 days only). GBIF rows whose origin is iNaturalist are filtered out to avoid duplicates. Click any marker for the source observation page and photo (when available); drag the slider handles to narrow the date window.',
+    whyItMatters: {
+      text: 'From marbled murrelets to cormorants, seabirds rely on abundant fish, intact kelp forests, and undisturbed nesting areas.',
+      source: { credit: 'Shoreline Ecosystems (sanjuans.org)', url: 'https://sanjuans.org/our-work/shoreline-ecosystems/' },
+    },
     sourceCredit: 'GBIF, iNaturalist, and eBird observation records',
     sourceUrl: 'https://www.gbif.org/species/5229281',
   },

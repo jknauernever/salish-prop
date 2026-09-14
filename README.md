@@ -245,6 +245,10 @@ Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Rele
 
 ---
 
+### "Why it matters" text is Friends' own (2026-09-14)
+
+The popup story block only shows words from Friends of the San Juans: `whyItMatters` on a layer config (`src/config/layers.ts`) carries verbatim sentences from the Living with the Shoreline handout, the kelp handout, or a sanjuans.org page, plus the source shown as a credit line under the block (`PopupBlock.source`). Layers without sourced text show no story block. A Friends' Projects feature uses its own article's WordPress excerpt; the Related-content rows use excerpts too, never the enrichment summaries. `standardMessage` still describes the dataset in the legend and sidebar. The parcel Fish and Vegetation tabs quote the handout with the same credit. `public/_popup-test.html?l=<layer ids>&i=<feature index>` renders popups without a map for checking.
+
 ### Forage fish at parcel level (2026-09-14)
 
 The three forage fish layers are one family in the UI: "Forage Fish Spawning: Herring", "Forage Fish Beach Spawning: Smelt & Sand Lance (documented)" and "… (potential)". In the precompute, documented beaches count within 200 ft of the parcel; **potential** beach habitat counts only where it fronts the parcel (25 ft, `POTENTIAL_FT`) and never when the parcel's own nearest shoreform is Rocky Shoreline (Friends' rule: potential spawning must not include bedrock). The Fish tab shows the distance and shoreform of each matched feature ("Why it is here") so the claims can be checked against the map.

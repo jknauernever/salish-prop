@@ -203,6 +203,10 @@ body {
 .ssx-art-meta { font-size: 11.5px; font-weight: 600; color: #4A4640; letter-spacing: .02em; }
 .ssx-art-sum { font-size: 13px; line-height: 1.45; color: #2E2B26; margin-top: 2px; }
 
+/* Source line under a quoted "Why it matters" block */
+.ssx-cite { margin-top: 6px; font-size: 12.5px; color: #5C5648; }
+.ssx-cite a { color: inherit; text-decoration: underline; text-decoration-color: rgba(92,86,72,.4); }
+
 /* ---- Phone popup: the popup frame as a bottom sheet (popupSheet.ts) ---- */
 .ssx-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; max-height: 62%; display: flex; flex-direction: column; background: #FBF7EF; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(40,30,10,.22); transform: translateY(105%); transition: transform .28s ease-out; }
 .ssx-sheet.is-open { transform: translateY(0); }

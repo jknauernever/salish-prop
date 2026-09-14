@@ -37,6 +37,8 @@ export interface PopupBlock {
   /** Trusted HTML (already escaped where it came from user data). */
   html: string;
   button?: { label: string; href: string };
+  /** Where the words come from (shown as a small credit line under the text). */
+  source?: { credit: string; url: string };
 }
 
 export interface PopupFooterButton {
@@ -126,7 +128,10 @@ function blockHtml(cls: string, b: PopupBlock): string {
   const btn = b.button
     ? `<div class="ssx-btn-row"><a class="ssx-btn-sun" href="${escapeHtml(b.button.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(b.button.label)}</a></div>`
     : '';
-  return `<div class="ssx-block ${cls}"><div class="ssx-k">${escapeHtml(b.kicker)}</div>${b.html}${btn}</div>`;
+  const cite = b.source
+    ? `<div class="ssx-cite">&mdash; <a href="${escapeHtml(b.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(b.source.credit)}</a></div>`
+    : '';
+  return `<div class="ssx-block ${cls}"><div class="ssx-k">${escapeHtml(b.kicker)}</div>${b.html}${cite}${btn}</div>`;
 }
 
 export function buildPopupFrame(o: PopupFrameOptions): string {

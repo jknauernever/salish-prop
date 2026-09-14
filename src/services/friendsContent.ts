@@ -21,6 +21,8 @@ export interface ContentItem {
   date: string; // YYYY-MM-DD
   type: 'post' | 'page';
   summary: string;
+  /** The article's own WordPress excerpt (Friends' words), when it has one. */
+  excerpt?: string;
   topics: string[];
   islands: string[];
   places: string[];
