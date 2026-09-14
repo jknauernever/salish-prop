@@ -111,6 +111,11 @@ export interface LayerConfig {
    * of fish glyphs painted over the layer's normal fill.
    */
   renderer?: 'kelp-squiggle' | 'herring-school';
+  /**
+   * For thin line layers: width in px of an invisible second line drawn
+   * underneath, so a click near the line still opens its popup.
+   */
+  hitStrokeWeight?: number;
   markerIcon?: string;
   styleByProperty?: StyleByProperty;
   /**

@@ -185,6 +185,19 @@ function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [num
 }
 
 /** Google icon spec for a layer's marker, honoring markerScale. */
+/** Style for the invisible click-target line under a thin line layer. */
+function hitStyle(config: LayerConfig, visible: boolean): google.maps.Data.StyleOptions {
+  return {
+    strokeWeight: config.hitStrokeWeight ?? 12,
+    strokeOpacity: 0.001, // fully transparent lines are not hit-tested
+    strokeColor: '#000000',
+    fillOpacity: 0,
+    zIndex: -1,
+    clickable: visible,
+    visible,
+  };
+}
+
 function markerIconSpec(config: LayerConfig, url: string): google.maps.Icon {
   const k = config.markerScale ?? 1;
   return {
@@ -329,6 +342,9 @@ export function useLayers(
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
   // Canvas overlays for layers with a custom `renderer` (e.g. kelp squiggles)
   const patternOverlaysRef = useRef<Map<string, KelpOverlay>>(new Map());
+  // Invisible wide lines under thin line layers (config.hitStrokeWeight): clicks on
+  // them are re-dispatched to the visible layer, so a near miss still opens the popup
+  const hitLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const loadedRef = useRef<Set<string>>(new Set());
 
   // Viewport-filtered layer data: full GeoJSON + spatial index
@@ -454,6 +470,8 @@ export function useLayers(
 
     const overlay = patternOverlaysRef.current.get(layerId);
     if (overlay) overlay.setMap(visible ? (map ?? null) : null);
+    const hit = hitLayersRef.current.get(layerId);
+    if (hit) hit.setStyle(hitStyle(config, visible));
 
     // Multi-source observation layers carry a time filter alongside
     // visibility — route both through the dedicated style applier so the
@@ -994,6 +1012,18 @@ export function useLayers(
           }
 
           dataLayersRef.current.set(config.id, dataLayer);
+
+          if (config.hitStrokeWeight) {
+            const hitLayer = new google.maps.Data({ map });
+            hitLayer.addGeoJson(data);
+            hitLayer.setStyle(hitStyle(config, shouldShow));
+            hitLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
+              google.maps.event.trigger(dataLayer, 'click', event);
+            });
+            hitLayersRef.current.set(config.id, hitLayer);
+            // Debug handle (harmless): lets the console poke the click targets
+            (window as unknown as Record<string, unknown>).__ssxHit = hitLayersRef.current;
+          }
 
           // Custom-rendered layers: paint on a canvas overlay above the (transparent) Data layer
           if (config.renderer === 'kelp-squiggle' || config.renderer === 'herring-school') {

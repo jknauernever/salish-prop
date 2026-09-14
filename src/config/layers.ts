@@ -670,7 +670,9 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Primary geologic features of marine shorelines — coastal processes affect different shore form types in different ways, resulting in different management concerns and priorities',
     category: 'friends-data',
     source: '/data/friends-shoreline-geology.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 13 (see minZoom)
+    minZoom: 13,
+    hitStrokeWeight: 14, // the colored line is 3 px; give it a forgiving click target
     style: {
       fillColor: '#708090',
       fillOpacity: 0,
