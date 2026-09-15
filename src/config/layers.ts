@@ -73,11 +73,14 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/Stormwater_Pipes.geojson',
     visible: true,
     minZoom: 15,
+    casing: { color: '#93C5FD', weight: 7.5, opacity: 0.9 },
+    markerScale: 0.75, // minor structures
+    markerIcon: MARKER_ICONS.drain, // one pin per pipe at its midpoint, thinned by zoom
     style: {
-      fillColor: '#84CC16',
+      fillColor: '#1D4ED8',
       fillOpacity: 0,
-      strokeColor: '#84CC16', // lime: nothing else on the map is green, and it sits far from the orange parcel lines
-      strokeWeight: 4,
+      strokeColor: '#1D4ED8', // dark blue pipe over a light blue casing (see casing)
+      strokeWeight: 3.5,
     },
     popupFields: [
       { key: 'Pipe_ID', label: 'Pipe ID' },

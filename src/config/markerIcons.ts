@@ -83,6 +83,12 @@ const SPECS: Record<string, IconSpec> = {
     color: '#A0522D',
     glyph: 'M4 4h7v3.4H4zM12.6 4H20v3.4h-7.4zM4 9h3.4v3.4H4zM9 9h6v3.4H9zM16.6 9H20v3.4h-3.4zM4 14h7v3.4H4zM12.6 14H20v3.4h-7.4zM3 19.2c1.6-1.1 3.2-1.1 4.8 0s3.2 1.1 4.8 0 3.2-1.1 4.8 0 3.2 1.1 4.6 0V22H3z',
   },
+  // Stormwater: a pipe mouth above the ground line, two drips falling from it
+  drain: {
+    color: '#1D4ED8',
+    strokeGlyph: true,
+    glyph: 'M7 12.5a5 5 0 0 1 10 0M3.5 13h17M9.5 16.5v3M14.5 16.5v3',
+  },
   // Friends' Projects: a site target ring over the water (chosen from the
   // marker exploration canvas, 2026-09-03). Disc color comes per project
   // type via FRIENDS_PROJECT_ICONS; the ring and wave stay white.

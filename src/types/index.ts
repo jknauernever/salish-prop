@@ -137,6 +137,12 @@ export interface LayerConfig {
    * underneath, so a click near the line still opens its popup.
    */
   hitStrokeWeight?: number;
+  /**
+   * Two-tone line: a wider, lighter stroke drawn under the layer's own line
+   * (e.g. dark blue pipe with a light blue casing). Uses the same underlay
+   * layer as hitStrokeWeight, so it also widens the click target.
+   */
+  casing?: { color: string; weight: number; opacity?: number };
   markerIcon?: string;
   styleByProperty?: StyleByProperty;
   /**

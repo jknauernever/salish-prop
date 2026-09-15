@@ -252,14 +252,15 @@ function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [num
 }
 
 /** Google icon spec for a layer's marker, honoring markerScale. */
-/** Style for the invisible click-target line under a thin line layer. */
+/** Style for the underlay line beneath a line layer: a visible casing, or an invisible click target. */
 function hitStyle(config: LayerConfig, visible: boolean): google.maps.Data.StyleOptions {
+  const c = config.casing;
   return {
-    strokeWeight: config.hitStrokeWeight ?? 12,
-    strokeOpacity: 0.001, // fully transparent lines are not hit-tested
-    strokeColor: '#000000',
+    strokeWeight: c ? Math.max(c.weight, config.hitStrokeWeight ?? 0) : (config.hitStrokeWeight ?? 12),
+    strokeOpacity: c ? (c.opacity ?? 0.9) : 0.001, // fully transparent lines are not hit-tested
+    strokeColor: c ? c.color : '#000000',
     fillOpacity: 0,
-    zIndex: -1,
+    zIndex: (config.style.zIndex ?? 0) - 1,
     clickable: visible,
     visible,
   };
@@ -1081,7 +1082,7 @@ export function useLayers(
           dataLayersRef.current.set(config.id, dataLayer);
           warmHitCache(data); // so the first "what's here" click is instant
 
-          if (config.hitStrokeWeight) {
+          if (config.hitStrokeWeight || config.casing) {
             const hitLayer = new google.maps.Data({ map });
             hitLayer.addGeoJson(data);
             hitLayer.setStyle(hitStyle(config, shouldShow));
