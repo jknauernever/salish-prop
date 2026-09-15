@@ -251,7 +251,7 @@ The popup story block only shows words from Friends of the San Juans: `whyItMatt
 
 ### Forage fish at parcel level (2026-09-14)
 
-The three forage fish layers are one family in the UI: "Forage Fish Spawning: Herring", "Forage Fish Beach Spawning: Smelt & Sand Lance (documented)" and "… (potential)". In the precompute, documented beaches count within 200 ft of the parcel; **potential** beach habitat counts only where it fronts the parcel (25 ft, `POTENTIAL_FT`) and never when the parcel's own nearest shoreform is Rocky Shoreline (Friends' rule: potential spawning must not include bedrock). The Fish tab shows the distance and shoreform of each matched feature ("Why it is here") so the claims can be checked against the map.
+The three forage fish layers are one family in the UI: "Forage Fish Spawning: Herring Spawning Grounds", "Forage Fish Beach Spawning: Smelt & Sand Lance — Documented Spawning Beaches" and "… — Potential Spawning Habitat". In the precompute, documented beaches count within 200 ft of the parcel; **potential** beach habitat counts only where it fronts the parcel (25 ft, `POTENTIAL_FT`) and never when the parcel's own nearest shoreform is Rocky Shoreline (Friends' rule: potential spawning must not include bedrock). The Fish tab shows the distance and shoreform of each matched feature ("Why it is here") so the claims can be checked against the map.
 
 ### Phone layout
 
