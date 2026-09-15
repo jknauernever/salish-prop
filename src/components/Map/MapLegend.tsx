@@ -58,7 +58,6 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
     if (lastOpen != null || mobile) return;
     const t = window.setTimeout(() => setOpen(true), 450);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [infoModal, setInfoModal] = useState<{ layers: LayerState[]; title: string; intro?: string } | null>(null);
   const setInfoLayer = (layer: LayerState) => setInfoModal({ layers: [layer], title: layer.config.name });
