@@ -11,6 +11,15 @@ import {
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
 import { warmHitCache } from '../services/hitTest';
+
+/** Fired on window as the cursor enters / moves over / leaves a midpoint or centroid pin. */
+export const MARKER_HOVER_EVENT = 'ssx-marker-hover';
+export interface MarkerHoverDetail {
+  layerId: string;
+  properties: Record<string, unknown>;
+  phase: 'mouseover' | 'mousemove' | 'mouseout';
+  domEvent?: MouseEvent;
+}
 import { getDeckManager, registerDeckManager, DECK_CLICK_EVENT } from '../components/Map/DeckLayers';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
@@ -1122,6 +1131,16 @@ export function useLayers(
                   detail: { layerId: config.id, properties, lat: ll.lat(), lng: ll.lng() },
                 }));
               });
+              // Hover: name the pin (FeaturePopup shows the label), like lines and fills
+              for (const ev of ['mouseover', 'mousemove', 'mouseout'] as const) {
+                markerLayer.addListener(ev, (event: google.maps.Data.MouseEvent) => {
+                  const properties: Record<string, unknown> = {};
+                  event.feature.forEachProperty((v, k) => { if (k !== 'mid' && k !== 'lengthRank') properties[k] = v; });
+                  window.dispatchEvent(new CustomEvent<MarkerHoverDetail>(MARKER_HOVER_EVENT, {
+                    detail: { layerId: config.id, properties, phase: ev, domEvent: event.domEvent as MouseEvent | undefined },
+                  }));
+                });
+              }
               markerLayer.setStyle(midpointMarkerStyle(markerLayer, config, shouldShow, map.getZoom() ?? 0, reservedAt(map.getZoom() ?? 0)));
               markerLayersRef.current.set(config.id, markerLayer);
             }

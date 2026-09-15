@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import type { LayerConfig, LayerState } from '../../types';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { LayerInfoModal, Swatch, CategoryChips } from './LayerInfoModal';
+import { legendGroupFor, type LegendGroup } from '../../config/legendGroups';
 
 // The legend unmounts while the dataset picker is open; remember its state
 // across mounts so closing the picker does not re-run the first-open reveal.
 let lastOpen: boolean | null = null;
+let lastExpanded: string[] = [];
 
 interface MapLegendProps {
   layers: LayerState[];
@@ -19,6 +21,17 @@ interface MapLegendProps {
   /** Layers the user asked to see regardless of their minZoom. */
   zoomOverrides: Set<string>;
   onSetZoomOverride: (layerId: string, on: boolean) => void;
+}
+
+/** Swatch for a legend group: three stacked pin heads. */
+function GroupSwatch() {
+  return (
+    <span className="inline-flex items-end -space-x-1.5 shrink-0" aria-hidden="true">
+      <span className="w-2.5 h-2.5 rounded-full border border-white" style={{ background: '#1A73E8' }} />
+      <span className="w-2.5 h-2.5 rounded-full border border-white" style={{ background: '#0B8FA8' }} />
+      <span className="w-2.5 h-2.5 rounded-full border border-white" style={{ background: '#A0522D' }} />
+    </span>
+  );
 }
 
 function hasInfo(config: LayerConfig): boolean {
@@ -47,7 +60,11 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [infoLayer, setInfoLayer] = useState<LayerState | null>(null);
+  const [infoModal, setInfoModal] = useState<{ layers: LayerState[]; title: string; intro?: string } | null>(null);
+  const setInfoLayer = (layer: LayerState) => setInfoModal({ layers: [layer], title: layer.config.name });
+  // Legend groups start collapsed; remembered across mounts like the drawer
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(lastExpanded));
+  const toggleExpanded = (id: string) => setExpanded(e => { const n = new Set(e); if (n.has(id)) n.delete(id); else n.add(id); lastExpanded = [...n]; return n; });
   const [showSourcing, setShowSourcing] = useState(false);
   // Layers hidden from the legend row (click on the name) stay listed until ×
   const [kept, setKept] = useState<Set<string>>(() => new Set());
@@ -70,6 +87,107 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
   };
 
   const panelW = mobile ? 'w-full' : 'w-80';
+
+  // Rows in order: a group takes the place of its first member and swallows the rest
+  type Entry = { kind: 'layer'; layer: LayerState } | { kind: 'group'; group: LegendGroup; members: LayerState[] };
+  const entries: Entry[] = [];
+  const grouped = new Set<string>();
+  for (const layer of on) {
+    const g = legendGroupFor(layer.config.id);
+    if (!g) { entries.push({ kind: 'layer', layer }); continue; }
+    if (grouped.has(g.id)) continue;
+    grouped.add(g.id);
+    const members = g.layers.map(id => on.find(l => l.config.id === id)).filter((l): l is LayerState => !!l);
+    entries.push({ kind: 'group', group: g, members });
+  }
+  const groupState = (members: LayerState[]) => {
+    const anyVisible = members.some(m => m.visible);
+    const inViewN = members.filter(m => m.visible && inView.has(m.config.id)).length;
+    const allGated = members.every(m => !zoomOverrides.has(m.config.id) && m.config.minZoom != null && zoom < m.config.minZoom);
+    return { anyVisible, inViewN, allGated };
+  };
+  const toggleGroup = (members: LayerState[]) => {
+    const { anyVisible } = groupState(members);
+    for (const m of members) {
+      const gated = !zoomOverrides.has(m.config.id) && m.config.minZoom != null && zoom < m.config.minZoom;
+      if (anyVisible) { if (m.visible) hideRow(m.config.id); }
+      else showRow(m.config.id, gated);
+    }
+  };
+  const removeGroup = (members: LayerState[]) => { for (const m of members) removeRow(m.config.id, m.visible); };
+
+  const renderRow = (layer: LayerState, sub = false) => {
+    const { config } = layer;
+    const overridden = zoomOverrides.has(config.id);
+    const gated = !overridden && config.minZoom != null && zoom < config.minZoom;
+    const hidden = !layer.visible;
+    const visibleNow = layer.visible && inView.has(config.id);
+    const accent = config.style.strokeColor || config.style.fillColor || '#0D4F4F';
+    const nameTitle = hidden
+      ? 'Hidden. Click to show'
+      : gated
+        ? `Drawn from zoom ${config.minZoom}. Click to show it at this zoom`
+        : 'Click to hide';
+    return (
+      <div
+        key={config.id}
+        className={`relative rounded-md py-1.5 transition-colors ${sub ? 'pl-7 pr-2' : 'px-2'} ${
+          visibleNow ? 'bg-teal-50/80' : 'opacity-55'
+        }`}
+      >
+        {visibleNow && (
+          <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: accent }} />
+        )}
+        <div className="flex items-center gap-2">
+          <Swatch config={config} />
+          <button
+            type="button"
+            onClick={() => (hidden ? showRow(config.id, gated) : gated ? onSetZoomOverride(config.id, true) : hideRow(config.id))}
+            className={`flex-1 min-w-0 text-left text-sm leading-snug hover:text-deep-teal ${visibleNow ? 'font-semibold text-slate-blue' : hidden ? 'text-slate-blue/60 line-through decoration-slate-blue/30' : 'text-slate-blue/85'}`}
+            title={nameTitle}
+            aria-pressed={!hidden}
+          >
+            {sub ? config.name.replace(/ \(2019 survey\)$/, '') : config.name}
+          </button>
+          {hidden ? (
+            <span className="text-[11px] text-slate-blue/60 whitespace-nowrap">hidden</span>
+          ) : gated ? (
+            <button
+              type="button"
+              onClick={() => onSetZoomOverride(config.id, true)}
+              className="text-[11px] text-slate-blue/60 whitespace-nowrap hover:text-deep-teal underline decoration-dotted"
+              title={`Drawn from zoom ${config.minZoom}. Click to show it now`}
+            >
+              zoom in
+            </button>
+          ) : null}
+          {hasInfo(config) && (
+            <button
+              type="button"
+              onClick={() => setInfoLayer(layer)}
+              aria-label={`About ${config.name}`}
+              title="About this layer"
+              className="shrink-0 w-[18px] h-[18px] inline-flex items-center justify-center rounded-full border text-[11px] font-semibold transition-colors bg-white text-slate-blue/50 border-slate-blue/30 hover:text-slate-blue hover:border-slate-blue/60"
+            >
+              i
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => removeRow(config.id, layer.visible)}
+            aria-label={`Remove ${config.name} from the map`}
+            title="Remove from the map"
+            className="w-5 h-5 shrink-0 inline-flex items-center justify-center rounded text-slate-blue/40 hover:text-slate-blue hover:bg-fog-gray transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {!gated && <CategoryChips config={config} className="mt-1 ml-6" />}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -111,7 +229,26 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
         {!mobile && !open && (
           /* Collapsed rail: just the swatches of what's on the map */
           <div className="flex flex-col items-center gap-1 py-2 w-11">
-            {on.map(layer => {
+            {entries.map(entry => {
+              if (entry.kind === 'group') {
+                const { anyVisible, inViewN } = groupState(entry.members);
+                const state = anyVisible ? 'on. Click to hide' : 'hidden. Click to show';
+                return (
+                  <button
+                    key={entry.group.id}
+                    type="button"
+                    onClick={() => toggleGroup(entry.members)}
+                    title={`${entry.group.name}: ${state}`}
+                    aria-label={`${entry.group.name}: ${state}`}
+                    aria-pressed={anyVisible}
+                    className={`relative w-8 h-8 inline-flex items-center justify-center rounded-md hover:bg-fog-gray transition-colors ${!anyVisible ? 'opacity-30' : inViewN ? '' : 'opacity-60'}`}
+                  >
+                    <GroupSwatch />
+                    {!anyVisible && <span aria-hidden="true" className="absolute inset-x-1.5 top-1/2 h-[2px] -rotate-45 bg-slate-blue/70 rounded" />}
+                  </button>
+                );
+              }
+              const layer = entry.layer;
               const { config } = layer;
               const hidden = !layer.visible;
               const gated = !zoomOverrides.has(config.id) && config.minZoom != null && zoom < config.minZoom;
@@ -174,66 +311,60 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
             {on.length === 0 && (
               <p className="px-2 py-2 text-sm text-slate-blue/70">No data layers are turned on.</p>
             )}
-            {on.map(layer => {
-              const { config } = layer;
-              const overridden = zoomOverrides.has(config.id);
-              const gated = !overridden && config.minZoom != null && zoom < config.minZoom;
-              const hidden = !layer.visible;
-              const visibleNow = layer.visible && inView.has(config.id);
-              const accent = config.style.strokeColor || config.style.fillColor || '#0D4F4F';
-              const nameTitle = hidden
-                ? 'Hidden. Click to show'
-                : gated
-                  ? `Drawn from zoom ${config.minZoom}. Click to show it at this zoom`
-                  : 'Click to hide';
+            {entries.map(entry => {
+              if (entry.kind === 'layer') return renderRow(entry.layer);
+              const { group, members } = entry;
+              const { anyVisible, inViewN, allGated } = groupState(members);
+              const isOpen = expanded.has(group.id);
               return (
-                <div
-                  key={config.id}
-                  className={`relative rounded-md px-2 py-1.5 transition-colors ${
-                    visibleNow ? 'bg-teal-50/80' : 'opacity-55'
-                  }`}
-                >
-                  {visibleNow && (
-                    <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: accent }} />
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Swatch config={config} />
+                <div key={group.id} className={`relative rounded-md transition-colors ${inViewN ? 'bg-teal-50/80' : 'opacity-70'}`}>
+                  {inViewN > 0 && <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[#A0522D]" />}
+                  <div className="flex items-center gap-2 px-2 py-1.5">
                     <button
                       type="button"
-                      onClick={() => (hidden ? showRow(config.id, gated) : gated ? onSetZoomOverride(config.id, true) : hideRow(config.id))}
-                      className={`flex-1 min-w-0 text-left text-sm leading-snug hover:text-deep-teal ${visibleNow ? 'font-semibold text-slate-blue' : hidden ? 'text-slate-blue/60 line-through decoration-slate-blue/30' : 'text-slate-blue/85'}`}
-                      title={nameTitle}
-                      aria-pressed={!hidden}
+                      onClick={() => toggleExpanded(group.id)}
+                      aria-expanded={isOpen}
+                      aria-label={isOpen ? `Collapse ${group.name}` : `Expand ${group.name}`}
+                      className="w-4 h-4 -ml-0.5 inline-flex items-center justify-center rounded text-slate-blue/50 hover:text-slate-blue hover:bg-fog-gray transition-colors"
                     >
-                      {config.name}
+                      <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
                     </button>
-                    {hidden ? (
-                      <span className="text-[11px] text-slate-blue/60 whitespace-nowrap">hidden</span>
-                    ) : gated ? (
+                    <GroupSwatch />
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(members)}
+                      className={`flex-1 min-w-0 text-left text-sm leading-snug hover:text-deep-teal ${inViewN ? 'font-semibold text-slate-blue' : anyVisible ? 'text-slate-blue/85' : 'text-slate-blue/60 line-through decoration-slate-blue/30'}`}
+                      title={anyVisible ? 'Click to hide all' : 'Click to show all'}
+                      aria-pressed={anyVisible}
+                    >
+                      {group.name}
+                      <span className="ml-1.5 font-normal text-[11px] text-slate-blue/60 whitespace-nowrap">{anyVisible ? `${inViewN} of ${members.length} in view` : 'hidden'}</span>
+                    </button>
+                    {anyVisible && allGated && (
                       <button
                         type="button"
-                        onClick={() => onSetZoomOverride(config.id, true)}
+                        onClick={() => members.forEach(m => onSetZoomOverride(m.config.id, true))}
                         className="text-[11px] text-slate-blue/60 whitespace-nowrap hover:text-deep-teal underline decoration-dotted"
-                        title={`Drawn from zoom ${config.minZoom}. Click to show it now`}
+                        title="Drawn from zoom 16. Click to show them now"
                       >
                         zoom in
-                      </button>
-                    ) : null}
-                    {hasInfo(config) && (
-                      <button
-                        type="button"
-                        onClick={() => setInfoLayer(layer)}
-                        aria-label={`About ${config.name}`}
-                        title="About this layer"
-                        className="shrink-0 w-[18px] h-[18px] inline-flex items-center justify-center rounded-full border text-[11px] font-semibold transition-colors bg-white text-slate-blue/50 border-slate-blue/30 hover:text-slate-blue hover:border-slate-blue/60"
-                      >
-                        i
                       </button>
                     )}
                     <button
                       type="button"
-                      onClick={() => removeRow(config.id, layer.visible)}
-                      aria-label={`Remove ${config.name} from the map`}
+                      onClick={() => setInfoModal({ layers: members, title: group.name, intro: group.description })}
+                      aria-label={`About ${group.name}`}
+                      title="About these layers"
+                      className="shrink-0 w-[18px] h-[18px] inline-flex items-center justify-center rounded-full border text-[11px] font-semibold transition-colors bg-white text-slate-blue/50 border-slate-blue/30 hover:text-slate-blue hover:border-slate-blue/60"
+                    >
+                      i
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeGroup(members)}
+                      aria-label={`Remove ${group.name} from the map`}
                       title="Remove from the map"
                       className="w-5 h-5 shrink-0 inline-flex items-center justify-center rounded text-slate-blue/40 hover:text-slate-blue hover:bg-fog-gray transition-colors"
                     >
@@ -242,7 +373,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
                       </svg>
                     </button>
                   </div>
-                  {!gated && <CategoryChips config={config} className="mt-1 ml-6" />}
+                  {isOpen && <div className="pb-1">{members.map(m => renderRow(m, true))}</div>}
                 </div>
               );
             })}
@@ -299,7 +430,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
           onClose={() => setShowSourcing(false)}
         />
       )}
-      {infoLayer && <LayerInfoModal layers={[infoLayer]} zoom={zoom} title={infoLayer.config.name} onClose={() => setInfoLayer(null)} />}
+      {infoModal && <LayerInfoModal layers={infoModal.layers} zoom={zoom} title={infoModal.title} intro={infoModal.intro} onClose={() => setInfoModal(null)} />}
     </>
   );
 }

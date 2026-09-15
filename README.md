@@ -253,6 +253,14 @@ The popup story block only shows words from Friends of the San Juans: `whyItMatt
 
 The three forage fish layers are one family in the UI: "Forage Fish Spawning: Herring Spawning Grounds", "Forage Fish Beach Spawning: Smelt & Sand Lance — Documented Spawning Beaches" and "… — Potential Spawning Habitat". In the precompute, documented beaches count within 200 ft of the parcel; **potential** beach habitat counts only where it fronts the parcel (25 ft, `POTENTIAL_FT`) and never when the parcel's own nearest shoreform is Rocky Shoreline (Friends' rule: potential spawning must not include bedrock). The Fish tab shows the distance and shoreform of each matched feature ("Why it is here") so the claims can be checked against the map.
 
+### Legend groups
+
+`src/config/legendGroups.ts` lists layers that share one collapsible legend row (currently **Shoreline Modifications**: armor, docks, buoys & floats, boat ramps, marine railways, groins, pilings — Friends' own umbrella term from their 2010 Inventory of Shoreline Modifications). The group row toggles, removes and explains all members at once and shows "n of m in view"; expanding it reveals the per-layer rows. Grouping is legend-only: the sidebar picker, URL `l=` list and popups still work per layer.
+
+### Hover labels
+
+On desktop, every line, fill and pin names itself under the cursor ("Mooring Buoys & Floats · Mooring buoy") using the layer's legend name and the popup title. Pins are separate marker layers, so they raise `MARKER_HOVER_EVENT` (useLayers.ts) and FeaturePopup shows the same label.
+
 ### Phone layout
 
 Below the `sm` breakpoint (639 px, `src/hooks/useIsMobile.ts`) the app rearranges itself rather than shrinking:

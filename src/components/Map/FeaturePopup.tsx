@@ -5,6 +5,7 @@ import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHt
 import { MobileSheetWindow, type PopupHost } from './popupSheet';
 import { featuresNear, type HitCandidate } from '../../services/hitTest';
 import { getDeckRenderedFeatures } from './DeckLayers';
+import { MARKER_HOVER_EVENT, type MarkerHoverDetail } from '../../hooks/useLayers';
 import { isMobileNow } from '../../hooks/useIsMobile';
 import type { PopupPhoto, PopupStat } from './popupFrame';
 import { POPUP_SPECS, LAYER_PHOTOS, LAYER_PHOTOS_MORE, PHOTO_SUBJECTS, PHOTO_EXCLUDE, fallbackTitle, fmtAcresValue } from '../../config/popups';
@@ -325,6 +326,19 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
     };
     window.addEventListener(DECK_CLICK_EVENT, onDeckClick);
 
+    // Pins (midpoint / centroid markers) hover like lines and fills do
+    const onMarkerHover = (e: Event) => {
+      if (isMobileNow()) return;
+      const { layerId, properties, phase, domEvent } = (e as CustomEvent<MarkerHoverDetail>).detail;
+      const layer = layersRef.current.find(l => l.config.id === layerId);
+      if (!layer) return;
+      const fake = { domEvent } as google.maps.Data.MouseEvent;
+      if (phase === 'mouseover') showHoverLabel(map, fake, `${layer.config.name} · ${rowFor(layer, properties).title}`);
+      else if (phase === 'mousemove') moveHoverLabel(map, fake);
+      else hideHoverLabel();
+    };
+    window.addEventListener(MARKER_HOVER_EVENT, onMarkerHover);
+
     // "What's here" chooser rows
     const onPick = (e: Event) => {
       const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ssx-pick]');
@@ -337,6 +351,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
 
     return () => {
       document.removeEventListener('click', onPick);
+      window.removeEventListener(MARKER_HOVER_EVENT, onMarkerHover);
       hideHoverLabel();
       window.removeEventListener(DECK_CLICK_EVENT, onDeckClick);
       listeners.forEach(l => google.maps.event.removeListener(l));
