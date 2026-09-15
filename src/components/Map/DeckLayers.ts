@@ -46,6 +46,9 @@ export interface DeckHoverDetail {
   y: number;
 }
 
+/** The layer nothing may cover: Friends' habitat restoration projects. */
+const TOPMOST_LAYER = 'friends-projects';
+
 /** San Juan County bounding box [west, south, east, north] — the area the tiles cover. */
 const TILE_EXTENT: [number, number, number, number] = [-123.35, 48.33, -122.65, 48.85];
 
@@ -94,6 +97,18 @@ function strokeWeightAt(config: LayerConfig, zoom: number): number {
   return h.weightWide + (h.weightNarrow - h.weightWide) * t;
 }
 
+/** Per-feature stroke / fill for a config (honours styleByProperty). */
+function featureStyle(config: LayerConfig, f: GeoJSON.Feature | undefined, width: number) {
+  const st = config.style;
+  const sbp = config.styleByProperty;
+  const o = sbp && f ? (sbp.values[String(f.properties?.[sbp.property] ?? '')] ?? sbp.defaultStyle ?? {}) : {};
+  return {
+    line: rgba(o.strokeColor ?? st.strokeColor, o.strokeOpacity ?? st.strokeOpacity),
+    width: o.strokeWeight ?? width,
+    fill: rgba(o.fillColor ?? st.fillColor ?? st.strokeColor, o.fillOpacity ?? st.fillOpacity ?? 0),
+  };
+}
+
 /** Strip the sub-layer suffix so events name the layer config. */
 function baseId(deckLayerId: string): string {
   return deckLayerId.replace(/__(casing|pins|hit)$/, '');
@@ -105,6 +120,8 @@ class DeckManager {
   private live = new Map<string, Layer>();
   private zoom: number;
   private hovering: string | null = null;
+  /** The feature or pin under the cursor, drawn again on top as the hover highlight. */
+  private hover: { entry: Entry; feature?: GeoJSON.Feature; pin?: DeckPin } | null = null;
 
   constructor(map: google.maps.Map) {
     this.zoom = map.getZoom() ?? 0;
@@ -135,6 +152,15 @@ class DeckManager {
         if (id === null && this.hovering === null) return;
         this.hovering = id;
         const properties = id ? ((info.object as { properties?: Record<string, unknown> }).properties ?? {}) : null;
+        // Highlight: redraw just this feature / pin on top (see buildHover)
+        const entry = id ? this.entries.get(id) : undefined;
+        if (entry?.data && info.object) {
+          const isPin = !!info.layer && info.layer.id.endsWith('__pins');
+          this.hover = isPin ? { entry, pin: info.object as DeckPin } : { entry, feature: info.object as GeoJSON.Feature };
+        } else {
+          this.hover = null;
+        }
+        this.rebuild();
         window.dispatchEvent(new CustomEvent<DeckHoverDetail>(DECK_HOVER_EVENT, {
           detail: { layerId: id, properties, x: info.x, y: info.y },
         }));
@@ -248,6 +274,9 @@ class DeckManager {
       uniqueIdProperty: t.idProperty ?? 'FID',
       visible: e.visible && !this.gated(e),
       pickable: true,
+      // Parcels / buildings: whole feature brightens under the cursor (ids persist across tiles)
+      autoHighlight: true,
+      highlightColor: [255, 255, 255, 80],
       filled: fillA > 0,
       stroked: true,
       getFillColor: [fill[0], fill[1], fill[2], fillA],
@@ -333,8 +362,6 @@ class DeckManager {
       data: features,
       visible,
       pickable: true,
-      autoHighlight: !config.renderer,
-      highlightColor: [255, 255, 255, 90],
       stroked: true,
       filled: (st.fillOpacity ?? 0) > 0 || pickFill != null,
       lineWidthUnits: 'pixels',
@@ -380,6 +407,69 @@ class DeckManager {
     return out;
   }
 
+  /**
+   * Hover highlight: the hovered feature drawn again on top — a white halo
+   * with the feature's own color inside (lines and polygon outlines), the
+   * fill lifted for polygons, and pins / point icons a third larger. The
+   * same treatment for every kind of feature, so nothing is ambiguous.
+   */
+  private buildHover(): Layer[] {
+    const h = this.hover;
+    if (!h) return [];
+    const { config } = h.entry;
+    const scale = config.markerScale ?? 1;
+    if (h.pin) {
+      return [new IconLayer<DeckPin>({
+        id: '__hover_pin',
+        data: [h.pin],
+        pickable: false,
+        getPosition: p => p.position,
+        getIcon: p => ({ url: p.icon, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false }),
+        getSize: MARKER_H * scale * 1.35,
+        sizeUnits: 'pixels',
+        alphaCutoff: 0.05,
+      })];
+    }
+    const f = h.feature!;
+    const base = featureStyle(config, f, strokeWeightAt(config, this.zoom));
+    const isPoint = f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint';
+    const icon = config.markerIcon;
+    const byProp = config.markerIconByProperty;
+    const common = { data: [f], pickable: false, lineWidthUnits: 'pixels' as const, lineCapRounded: true, lineJointRounded: true };
+    return [
+      new GeoJsonLayer({
+        ...common,
+        id: '__hover_halo',
+        stroked: true,
+        filled: false,
+        getLineWidth: base.width + 6,
+        getLineColor: [255, 255, 255, 230],
+        pointType: 'circle',
+        getPointRadius: 0,
+      }),
+      new GeoJsonLayer({
+        ...common,
+        id: '__hover_core',
+        stroked: true,
+        filled: base.fill[3] > 0,
+        getLineWidth: base.width + 1.5,
+        getLineColor: [base.line[0], base.line[1], base.line[2], 255],
+        getFillColor: [base.fill[0], base.fill[1], base.fill[2], Math.min(255, Math.round(base.fill[3] * 1.6) + 40)],
+        pointType: icon && isPoint ? 'icon' : 'circle',
+        getIcon: icon
+          ? (pf: GeoJSON.Feature) => {
+              const url = byProp ? (byProp.icons[String(pf.properties?.[byProp.property] ?? '')] ?? icon) : icon;
+              return { url, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false };
+            }
+          : undefined,
+        getIconSize: MARKER_H * scale * 1.35,
+        iconSizeUnits: 'pixels',
+        iconAlphaCutoff: 0.05,
+        getPointRadius: 0,
+      }),
+    ];
+  }
+
   private dirty = false;
 
   /** Coalesce: several setters in one tick (a zoom pass touches every pin layer) rebuild once. */
@@ -389,19 +479,41 @@ class DeckManager {
     queueMicrotask(() => { this.dirty = false; this.rebuildNow(); });
   }
 
+  /** 0 fills (shapes), 1 lines, 2 point icons — shapes never cover lines, lines never cover points. */
+  private geometryRank(e: Entry): number {
+    if (!e.data) return 1;
+    let poly = 0, line = 0, point = 0;
+    for (const f of e.data.features) {
+      const t = f.geometry?.type;
+      if (t === 'Polygon' || t === 'MultiPolygon') poly++;
+      else if (t === 'LineString' || t === 'MultiLineString') line++;
+      else if (t === 'Point' || t === 'MultiPoint') point++;
+    }
+    if (point >= line && point >= poly) return 2;
+    if (line >= poly) return 1;
+    return 0;
+  }
+
   private rebuildNow() {
-    // Draw order: tiles at the bottom, then GeoJSON layers by zIndex; pins of
-    // every layer above all geometry so they are never buried under a band.
+    // Draw order, bottom to top: tiles; shapes (fills); lines; point icons —
+    // within each band by zIndex; then every layer's pins; then Friends'
+    // projects (their points and pins), which nothing may cover; then hover.
     const entries = Array.from(this.entries.values());
     const tiles = entries.filter(e => e.config.tiles).map(e => this.buildMvt(e));
-    const geo = entries
+    const geoEntries = entries
       .filter(e => e.data)
-      .sort((a, b) => (a.config.style.zIndex ?? 0) - (b.config.style.zIndex ?? 0))
-      .map(e => this.buildGeoJson(e));
+      .sort((a, b) => (this.geometryRank(a) - this.geometryRank(b)) || ((a.config.style.zIndex ?? 0) - (b.config.style.zIndex ?? 0)));
     const geometry: Layer[] = [];
     const pins: Layer[] = [];
-    for (const group of geo) for (const l of group) (l.id.endsWith('__pins') ? pins : geometry).push(l);
-    this.overlay.setProps({ layers: [...tiles, ...geometry, ...pins] });
+    const top: Layer[] = [];
+    for (const e of geoEntries) {
+      const group = this.buildGeoJson(e);
+      for (const l of group) {
+        if (e.config.id === TOPMOST_LAYER) top.push(l);
+        else (l.id.endsWith('__pins') ? pins : geometry).push(l);
+      }
+    }
+    this.overlay.setProps({ layers: [...tiles, ...geometry, ...pins, ...top, ...this.buildHover()] });
   }
 }
 

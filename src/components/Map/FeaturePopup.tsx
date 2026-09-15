@@ -859,9 +859,26 @@ function swatchFor(config: LayerConfig): string {
     : `<span style="display:inline-block;width:14px;height:4px;border-radius:2px;background:${escHtml(color)}"></span>`;
 }
 
+// Street addresses by PIN, from the county address points (loaded once, lazily)
+let addressCache: Record<string, { FULLADDR?: string }[]> | null = null;
+let addressLoading = false;
+function parcelStreetAddress(props: Record<string, unknown>): string {
+  const pin = String(props.PIN ?? '').trim();
+  if (!addressCache && !addressLoading) {
+    addressLoading = true;
+    getAddressLookup().then(l => { addressCache = l as Record<string, { FULLADDR?: string }[]>; });
+  }
+  const addr = pin && addressCache ? addressCache[pin]?.[0]?.FULLADDR : undefined;
+  return addr && addr.trim() ? addr.trim() : 'Property';
+}
+
 function rowFor(layer: LayerState, props: Record<string, unknown>): Omit<ChooserRow, 'open'> {
   const spec = POPUP_SPECS[layer.config.id];
-  const title = (spec?.title?.(props) || fallbackTitle(layer.config, props)).replace(/\s+/g, ' ');
+  const title = layer.config.id === 'tax-parcels'
+    ? parcelStreetAddress(props)
+    : layer.config.id === 'building-footprints'
+      ? 'Building'
+      : (spec?.title?.(props) || fallbackTitle(layer.config, props)).replace(/\s+/g, ' ');
   return { swatch: swatchFor(layer.config), layerName: layer.config.name, title };
 }
 
