@@ -4,6 +4,7 @@ import { useCategoryTree, flattenCategoryIds, type CategoryNode } from '../../se
 import { Toggle } from '../common/Toggle';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingState';
+import { LayerInfoBody } from './LayerInfoBody';
 
 interface LayerControlsProps {
   layers: LayerState[];
@@ -236,7 +237,7 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
       {showInfo && hasInfo && (
         <div className="ml-5 mr-2 mb-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/80">
           <p className="m-0 mb-1 font-semibold text-slate-blue">{config.name}</p>
-          {config.standardMessage && <p className="m-0">{config.standardMessage}</p>}
+          <LayerInfoBody config={config} />
           {config.sourceCredit && (
             <p className="m-0 mt-1.5 text-slate-blue/60">
               <span className="font-semibold">Source:</span> {config.sourceCredit}

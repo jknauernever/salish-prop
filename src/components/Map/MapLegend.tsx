@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { LayerConfig, LayerState } from '../../types';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { LayerInfoBody } from './LayerInfoBody';
 
 // The legend unmounts while the dataset picker is open; remember its state
 // across mounts so closing the picker does not re-run the first-open reveal.
@@ -85,11 +86,7 @@ function CategoryChips({ config, className = '' }: { config: LayerConfig; classN
 function LayerInfo({ config }: { config: LayerConfig }) {
   return (
     <div className="mt-1 ml-6 mr-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/85">
-      {config.standardMessage ? (
-        <p className="m-0">{config.standardMessage}</p>
-      ) : (
-        config.description && <p className="m-0">{config.description}</p>
-      )}
+      <LayerInfoBody config={config} />
       {config.sourceCredit && (
         <p className="m-0 mt-1.5 text-slate-blue/60">
           <span className="font-semibold">Source:</span> {config.sourceCredit}
@@ -173,7 +170,7 @@ function SourcingModal({ layers, zoom, onClose }: { layers: LayerState[]; zoom: 
                     )}
                   </div>
                   {(config.standardMessage || config.description) && (
-                    <p className="m-0 mt-1 text-slate-blue/80">{config.standardMessage ?? config.description}</p>
+                    <LayerInfoBody config={config} className="mt-1 text-slate-blue/80" />
                   )}
                   <CategoryChips config={config} className="mt-1.5" />
                   {(config.sourceCredit || config.sourceUrl) && (

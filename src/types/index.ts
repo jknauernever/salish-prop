@@ -127,6 +127,12 @@ export interface LayerConfig {
    */
   whyItMatters?: { text: string; source: { credit: string; url: string } };
   /**
+   * Structured definitions for the layer's info panel (legend / sidebar /
+   * sourcing modal), rendered as a list under `standardMessage`: one bold
+   * entry per class or group, optionally with a swatch and sub-entries.
+   */
+  infoItems?: { label: string; color?: string; text?: string; sub?: { label: string; text: string }[] }[];
+  /**
    * For thin line layers: width in px of an invisible second line drawn
    * underneath, so a click near the line still opens its popup.
    */

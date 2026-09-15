@@ -794,7 +794,16 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'SLR_Protect', label: 'SLR Protection' },
       { key: 'SLR_Restore', label: 'SLR Restoration' },
     ],
-    standardMessage: 'Geomorphic Shoreforms — the primary geologic features of the marine shoreline. Coastal processes affect different shore form types in different ways, resulting in different management concerns and priorities. Feeder Bluff Exceptional: highly erosive in its natural state, an important sediment source for down-drift beaches. Feeder Bluff: episodically erosive, supplying sediment that forms and maintains down-drift beaches. Transport Zone: neither eroding nor accreting; sediment moves through from feeder bluffs to accretionary beaches. Barrier Beach: typically wide with extended backshores, where material from sediment-supply bluffs is deposited. Embayment – Estuary: a relatively closed bay with a freshwater source. Embayment – Lagoon: open or closed to the sea but lacking a consistent freshwater source. Pocket Beach: sand and gravel between two rocky headlands; material seldom leaves the system. Rocky Shoreline: lacks appreciable sediment drift or erosion. Artificial: altered so much that the historic shore type is not known.',
+    standardMessage: 'Geomorphic shoreforms — the primary geologic features of the marine shoreline. Coastal processes affect each shore form differently, so each carries different management concerns and priorities. Definitions below are from Friends of the San Juans\' shoreform mapping.',
+    infoItems: SHOREFORM_GROUP_ORDER.map(g => {
+      const classes = Object.values(SHOREFORM_TYPES).filter(t => t.group === g);
+      return {
+        label: SHOREFORM_GROUPS[g].label,
+        color: SHOREFORM_GROUPS[g].color,
+        text: classes.length === 1 ? classes[0].description : undefined,
+        sub: classes.length > 1 ? classes.map(t => ({ label: t.label, text: t.description })) : undefined,
+      };
+    }),
     whyItMatters: {
       text: 'Feeder bluffs provide the sand that forms and maintains beaches and marine habitats. Experts estimate that over 90% of the sand and gravel that comprise the beaches of Puget Sound and the San Juans comes from eroding banks and bluffs. Within its 400+ miles of shoreline, there are 30 miles of feeder bluffs, 34 miles of transport zones, 25 miles of barrier or accretionary beaches and spits, 48 miles of pocket beaches, 17 miles of embayment estuaries and lagoons, and 250 miles of rocky shores. If your property has a feeder bluff, be sure to set structures far away from the bluff.',
       source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
