@@ -228,10 +228,10 @@ function nearReserved(x: number, y: number, reserved: [number, number][]): boole
 }
 
 /** Ids (the `mid` property) of the markers to show at this zoom. null = show all. */
-function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = []): Set<number> | null {
+function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> | null {
   const gridPx = markerGridPx(zoom);
   const best = new Map<string, { id: number; rank: number }>();
-  const showAll = zoom >= MARKER_SHOW_ALL_ZOOM;
+  const showAll = !alwaysThin && zoom >= MARKER_SHOW_ALL_ZOOM;
   ml.forEach((feature) => {
     const g = feature.getGeometry();
     if (!g || g.getType() !== 'Point') return;
@@ -292,7 +292,7 @@ function midpointMarkerStyle(
   zoom: number,
   reserved: [number, number][] = [],
 ): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
-  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved) : null;
+  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved, !!config.markerAlwaysThin) : null;
   return (feature) => ({
     icon: markerIconSpec(config, iconUrlFor(config, feature)),
     clickable: true,

@@ -75,7 +75,8 @@ export const layerConfigs: LayerConfig[] = [
     minZoom: 15,
     casing: { color: '#93C5FD', weight: 7.5, opacity: 0.9 },
     markerScale: 0.75, // minor structures
-    markerIcon: MARKER_ICONS.drain, // one pin per pipe at its midpoint, thinned by zoom
+    markerIcon: MARKER_ICONS.drain, // pins on pipe midpoints; culverts are ~12 m each, so keep thinning at every zoom
+    markerAlwaysThin: true,
     style: {
       fillColor: '#1D4ED8',
       fillOpacity: 0,

@@ -111,6 +111,12 @@ export interface LayerConfig {
   /** Polygon layers: no marker for features whose `acres` property is below this. */
   markerMinAcres?: number;
   /**
+   * Keep thinning pins by screen grid at every zoom (default: every pin shows
+   * from zoom 16). For dense networks like stormwater culverts, where one pin
+   * per 12 m segment would carpet the screen.
+   */
+  markerAlwaysThin?: boolean;
+  /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
    * components/Map/KelpOverlay.ts); the Data layer stays as an invisible
