@@ -253,6 +253,16 @@ The popup story block only shows words from Friends of the San Juans: `whyItMatt
 
 The three forage fish layers are one family in the UI: "Forage Fish Spawning: Herring Spawning Grounds", "Forage Fish Beach Spawning: Smelt & Sand Lance — Documented Spawning Beaches" and "… — Potential Spawning Habitat". In the precompute, documented beaches count within 200 ft of the parcel; **potential** beach habitat counts only where it fronts the parcel (25 ft, `POTENTIAL_FT`) and never when the parcel's own nearest shoreform is Rocky Shoreline (Friends' rule: potential spawning must not include bedrock). The Fish tab shows the distance and shoreform of each matched feature ("Why it is here") so the claims can be checked against the map.
 
+### Performance
+
+Three rules keep pan/zoom smooth with ~14,000 shoreline features on screen (2026-09-14):
+
+1. **GPU layers.** Every dense Friends layer and stormwater has `gpu: true` and renders through deck.gl (`DeckLayers.ts`: GeoJsonLayer + casing/hit underlay + IconLayer pins) instead of `google.maps.Data`, which puts one SVG element per feature on the main thread. Clicks and hovers come back as `DECK_CLICK_EVENT` / `DECK_HOVER_EVENT`. Parcels and buildings are MVT tiles on the same overlay.
+2. **One zoom pass per frame.** `zoom_changed` work in `useLayers` is coalesced with requestAnimationFrame and settled on `idle`; each layer has a style key (visibility, pin-thinning tier at half-zoom steps, halo width, Friends-pin spacing) and is only restyled when it changes. Pin positions are cached in world pixels. All animated overlays share one 15 fps clock; phones get a static paint.
+3. **Simplified geometry.** `scripts/simplify-geometry.py` (0.5 m Douglas-Peucker in EPSG:2855, 1.5 m for the cell-edge kelp patches) cut the shoreline files from 342k to ~128k vertices with no visible change at any zoom the app draws. Re-run it after replacing any of those files.
+
+Measured on the Friday Harbor view at zoom 17.5 (desktop Chrome): a same-zoom tick went from 168 ms to 0 ms, a tier change to ~45 ms, and JS heap from 349 MB to 178 MB.
+
 ### Legend groups
 
 `src/config/legendGroups.ts` lists layers that share one collapsible legend row (currently **Shoreline Modifications**: armor, docks, buoys & floats, boat ramps, marine railways, groins, pilings — Friends' own umbrella term from their 2010 Inventory of Shoreline Modifications). The group row toggles, removes and explains all members at once and shows "n of m in view"; expanding it reveals the per-layer rows. Grouping is legend-only: the sidebar picker, URL `l=` list and popups still work per layer.
