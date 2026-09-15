@@ -11,7 +11,7 @@
 
 import type { LayerConfig } from '../types';
 import type { PopupBlock, PopupChip, PopupPhoto, PopupStat } from '../components/Map/popupFrame';
-import { SHOREFORM_TYPES, shoreformLabel } from './shoreforms';
+import { SHOREFORM_TYPES, shoreformLabel, shoreformGroup } from './shoreforms';
 
 type Props = Record<string, unknown>;
 
@@ -285,7 +285,12 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
 
   'friends-shoreline-geology': {
     title: p => shoreformLabel(str(p.PIAT_shoreforms)) || 'Shoreline unit',
-    subtitle: p => join(str(p.ShoreForm_Unit_ID) ? `unit ${str(p.ShoreForm_Unit_ID)}` : undefined, (() => { const ft = num(p.Shape_Length); return ft ? `${fmtFeet(ft).value} ${fmtFeet(ft).unit}` : undefined; })()),
+    subtitle: p => {
+      const g = shoreformGroup(str(p.PIAT_shoreforms));
+      const groupNote = g && g.label.toLowerCase() !== shoreformLabel(str(p.PIAT_shoreforms)).toLowerCase() ? g.label : undefined;
+      const ft = num(p.Shape_Length);
+      return join(groupNote, str(p.ShoreForm_Unit_ID) ? `unit ${str(p.ShoreForm_Unit_ID)}` : undefined, ft ? `${fmtFeet(ft).value} ${fmtFeet(ft).unit}` : undefined);
+    },
     chips: p => {
       const chips: PopupChip[] = [];
       const r = HML[str(p.PIATrestoration).toUpperCase()];

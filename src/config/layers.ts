@@ -1,5 +1,5 @@
 import type { LayerConfig } from '../types';
-import { SHOREFORM_TYPES, SHOREFORM_LEGEND_ORDER } from './shoreforms.js';
+import { SHOREFORM_TYPES, SHOREFORM_GROUPS, SHOREFORM_GROUP_ORDER } from './shoreforms.js';
 import { MARKER_ICONS, FRIENDS_PROJECT_ICONS, FRIENDS_PROJECT_COLORS } from './markerIcons.js'; // .js extension: this file is also loaded by the Node share function (ESM)
 
 export const layerConfigs: LayerConfig[] = [
@@ -757,7 +757,7 @@ export const layerConfigs: LayerConfig[] = [
   // -- Shoreline --
   {
     id: 'friends-shoreline-geology',
-    name: 'Shoreline Geology',
+    name: 'Shoreline Geology: Shoreforms',
     description: 'Primary geologic features of marine shorelines — coastal processes affect different shore form types in different ways, resulting in different management concerns and priorities',
     category: 'friends-data',
     source: '/data/friends-shoreline-geology.json',
@@ -781,7 +781,7 @@ export const layerConfigs: LayerConfig[] = [
     },
     legend: {
       type: 'categories',
-      items: SHOREFORM_LEGEND_ORDER.map(code => ({ label: SHOREFORM_TYPES[code].label, color: SHOREFORM_TYPES[code].color })),
+      items: SHOREFORM_GROUP_ORDER.map(g => ({ label: SHOREFORM_GROUPS[g].label, color: SHOREFORM_GROUPS[g].color })),
     },
     popupFields: [
       { key: 'PIAT_shoreforms', label: 'Shoreform' },

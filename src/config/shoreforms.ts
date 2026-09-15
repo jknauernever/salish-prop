@@ -10,82 +10,122 @@
  */
 export interface ShoreformType {
   label: string;
+  /** Map / legend color — always the color of the class's group (see SHOREFORM_GROUPS). */
   color: string;
   description: string;
+  group: ShoreformGroupId;
 }
+
+/**
+ * Map symbology groups (Tina Whitman, 2026-09-14): all feeder bluffs as one
+ * sediment-supply color, estuaries and lagoons together as embayments, and
+ * pocket beaches, transport zones, barrier (accretion) beaches and rock kept
+ * separate — with hues far enough apart to tell at a glance. The popup still
+ * names the exact class.
+ */
+export type ShoreformGroupId = 'feeder' | 'transport' | 'barrier' | 'pocket' | 'embayment' | 'rocky' | 'artificial';
+
+export const SHOREFORM_GROUPS: Record<ShoreformGroupId, { label: string; color: string }> = {
+  feeder: { label: 'Feeder bluff (sediment supply)', color: '#B91C1C' },
+  transport: { label: 'Transport zone', color: '#F59E0B' },
+  barrier: { label: 'Barrier / accretion beach', color: '#FACC15' },
+  pocket: { label: 'Pocket beach', color: '#3B82F6' },
+  embayment: { label: 'Embayment (estuary, lagoon)', color: '#0891B2' },
+  rocky: { label: 'Rocky shoreline', color: '#4B5563' },
+  artificial: { label: 'Artificial', color: '#111827' },
+};
+
+export const SHOREFORM_GROUP_ORDER: ShoreformGroupId[] = ['feeder', 'transport', 'barrier', 'pocket', 'embayment', 'rocky', 'artificial'];
 
 export const SHOREFORM_TYPES: Record<string, ShoreformType> = {
   FBE: {
     label: 'Feeder Bluff Exceptional',
-    color: '#B91C1C',
+    color: SHOREFORM_GROUPS.feeder.color,
+    group: 'feeder',
     description:
       'Highly erosive in its natural state, these shore forms tend to have exposed sandy slopes and they are an important source of sediment to form and maintain down-drift beaches.',
   },
   FB: {
     label: 'Feeder Bluff',
-    color: '#EA580C',
+    color: SHOREFORM_GROUPS.feeder.color,
+    group: 'feeder',
     description:
       'Episodically erosive in its natural state, these shore forms provide sediment that forms and maintains down-drift beaches.',
   },
   HFBE: {
     label: 'Historic Feeder Bluff Exceptional',
-    color: '#DC2626',
+    color: SHOREFORM_GROUPS.feeder.color,
+    group: 'feeder',
     description:
       'A bluff that was an exceptional sediment source before it was modified. Highly erosive in its natural state, these shore forms are an important source of sediment to form and maintain down-drift beaches.',
   },
   HFB: {
     label: 'Historic Feeder Bluff',
-    color: '#F97316',
+    color: SHOREFORM_GROUPS.feeder.color,
+    group: 'feeder',
     description:
       'A bluff that historically supplied beach sediment but has since been modified (typically armored), cutting off that supply to down-drift beaches.',
   },
   PFB: {
     label: 'Feeder Bluff (partial)',
-    color: '#FB923C',
+    color: SHOREFORM_GROUPS.feeder.color,
+    group: 'feeder',
     description:
       'A bluff that supplies sediment to down-drift beaches along part of its length or at a reduced rate.',
   },
   TZ: {
     label: 'Transport Zone',
-    color: '#CA8A04',
+    color: SHOREFORM_GROUPS.transport.color,
+    group: 'transport',
     description:
       'Neither eroding nor accreting, sediment tends to move through transport zones from feeder, or sediment supply bluffs, to accretionary beaches (spits, barrier beaches).',
   },
   BAB: {
     label: 'Barrier Beach',
-    color: '#EAB308',
+    color: SHOREFORM_GROUPS.barrier.color,
+    group: 'barrier',
     description:
       'These beaches are typically wide with extended backshores and are where material from the sediment supply bluffs is deposited.',
   },
   'Embayments - Estuary': {
     label: 'Embayment – Estuary',
-    color: '#0D9488',
+    color: SHOREFORM_GROUPS.embayment.color,
+    group: 'embayment',
     description: 'Relatively closed bay with a freshwater source.',
   },
   'Embayments - Lagoon': {
     label: 'Embayment – Lagoon',
-    color: '#14B8A6',
+    color: SHOREFORM_GROUPS.embayment.color,
+    group: 'embayment',
     description:
       'Lagoons can be open or closed to the marine environment but lack a consistent freshwater source like a stream.',
   },
   'Pocket Beach': {
     label: 'Pocket Beach',
-    color: '#2563EB',
+    color: SHOREFORM_GROUPS.pocket.color,
+    group: 'pocket',
     description:
       'A sand and gravel beach located between two rocky headlands. The source of material for pocket beaches is the adjacent bank; while material may adjust between the headlands, it seldom leaves the system entirely.',
   },
   'Rocky Shoreline': {
     label: 'Rocky Shoreline',
-    color: '#6B7280',
+    color: SHOREFORM_GROUPS.rocky.color,
+    group: 'rocky',
     description:
       'While local rocky shorelines include a variety of rock types and configurations, they are all characterized by a lack of appreciable sediment drift or erosion.',
   },
   ART: {
     label: 'Artificial',
-    color: '#1F2937',
+    color: SHOREFORM_GROUPS.artificial.color,
+    group: 'artificial',
     description: 'Altered so much that the historic shore type is not known.',
   },
 };
+
+export function shoreformGroup(code: string) {
+  const g = SHOREFORM_TYPES[code]?.group;
+  return g ? SHOREFORM_GROUPS[g] : null;
+}
 
 export function shoreformLabel(code: string): string {
   return SHOREFORM_TYPES[code]?.label ?? code;
