@@ -4,7 +4,8 @@ import { useCategoryTree, flattenCategoryIds, type CategoryNode } from '../../se
 import { Toggle } from '../common/Toggle';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingState';
-import { LayerInfoBody } from './LayerInfoBody';
+import { LayerInfoModal } from './LayerInfoModal';
+import { useMap } from '../../hooks/useMap';
 
 interface LayerControlsProps {
   layers: LayerState[];
@@ -144,6 +145,7 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
   onSetUi?: (patch: { vizMode?: string; season?: string }) => void;
 }) {
   const { config, visible, loaded, loading, error, featureCount, opacity } = layer;
+  const { zoom } = useMap();
   const isPlaceholder = config.placeholder;
   const isRaster = config.layerType === 'raster' || config.layerType === 'dynamic-raster';
   const isDynamic = config.layerType === 'dynamic-raster';
@@ -235,27 +237,7 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
 
       {/* Info panel */}
       {showInfo && hasInfo && (
-        <div className="ml-5 mr-2 mb-1 px-2.5 py-2 bg-fog-gray/60 border border-fog-gray-dark/40 rounded text-xs leading-relaxed text-slate-blue/80">
-          <p className="m-0 mb-1 font-semibold text-slate-blue">{config.name}</p>
-          <LayerInfoBody config={config} />
-          {config.sourceCredit && (
-            <p className="m-0 mt-1.5 text-slate-blue/60">
-              <span className="font-semibold">Source:</span> {config.sourceCredit}
-            </p>
-          )}
-          {config.sourceUrl && (
-            <p className="m-0 mt-1.5">
-              <a
-                href={config.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-ocean-blue hover:text-ocean-blue-light underline"
-              >
-                Learn more about this dataset &rarr;
-              </a>
-            </p>
-          )}
-        </div>
+        <LayerInfoModal layers={[layer]} zoom={zoom} title={config.name} onClose={() => setShowInfo(false)} />
       )}
 
       {/* Category legend (vector layers styled by attribute) */}
