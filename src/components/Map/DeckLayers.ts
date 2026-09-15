@@ -1,28 +1,63 @@
 /**
- * deck.gl on top of Google Maps: vector-tile layers for the datasets that
- * are too big to ship as one GeoJSON (parcels, buildings). Tiles come from
- * our own Cloud Storage bucket (built with tippecanoe, see README), so only
- * the tiles in view are downloaded and drawing happens on the GPU.
+ * deck.gl on top of Google Maps — the GPU path for everything dense.
  *
- * One GoogleMapsOverlay per map holds every MVTLayer. Styling mirrors the
- * layer config (same fill / stroke colors and pixel widths as the Data
- * layers), so nothing changes visually. Clicks are re-broadcast as a window
- * event that FeaturePopup routes exactly like a Data-layer click.
+ * Two kinds of entry share one GoogleMapsOverlay:
+ *  - MVT tile layers (parcels, buildings): only the tiles in view download.
+ *  - GeoJSON layers (`config.gpu`): the Friends shoreline datasets, already in
+ *    memory, drawn as GeoJsonLayers instead of google.maps.Data. Data layers
+ *    put one SVG element per feature on the main thread; at 14,000 features
+ *    that was most of the pan/zoom cost. Here a layer is one GPU draw call.
+ *
+ * Per GeoJSON entry deck gets, bottom to top: an optional casing (wider,
+ * lighter line — also a forgiving click target), the layer itself (lines /
+ * fills / point icons), and an optional pin layer (midpoint or centroid
+ * markers, already thinned by zoom in useLayers). Styling mirrors the layer
+ * config exactly, so nothing changes visually.
+ *
+ * Clicks and hovers are re-broadcast as window events; FeaturePopup routes
+ * them like Data-layer events (chooser, popup, hover label).
  */
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
 import { MVTLayer } from '@deck.gl/geo-layers';
+import { GeoJsonLayer, IconLayer } from '@deck.gl/layers';
+import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { LayerConfig } from '../../types';
+import { MARKER_W, MARKER_H, MARKER_ANCHOR_Y } from '../../config/markerIcons';
 
 export const DECK_CLICK_EVENT = 'ssx-deck-click';
-
-/** San Juan County bounding box [west, south, east, north] — the area the tiles cover. */
-const TILE_EXTENT: [number, number, number, number] = [-123.35, 48.33, -122.65, 48.85];
+export const DECK_HOVER_EVENT = 'ssx-deck-hover';
 
 export interface DeckClickDetail {
   layerId: string;
   properties: Record<string, unknown>;
   lat: number;
   lng: number;
+  /** The clicked feature (GeoJSON layers) — lets the popup highlight it. */
+  feature?: GeoJSON.Feature;
+  /** True when a pin (marker) was clicked rather than the geometry itself. */
+  pin?: boolean;
+}
+
+export interface DeckHoverDetail {
+  /** Null when the cursor left every deck layer. */
+  layerId: string | null;
+  properties: Record<string, unknown> | null;
+  x: number;
+  y: number;
+}
+
+/** San Juan County bounding box [west, south, east, north] — the area the tiles cover. */
+const TILE_EXTENT: [number, number, number, number] = [-123.35, 48.33, -122.65, 48.85];
+
+type RGBA = [number, number, number, number];
+
+/** A pin: position, the source feature's properties, and its icon URL. */
+export interface DeckPin {
+  position: [number, number];
+  properties: Record<string, unknown>;
+  icon: string;
+  /** Selection id used by the zoom thinning. */
+  mid: number;
 }
 
 interface Entry {
@@ -30,6 +65,13 @@ interface Entry {
   visible: boolean;
   /** User asked to see this layer at any zoom (ignore config.minZoom). */
   ignoreGate?: boolean;
+  /** GeoJSON entries only */
+  data?: GeoJSON.FeatureCollection;
+  /** Point features to draw (after Friends-pin spacing); null = all */
+  pointFilter?: Set<number> | null;
+  pins?: DeckPin[];
+  /** Which pins to draw at this zoom; null = all */
+  pinFilter?: Set<number> | null;
 }
 
 function hexToRgb(hex: string | undefined, fallback: [number, number, number]): [number, number, number] {
@@ -39,11 +81,30 @@ function hexToRgb(hex: string | undefined, fallback: [number, number, number]): 
   return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)];
 }
 
+function rgba(hex: string | undefined, opacity: number | undefined, fallback: [number, number, number] = [13, 79, 79]): RGBA {
+  const [r, g, b] = hexToRgb(hex, fallback);
+  return [r, g, b, Math.round(Math.min(1, Math.max(0, opacity ?? 1)) * 255)];
+}
+
+/** Stroke width for a layer at this zoom (mirrors useLayers' strokeAtZoom for haloByZoom layers). */
+function strokeWeightAt(config: LayerConfig, zoom: number): number {
+  const h = config.haloByZoom;
+  if (!h) return config.style.strokeWeight;
+  const t = Math.min(1, Math.max(0, (zoom - h.zoomWide) / (h.zoomNarrow - h.zoomWide)));
+  return h.weightWide + (h.weightNarrow - h.weightWide) * t;
+}
+
+/** Strip the sub-layer suffix so events name the layer config. */
+function baseId(deckLayerId: string): string {
+  return deckLayerId.replace(/__(casing|pins|hit)$/, '');
+}
+
 class DeckManager {
   private overlay: GoogleMapsOverlay;
   private entries = new Map<string, Entry>();
-  private live = new Map<string, MVTLayer>();
+  private live = new Map<string, Layer>();
   private zoom: number;
+  private hovering: string | null = null;
 
   constructor(map: google.maps.Map) {
     this.zoom = map.getZoom() ?? 0;
@@ -55,12 +116,27 @@ class DeckManager {
       // Phones: render deck at 1× — a 3× framebuffer on top of Google's own
       // WebGL canvas is more GPU memory than iOS Chrome's tab can afford.
       useDevicePixels: window.matchMedia('(max-width: 639px)').matches ? 1 : true,
+      pickingRadius: 6,
       layers: [],
-      onClick: info => {
+      getCursor: ({ isHovering }) => (isHovering ? 'pointer' : 'grab'),
+      onClick: (info: PickingInfo) => {
         if (!info.layer || !info.object || !info.coordinate) return;
-        const properties = (info.object as { properties?: Record<string, unknown> }).properties ?? {};
+        const id = baseId(info.layer.id);
+        const isPin = info.layer.id.endsWith('__pins');
+        const obj = info.object as { properties?: Record<string, unknown> };
+        const properties = obj.properties ?? {};
+        const feature = !isPin && (obj as GeoJSON.Feature).type === 'Feature' ? (obj as GeoJSON.Feature) : undefined;
         window.dispatchEvent(new CustomEvent<DeckClickDetail>(DECK_CLICK_EVENT, {
-          detail: { layerId: info.layer.id, properties, lat: info.coordinate[1], lng: info.coordinate[0] },
+          detail: { layerId: id, properties, lat: info.coordinate[1], lng: info.coordinate[0], feature, pin: isPin },
+        }));
+      },
+      onHover: (info: PickingInfo) => {
+        const id = info.layer && info.object ? baseId(info.layer.id) : null;
+        if (id === null && this.hovering === null) return;
+        this.hovering = id;
+        const properties = id ? ((info.object as { properties?: Record<string, unknown> }).properties ?? {}) : null;
+        window.dispatchEvent(new CustomEvent<DeckHoverDetail>(DECK_HOVER_EVENT, {
+          detail: { layerId: id, properties, x: info.x, y: info.y },
         }));
       },
     });
@@ -72,7 +148,31 @@ class DeckManager {
   /** Add or update a tile layer. Visibility here already includes the zoom gate. */
   setLayer(config: LayerConfig, visible: boolean) {
     const prev = this.entries.get(config.id);
-    this.entries.set(config.id, { config, visible, ignoreGate: prev?.ignoreGate });
+    this.entries.set(config.id, { ...prev, config, visible, ignoreGate: prev?.ignoreGate });
+    this.rebuild();
+  }
+
+  /** Add or update a GeoJSON layer drawn on the GPU. */
+  setGeoJson(config: LayerConfig, data: GeoJSON.FeatureCollection, visible: boolean) {
+    const prev = this.entries.get(config.id);
+    this.entries.set(config.id, { ...prev, config, visible, data, ignoreGate: prev?.ignoreGate });
+    this.rebuild();
+  }
+
+  /** Pins (midpoint / centroid markers) for a GeoJSON layer. */
+  setPins(layerId: string, pins: DeckPin[]) {
+    const e = this.entries.get(layerId);
+    if (!e) return;
+    e.pins = pins;
+    this.rebuild();
+  }
+
+  /** Which pins / point features show at the current zoom (null = all). */
+  setSelection(layerId: string, pinFilter: Set<number> | null, pointFilter: Set<number> | null) {
+    const e = this.entries.get(layerId);
+    if (!e) return;
+    e.pinFilter = pinFilter;
+    e.pointFilter = pointFilter;
     this.rebuild();
   }
 
@@ -97,14 +197,18 @@ class DeckManager {
 
   setZoom(zoom: number) {
     if (zoom === this.zoom) return;
+    // Widths and gates only depend on zoom coarsely; rebuild at most every 0.1
+    const coarse = Math.round(zoom * 10) !== Math.round(this.zoom * 10);
     this.zoom = zoom;
-    this.rebuild();
+    if (coarse) this.rebuild();
   }
 
-  /** Features from the tiles currently loaded for a layer (used by the radius report). */
+  /** Features from a layer (tiles currently loaded, or the whole GeoJSON). */
   getRenderedFeatures(layerId: string): GeoJSON.Feature[] {
+    const e = this.entries.get(layerId);
+    if (e?.data) return e.data.features;
     const l = this.live.get(layerId);
-    if (!l) return [];
+    if (!l || !(l instanceof MVTLayer)) return [];
     try {
       return (l.getRenderedFeatures() as unknown as GeoJSON.Feature[]) ?? [];
     } catch {
@@ -119,7 +223,11 @@ class DeckManager {
     this.live.clear();
   }
 
-  private build(e: Entry): MVTLayer {
+  private gated(e: Entry): boolean {
+    return !e.ignoreGate && e.config.minZoom != null && this.zoom < e.config.minZoom;
+  }
+
+  private buildMvt(e: Entry): Layer {
     const { config } = e;
     const t = config.tiles!;
     const st = config.style;
@@ -127,7 +235,6 @@ class DeckManager {
     const stroke = hexToRgb(st.strokeColor, [13, 79, 79]);
     const fillA = Math.round((st.fillOpacity ?? 0) * 255);
     const strokeA = Math.round((st.strokeOpacity ?? 1) * 255);
-    const gated = !e.ignoreGate && config.minZoom != null && this.zoom < config.minZoom;
     const layer = new MVTLayer({
       id: config.id,
       data: t.url,
@@ -139,7 +246,7 @@ class DeckManager {
       extent: TILE_EXTENT,
       loadOptions: { mvt: { layers: [t.sourceLayer] } },
       uniqueIdProperty: t.idProperty ?? 'FID',
-      visible: e.visible && !gated,
+      visible: e.visible && !this.gated(e),
       pickable: true,
       filled: fillA > 0,
       stroked: true,
@@ -156,9 +263,145 @@ class DeckManager {
     return layer;
   }
 
+  private buildGeoJson(e: Entry): Layer[] {
+    const { config, data } = e;
+    if (!data) return [];
+    const st = config.style;
+    const visible = e.visible && !this.gated(e);
+    const out: Layer[] = [];
+    const width = strokeWeightAt(config, this.zoom);
+    const sbp = config.styleByProperty;
+
+    // Points that survive the Friends-pin spacing (null = all)
+    const pf = e.pointFilter;
+    const features = pf
+      ? data.features.filter((f, i) => !(f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint') || pf.has(i))
+      : data.features;
+
+    const lineColor = (f: GeoJSON.Feature): RGBA => {
+      if (sbp) {
+        const v = String(f.properties?.[sbp.property] ?? '');
+        const o = sbp.values[v] ?? sbp.defaultStyle ?? {};
+        return rgba(o.strokeColor ?? st.strokeColor, o.strokeOpacity ?? st.strokeOpacity);
+      }
+      return rgba(st.strokeColor, st.strokeOpacity);
+    };
+    const lineWidth = (f: GeoJSON.Feature): number => {
+      if (sbp) {
+        const v = String(f.properties?.[sbp.property] ?? '');
+        const o = sbp.values[v] ?? sbp.defaultStyle ?? {};
+        return o.strokeWeight ?? width;
+      }
+      return width;
+    };
+    const fillColor = (f: GeoJSON.Feature): RGBA => {
+      if (sbp) {
+        const v = String(f.properties?.[sbp.property] ?? '');
+        const o = sbp.values[v] ?? sbp.defaultStyle ?? {};
+        return rgba(o.fillColor ?? st.fillColor ?? st.strokeColor, o.fillOpacity ?? st.fillOpacity ?? 0);
+      }
+      return rgba(st.fillColor ?? st.strokeColor, st.fillOpacity ?? 0);
+    };
+    // A fully transparent fill is not pickable; renderer-drawn layers (kelp) rely on the fill as a click target
+    const pickFill = config.renderer ? Math.max(3, Math.round((st.fillOpacity ?? 0) * 255)) : null;
+
+    // Casing under the line (two-tone), or an invisible wide click target
+    if (config.casing || config.hitStrokeWeight) {
+      const c = config.casing;
+      out.push(new GeoJsonLayer({
+        id: `${config.id}__casing`,
+        data: features,
+        visible,
+        pickable: true,
+        stroked: true,
+        filled: false,
+        pointType: 'circle',
+        getPointRadius: 0,
+        lineWidthUnits: 'pixels',
+        getLineWidth: c ? Math.max(c.weight, config.hitStrokeWeight ?? 0) : (config.hitStrokeWeight ?? 12),
+        getLineColor: c ? rgba(c.color, c.opacity ?? 0.9) : [0, 0, 0, 1],
+        lineCapRounded: true,
+        lineJointRounded: true,
+      }));
+    }
+
+    const icon = config.markerIcon;
+    const byProp = config.markerIconByProperty;
+    const scale = config.markerScale ?? 1;
+    out.push(new GeoJsonLayer({
+      id: config.id,
+      data: features,
+      visible,
+      pickable: true,
+      autoHighlight: !config.renderer,
+      highlightColor: [255, 255, 255, 90],
+      stroked: true,
+      filled: (st.fillOpacity ?? 0) > 0 || pickFill != null,
+      lineWidthUnits: 'pixels',
+      lineWidthMinPixels: 1,
+      getLineWidth: lineWidth,
+      getLineColor: lineColor,
+      getFillColor: pickFill != null ? (f: GeoJSON.Feature) => { const c = fillColor(f); return [c[0], c[1], c[2], Math.max(c[3], pickFill)] as RGBA; } : fillColor,
+      lineCapRounded: true,
+      lineJointRounded: true,
+      // Point features: the layer's pin icon (buoys, pilings, projects…)
+      pointType: icon ? 'icon' : 'circle',
+      getIcon: icon
+        ? (f: GeoJSON.Feature) => {
+            const url = byProp ? (byProp.icons[String(f.properties?.[byProp.property] ?? '')] ?? icon) : icon;
+            return { url, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false };
+          }
+        : undefined,
+      getIconSize: MARKER_H * scale,
+      iconSizeUnits: 'pixels',
+      iconAlphaCutoff: 0.05,
+      getPointRadius: 4,
+      pointRadiusUnits: 'pixels',
+      updateTriggers: { getLineWidth: [width], getLineColor: [sbp?.property], getFillColor: [pickFill] },
+    }));
+
+    // Pins on lines / polygons (kelp beds, eelgrass edges, armor, docks…)
+    if (e.pins?.length) {
+      const pinFilter = e.pinFilter;
+      const pins = pinFilter ? e.pins.filter(p => pinFilter.has(p.mid)) : e.pins;
+      out.push(new IconLayer<DeckPin>({
+        id: `${config.id}__pins`,
+        data: pins,
+        visible,
+        pickable: true,
+        getPosition: p => p.position,
+        getIcon: p => ({ url: p.icon, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false }),
+        getSize: MARKER_H * scale,
+        sizeUnits: 'pixels',
+        alphaCutoff: 0.05,
+      }));
+    }
+    for (const l of out) this.live.set(l.id, l);
+    return out;
+  }
+
+  private dirty = false;
+
+  /** Coalesce: several setters in one tick (a zoom pass touches every pin layer) rebuild once. */
   private rebuild() {
-    const layers = Array.from(this.entries.values()).map(e => this.build(e));
-    this.overlay.setProps({ layers });
+    if (this.dirty) return;
+    this.dirty = true;
+    queueMicrotask(() => { this.dirty = false; this.rebuildNow(); });
+  }
+
+  private rebuildNow() {
+    // Draw order: tiles at the bottom, then GeoJSON layers by zIndex; pins of
+    // every layer above all geometry so they are never buried under a band.
+    const entries = Array.from(this.entries.values());
+    const tiles = entries.filter(e => e.config.tiles).map(e => this.buildMvt(e));
+    const geo = entries
+      .filter(e => e.data)
+      .sort((a, b) => (a.config.style.zIndex ?? 0) - (b.config.style.zIndex ?? 0))
+      .map(e => this.buildGeoJson(e));
+    const geometry: Layer[] = [];
+    const pins: Layer[] = [];
+    for (const group of geo) for (const l of group) (l.id.endsWith('__pins') ? pins : geometry).push(l);
+    this.overlay.setProps({ layers: [...tiles, ...geometry, ...pins] });
   }
 }
 

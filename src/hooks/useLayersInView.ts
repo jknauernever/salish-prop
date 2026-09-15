@@ -30,6 +30,29 @@ function dataLayerHasFeatureIn(dataLayer: google.maps.Data, view: google.maps.La
   return hit;
 }
 
+/** GPU layers have no Data layer: test the GeoJSON's cached feature bboxes instead. */
+const geoBounds = new WeakMap<GeoJSON.Feature, [number, number, number, number] | null>();
+function geojsonHasFeatureIn(data: GeoJSON.FeatureCollection, view: google.maps.LatLngBounds): boolean {
+  const sw = view.getSouthWest(), ne = view.getNorthEast();
+  const w = sw.lng(), s = sw.lat(), e = ne.lng(), n = ne.lat();
+  for (const f of data.features) {
+    let b = geoBounds.get(f);
+    if (b === undefined) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const visit = (pos: unknown): void => {
+        if (!Array.isArray(pos)) return;
+        if (typeof pos[0] === 'number') { const [x, y] = pos as number[]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        else for (const p of pos) visit(p);
+      };
+      if (f.geometry && f.geometry.type !== 'GeometryCollection') visit((f.geometry as GeoJSON.Point).coordinates);
+      b = Number.isFinite(x0) ? [x0, y0, x1, y1] : null;
+      geoBounds.set(f, b);
+    }
+    if (b && b[0] <= e && b[2] >= w && b[1] <= n && b[3] >= s) return true;
+  }
+  return false;
+}
+
 function inZoomRange(layer: LayerState, zoom: number, overrides: Set<string>): boolean {
   const { minZoom } = layer.config;
   return minZoom == null || zoom >= minZoom || overrides.has(layer.config.id);
@@ -61,6 +84,8 @@ export function useLayersInView(map: google.maps.Map | null, layers: LayerState[
             continue;
           }
           if (layer.loaded && layer.dataLayer && dataLayerHasFeatureIn(layer.dataLayer, view)) {
+            next.add(layer.config.id);
+          } else if (layer.loaded && !layer.dataLayer && layer.geojsonData && geojsonHasFeatureIn(layer.geojsonData, view)) {
             next.add(layer.config.id);
           }
         }

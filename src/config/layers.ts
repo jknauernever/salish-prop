@@ -67,6 +67,7 @@ export const layerConfigs: LayerConfig[] = [
   // === Planning Layers ===
   {
     id: 'stormwater-pipes',
+    gpu: true,
     name: 'Stormwater Infrastructure',
     description: 'County stormwater pipe network',
     category: 'planning',
@@ -597,6 +598,7 @@ export const layerConfigs: LayerConfig[] = [
   // -- Habitat --
   {
     id: 'friends-herring-spawning',
+    gpu: true,
     name: 'Forage Fish Spawning: Herring Spawning Grounds',
     description: 'Areas (present or historic) where Pacific Herring spawn (WDFW)',
     category: 'friends-data',
@@ -626,6 +628,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-bull-kelp',
+    gpu: true,
     name: 'Bull Kelp',
     description: 'Canopy/floating kelp mapping (DNR and Friends)',
     category: 'friends-data',
@@ -664,6 +667,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-deepwater-eelgrass',
+    gpu: true,
     name: 'Deepwater/Edge Eelgrass',
     description: 'Deepest (waterward) edge of eelgrass meadows (Friends, DNR, Friday Harbor Labs)',
     category: 'friends-data',
@@ -695,6 +699,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-potential-forage-spawning',
+    gpu: true,
     name: 'Forage Fish Beach Spawning: Smelt & Sand Lance — Potential Spawning Habitat',
     description: 'Beach substrate suitable to support spawning by Pacific sand lance or surf smelt',
     category: 'friends-data',
@@ -724,6 +729,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-documented-forage-spawning',
+    gpu: true,
     name: 'Forage Fish Beach Spawning: Smelt & Sand Lance — Documented Spawning Beaches',
     description: 'Beaches where Pacific sand lance, surf smelt, or both have been found spawning',
     category: 'friends-data',
@@ -760,6 +766,7 @@ export const layerConfigs: LayerConfig[] = [
   // -- Shoreline --
   {
     id: 'friends-shoreline-geology',
+    gpu: true,
     name: 'Shoreline Geology: Shoreforms',
     description: 'Primary geologic features of marine shorelines — coastal processes affect different shore form types in different ways, resulting in different management concerns and priorities',
     category: 'friends-data',
@@ -815,6 +822,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-armor',
+    gpu: true,
     name: 'Shoreline Armor (2019 survey)',
     description: 'Shoreline armoring — bulkheads, riprap, sea walls, bank stabilization installed to control erosion',
     category: 'friends-data',
@@ -846,6 +854,7 @@ export const layerConfigs: LayerConfig[] = [
   // -- Shoreline Infrastructure --
   {
     id: 'friends-groins',
+    gpu: true,
     name: 'Groins',
     description: 'Structures perpendicular to shore, intended to trap alongshore sediment transport',
     category: 'friends-data',
@@ -871,6 +880,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-boat-ramps',
+    gpu: true,
     name: 'Boat Ramps',
     description: 'Concrete or other structural boat ramps across inter- and subtidal habitats',
     category: 'friends-data',
@@ -894,6 +904,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-marine-railway',
+    gpu: true,
     name: 'Marine Railways',
     description: 'Typically elevated boat ramp structures',
     category: 'friends-data',
@@ -917,6 +928,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-mooring-buoys',
+    gpu: true,
     name: 'Mooring Buoys & Floats',
     description: 'In and overwater moorage facilities',
     category: 'friends-data',
@@ -944,6 +956,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-pilings',
+    gpu: true,
     name: 'Pilings',
     description: 'Pilings not associated with a dock or marina',
     category: 'friends-data',
@@ -971,6 +984,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-docks',
+    gpu: true,
     name: 'Docks',
     description: 'Smaller overwater structures (does not include marinas)',
     category: 'friends-data',
@@ -1003,6 +1017,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-projects',
+    gpu: true,
     name: "Friends habitat restoration projects",
     description: 'Restoration, riparian, and in/over-water structure projects by Friends of the San Juans',
     category: 'friends-data',
@@ -1040,6 +1055,7 @@ export const layerConfigs: LayerConfig[] = [
   },
   {
     id: 'friends-armor-change-2019',
+    gpu: true,
     name: 'Armor Change Analysis (2019)',
     description: 'Shoreline armor change analysis (Friends 2019)',
     category: 'friends-data',

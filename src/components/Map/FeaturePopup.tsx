@@ -4,7 +4,7 @@ import { useMap } from '../../hooks/useMap';
 import { buildPopupFrame, installPopupFrameHandlers, POPUP_CLOSE_EVENT, escapeHtml as escHtml } from './popupFrame';
 import { MobileSheetWindow, type PopupHost } from './popupSheet';
 import { featuresNear, type HitCandidate } from '../../services/hitTest';
-import { getDeckRenderedFeatures } from './DeckLayers';
+import { getDeckRenderedFeatures, DECK_HOVER_EVENT, type DeckHoverDetail } from './DeckLayers';
 import { MARKER_HOVER_EVENT, type MarkerHoverDetail } from '../../hooks/useLayers';
 import { isMobileNow } from '../../hooks/useIsMobile';
 import type { PopupPhoto, PopupStat } from './popupFrame';
@@ -301,7 +301,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
 
     // deck.gl tile layers (parcels, buildings) re-broadcast clicks as a window event
     const onDeckClick = (e: Event) => {
-      const { layerId, properties, lat, lng } = (e as CustomEvent<DeckClickDetail>).detail;
+      const { layerId, properties, lat, lng, feature, pin } = (e as CustomEvent<DeckClickDetail>).detail;
       const layer = layersRef.current.find(l => l.config.id === layerId);
       if (!layer || !layer.visible) return;
       const props: Record<string, unknown> = { ...properties };
@@ -314,17 +314,30 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
           handleParcelClick(label, layer, fields, props, { latLng } as google.maps.Data.MouseEvent, map, infoWindowRef, layersRef.current);
         } else {
           clearFeatureHighlight();
+          if (feature) highlightFeatureGeometry(feature, map);
           openFeaturePopup(layer, props, fields, label, latLng, map, infoWindowRef);
         }
       };
       if (layerId === 'tax-parcels' && !propertyClick) return;
-      // Tile layers (parcels, buildings) only get the click when no line sits on top;
-      // lines a few pixels away still deserve a mention. Marker pins open directly.
-      const others = layer.config.tiles ? chooserRows(map, infoWindowRef, layersRef.current, latLng, propertyClick, { layerId, props }) : [];
+      // Tiles (parcels, buildings) and GPU geometry only get the click when
+      // nothing sits on top, but lines a few pixels away still deserve a
+      // mention: offer the chooser. Pins open directly.
+      const others = (layer.config.tiles || (layer.config.gpu && !pin)) ? chooserRows(map, infoWindowRef, layersRef.current, latLng, propertyClick, { layerId, props }) : [];
       if (others.length) openClickChooser(map, infoWindowRef, latLng, [{ ...rowFor(layer, props), open: openThis }, ...others]);
       else openThis();
     };
     window.addEventListener(DECK_CLICK_EVENT, onDeckClick);
+
+    // deck.gl layers: one hover event for geometry and pins alike
+    const onDeckHover = (e: Event) => {
+      if (isMobileNow()) return;
+      const { layerId, properties, x, y } = (e as CustomEvent<DeckHoverDetail>).detail;
+      if (!layerId || !properties) { hideHoverLabel(); return; }
+      const layer = layersRef.current.find(l => l.config.id === layerId);
+      if (!layer) { hideHoverLabel(); return; }
+      showHoverLabelAt(map, x, y, `${layer.config.name} · ${rowFor(layer, properties).title}`);
+    };
+    window.addEventListener(DECK_HOVER_EVENT, onDeckHover);
 
     // Pins (midpoint / centroid markers) hover like lines and fills do
     const onMarkerHover = (e: Event) => {
@@ -352,6 +365,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
     return () => {
       document.removeEventListener('click', onPick);
       window.removeEventListener(MARKER_HOVER_EVENT, onMarkerHover);
+      window.removeEventListener(DECK_HOVER_EVENT, onDeckHover);
       hideHoverLabel();
       window.removeEventListener(DECK_CLICK_EVENT, onDeckClick);
       listeners.forEach(l => google.maps.event.removeListener(l));
@@ -978,6 +992,21 @@ function showHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent, te
   hoverEl.textContent = text;
   hoverEl.hidden = false;
   placeHoverLabel(map, e);
+}
+
+/** Show the label at a position relative to the map div (deck.gl picking coordinates). */
+function showHoverLabelAt(map: google.maps.Map, x: number, y: number, text: string): void {
+  if (!hoverEl) {
+    hoverEl = document.createElement('div');
+    hoverEl.className = 'ssx-hover';
+    hoverHost(map).appendChild(hoverEl);
+  }
+  hoverEl.textContent = text;
+  hoverEl.hidden = false;
+  const mr = map.getDiv().getBoundingClientRect();
+  const hr = hoverHost(map).getBoundingClientRect();
+  hoverEl.style.left = `${x + (mr.left - hr.left) + 14}px`;
+  hoverEl.style.top = `${y + (mr.top - hr.top) + 16}px`;
 }
 
 function moveHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent): void {

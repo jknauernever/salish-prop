@@ -20,7 +20,7 @@ export interface MarkerHoverDetail {
   phase: 'mouseover' | 'mousemove' | 'mouseout';
   domEvent?: MouseEvent;
 }
-import { getDeckManager, registerDeckManager, DECK_CLICK_EVENT } from '../components/Map/DeckLayers';
+import { getDeckManager, registerDeckManager, DECK_CLICK_EVENT, type DeckPin } from '../components/Map/DeckLayers';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_X, MARKER_ANCHOR_Y } from '../config/markerIcons';
 import type { DateRange } from '../types';
 import type { UrlLayerUi } from '../services/urlState';
@@ -259,6 +259,10 @@ function markerTier(config: LayerConfig, zoom: number): string {
 function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> | null {
   const meta = markerMeta.get(ml);
   if (!meta) return null; // nothing cached (should not happen): show everything
+  return selectFromMeta(meta, zoom, reserved, alwaysThin);
+}
+
+function selectFromMeta(meta: MarkerMeta[], zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> {
   const q = Math.round(zoom * 2) / 2;
   const scale = Math.pow(2, q);
   const gridPx = markerGridPx(q);
@@ -434,6 +438,9 @@ export function useLayers(
 
   const dataLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const markerLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
+  // GPU (deck.gl) layers: cached pin metadata for zoom thinning, and point-feature positions for Friends-pin spacing
+  const gpuPinMetaRef = useRef<Map<string, MarkerMeta[]>>(new Map());
+  const gpuPointsRef = useRef<Map<string, { index: number; x0: number; y0: number }[]>>(new Map());
   const pointLayersRef = useRef<Set<string>>(new Set());
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
   // Canvas overlays for layers with a custom `renderer` (e.g. kelp squiggles)
@@ -556,9 +563,11 @@ export function useLayers(
   const setVectorVisible = useCallback((layerId: string, visible: boolean) => {
     const config = layerConfigs.find(c => c.id === layerId);
     if (!config || config.viewportFiltered) return; // viewport layers handled separately
-    if (config.tiles) {
+    if (config.tiles || config.gpu) {
       // deck.gl applies the minZoom gate itself; pass the user's intent
       if (map) getDeckManager(map).setVisible(layerId, visible);
+      const ov = patternOverlaysRef.current.get(layerId);
+      if (ov) ov.setMap(visible ? (map ?? null) : null);
       return;
     }
     const dl = dataLayersRef.current.get(layerId);
@@ -986,6 +995,61 @@ export function useLayers(
           return;
         }
 
+        if (config.gpu) {
+          // --- GPU (deck.gl) layer: no google.maps.Data at all ---
+          const deck = getDeckManager(map);
+          registerDeckManager(deck);
+          if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
+          deck.setGeoJson(config, data, visibleNow);
+          warmHitCache(data);
+
+          if (config.renderer) {
+            const styleFor = { 'kelp-squiggle': 'kelp', 'herring-school': 'school', 'beach-school': 'beach-solid', 'beach-school-outline': 'beach-outline' } as const;
+            const overlay = createKelpOverlay(data, styleFor[config.renderer]);
+            overlay.setMap(visibleNow ? map : null);
+            patternOverlaysRef.current.set(config.id, overlay);
+          }
+          if (config.id === 'friends-projects') {
+            reservedLngLatRef.current = data.features.flatMap(f =>
+              f.geometry?.type === 'Point' ? [[f.geometry.coordinates[0], f.geometry.coordinates[1]] as [number, number]] : []);
+          }
+          if (config.markerIcon) {
+            // Point features keep clear of Friends' project pins (cached positions for the zoom pass)
+            const pts: { index: number; x0: number; y0: number }[] = [];
+            data.features.forEach((f, index) => {
+              if (f.geometry?.type !== 'Point') return;
+              const [x0, y0] = worldPixel(f.geometry.coordinates[0], f.geometry.coordinates[1], 0);
+              pts.push({ index, x0, y0 });
+            });
+            if (pts.length) gpuPointsRef.current.set(config.id, pts);
+            // Lines / polygons get midpoint or centroid pins, thinned by zoom
+            const hasLines = data.features.some(f => f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString' || f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
+            if (hasLines) {
+              const midpoints = createMidpointMarkers(data, config.markerMinAcres ?? 0);
+              gpuPinMetaRef.current.set(config.id, buildMarkerMeta(midpoints));
+              const byProp = config.markerIconByProperty;
+              const pins: DeckPin[] = midpoints.features.map(f => {
+                const props = { ...(f.properties ?? {}) } as Record<string, unknown>;
+                const mid = Number(props.mid);
+                delete props.mid; delete props.lengthRank;
+                const v = byProp ? String(props[byProp.property] ?? '') : '';
+                const icon = (byProp && byProp.icons[v]) || config.markerIcon!;
+                return { position: (f.geometry as GeoJSON.Point).coordinates as [number, number], properties: props, icon, mid };
+              });
+              deck.setPins(config.id, pins);
+            }
+          }
+          setLayers(prev => prev.map(l =>
+            l.config.id === config.id
+              ? { ...l, loading: false, loaded: true, featureCount: data.features.length, geojsonData: data }
+              : l
+          ));
+          google.maps.event.trigger(map, 'ssx-layers-changed');
+          // Apply pin thinning / spacing for the current zoom (and re-space other layers around new project pins)
+          setTimeout(() => google.maps.event.trigger(map, 'zoom_changed'), 0);
+          return;
+        }
+
         if (config.viewportFiltered) {
           // --- Viewport-filtered layer ---
           // Store full data for spatial queries, build bbox index, create empty Data layer
@@ -1239,6 +1303,24 @@ export function useLayers(
           if (config.tiles || config.viewportFiltered || !layer.loaded) continue; // deck gates tiles; idle handles viewport layers
 
           const shouldShow = layer.visible && gateOk(config.id, config.minZoom, zoom);
+          if (config.gpu) {
+            // deck gates visibility itself; we only refresh which pins / points show
+            if (!config.markerIcon) continue;
+            const key = `gpu|${markerTier(config, zoom)}|${reservedTier}`;
+            if (lastKey.get(config.id) === key) continue;
+            lastKey.set(config.id, key);
+            const reserved = config.id === 'friends-projects' ? [] : reservedAt(zoom);
+            const meta = gpuPinMetaRef.current.get(config.id);
+            const pinFilter = meta ? selectFromMeta(meta, zoom, reserved, !!config.markerAlwaysThin) : null;
+            const pts = gpuPointsRef.current.get(config.id);
+            let pointFilter: Set<number> | null = null;
+            if (pts && reserved.length) {
+              const scale = Math.pow(2, Math.round(zoom * 2) / 2);
+              pointFilter = new Set(pts.filter(p => !nearReserved(p.x0 * scale, p.y0 * scale, reserved)).map(p => p.index));
+            }
+            getDeckManager(map).setSelection(config.id, pinFilter, pointFilter);
+            continue;
+          }
           const raster = rasterLayersRef.current.get(config.id);
           if (raster) {
             const key = `raster|${shouldShow}`;
@@ -1324,9 +1406,9 @@ export function useLayers(
         return { ...layer, visible: newVisible };
       }
 
-      // Vector-tile layers — deck.gl handles the zoom gate
-      if (layer.config.tiles) {
-        if (map) getDeckManager(map).setVisible(layerId, newVisible);
+      // Vector-tile and GPU layers — deck.gl handles the zoom gate
+      if (layer.config.tiles || layer.config.gpu) {
+        setVectorVisible(layerId, newVisible);
         return { ...layer, visible: newVisible };
       }
 
@@ -1382,6 +1464,12 @@ export function useLayers(
           const dl = dataLayersRef.current.get(layer.config.id);
           if (dl) dl.forEach(f => dl.remove(f));
         }
+        return { ...layer, visible };
+      }
+
+      // Vector-tile and GPU layers — deck.gl handles the zoom gate
+      if (layer.config.tiles || layer.config.gpu) {
+        setVectorVisible(layer.config.id, visible);
         return { ...layer, visible };
       }
 

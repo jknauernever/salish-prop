@@ -108,6 +108,12 @@ export interface LayerConfig {
   markerIconByProperty?: { property: string; icons: Record<string, string> };
   /** Multiplier on the standard 24×26 px marker size (e.g. 2 for a hero layer). */
   markerScale?: number;
+  /**
+   * Draw this GeoJSON layer with deck.gl (GPU) instead of google.maps.Data.
+   * Same styling fields apply; casing / hitStrokeWeight / pins / renderer
+   * overlays all work. Use for anything with more than a few hundred features.
+   */
+  gpu?: boolean;
   /** Polygon layers: no marker for features whose `acres` property is below this. */
   markerMinAcres?: number;
   /**
