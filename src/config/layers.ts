@@ -845,6 +845,8 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-groins.json',
     visible: false,
+    markerScale: 0.85, // mid-size structures
+    markerIcon: MARKER_ICONS.groin,
     style: {
       zIndex: 8,
       fillColor: '#8B4513',
@@ -889,6 +891,8 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-marine-railway.json',
     visible: false,
+    markerScale: 0.85, // mid-size structures
+    markerIcon: MARKER_ICONS.railway,
     style: {
       fillColor: '#2F4F4F',
       fillOpacity: 1,
@@ -936,6 +940,8 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-pilings.json',
     visible: false,
+    markerScale: 0.75, // minor structures
+    markerIcon: MARKER_ICONS.piling,
     style: {
       fillColor: '#A0522D',
       fillOpacity: 1,
