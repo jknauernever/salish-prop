@@ -867,6 +867,7 @@ export const layerConfigs: LayerConfig[] = [
     category: 'friends-data',
     source: '/data/friends-boat-ramps.json',
     visible: false,
+    markerScale: 0.85, // mid-size structures
     markerIcon: MARKER_ICONS.ramp,
     style: {
       fillColor: '#4682B4',
@@ -909,6 +910,7 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-mooring-buoys.json',
     visible: true, // on by default, drawn from zoom 16 (see minZoom)
     minZoom: 16,
+    markerScale: 0.65, // small but prolific (1,916): the smallest pin in the hierarchy
     markerIcon: MARKER_ICONS.buoy,
     style: {
       fillColor: '#191970',
@@ -959,6 +961,7 @@ export const layerConfigs: LayerConfig[] = [
     source: '/data/friends-docks.geojson',
     visible: true, // on by default, drawn from zoom 16 (see minZoom)
     minZoom: 16,
+    markerScale: 0.85, // mid-size structures
     markerIcon: MARKER_ICONS.dock,
     style: {
       fillColor: '#008B8B',
