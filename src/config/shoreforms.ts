@@ -26,7 +26,7 @@ export interface ShoreformType {
 export type ShoreformGroupId = 'feeder' | 'transport' | 'barrier' | 'pocket' | 'embayment' | 'rocky' | 'artificial';
 
 export const SHOREFORM_GROUPS: Record<ShoreformGroupId, { label: string; color: string }> = {
-  feeder: { label: 'Feeder bluff (sediment supply)', color: '#B91C1C' },
+  feeder: { label: 'Feeder bluff (sediment supply)', color: '#9A3412' }, // rust brown, clear of the raspberry spawning band
   transport: { label: 'Transport zone', color: '#F59E0B' },
   barrier: { label: 'Barrier / accretion beach', color: '#FACC15' },
   pocket: { label: 'Pocket beach', color: '#3B82F6' },
