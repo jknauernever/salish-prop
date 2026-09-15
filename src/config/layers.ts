@@ -657,7 +657,6 @@ export const layerConfigs: LayerConfig[] = [
       source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
     },
     sourceCredit: 'Washington Department of Natural Resources and Friends of the San Juans',
-    minZoom: 10,
   },
   {
     id: 'friends-deepwater-eelgrass',
