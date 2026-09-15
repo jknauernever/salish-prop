@@ -816,7 +816,10 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Shoreline armoring — bulkheads, riprap, sea walls, bank stabilization installed to control erosion',
     category: 'friends-data',
     source: '/data/friends-armor.json',
-    visible: false,
+    visible: true, // on by default with the other structures, drawn from zoom 16
+    minZoom: 16,
+    markerScale: 0.85, // mid-size structures
+    markerIcon: MARKER_ICONS.armor, // one pin per segment at its midpoint, thinned by zoom
     style: {
       zIndex: 7,
       fillColor: '#8B0000',

@@ -78,6 +78,11 @@ const SPECS: Record<string, IconSpec> = {
     strokeGlyph: true,
     glyph: 'M4 5.5l14.5 14.5M9 3l14.5 14.5M5.5 9l4.5-4.5M10 13.5l4.5-4.5M14.5 18l4.5-4.5',
   },
+  // Shoreline armor: a bulkhead wall, three courses of blocks, water at its toe
+  armor: {
+    color: '#A0522D',
+    glyph: 'M4 4h7v3.4H4zM12.6 4H20v3.4h-7.4zM4 9h3.4v3.4H4zM9 9h6v3.4H9zM16.6 9H20v3.4h-3.4zM4 14h7v3.4H4zM12.6 14H20v3.4h-7.4zM3 19.2c1.6-1.1 3.2-1.1 4.8 0s3.2 1.1 4.8 0 3.2-1.1 4.8 0 3.2 1.1 4.6 0V22H3z',
+  },
   // Friends' Projects: a site target ring over the water (chosen from the
   // marker exploration canvas, 2026-09-03). Disc color comes per project
   // type via FRIENDS_PROJECT_ICONS; the ring and wave stay white.
