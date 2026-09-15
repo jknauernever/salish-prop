@@ -38,4 +38,4 @@ export function legendGroupFor(layerId: string): LegendGroup | undefined {
 }
 
 /** Layers pinned to the top of the "On the map" legend, in this order; everything else follows in config order. */
-export const LEGEND_FIRST: string[] = ['friends-projects'];
+export const LEGEND_FIRST: string[] = ['friends-projects', 'friends-bull-kelp', 'friends-deepwater-eelgrass'];
