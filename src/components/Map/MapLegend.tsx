@@ -321,9 +321,9 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
               const isOpen = expanded.has(group.id);
               return (
                 <div key={group.id} className={`relative rounded-md transition-colors ${inViewN ? 'bg-teal-50/80' : 'opacity-70'}`}>
-                  {inViewN > 0 && <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[#A0522D]" />}
+                  {inViewN > 0 && <span aria-hidden="true" className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: group.style === 'chips' ? (members[0].config.style.strokeColor || '#0D4F4F') : '#A0522D' }} />}
                   <div className="flex items-center gap-2 px-2 py-1.5">
-                    <button
+                    {group.style !== 'chips' && <button
                       type="button"
                       onClick={() => toggleExpanded(group.id)}
                       aria-expanded={isOpen}
@@ -333,8 +333,8 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
                       <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                       </svg>
-                    </button>
-                    <GroupSwatch />
+                    </button>}
+                    {group.style === 'chips' ? <Swatch config={members[0].config} /> : <GroupSwatch />}
                     <button
                       type="button"
                       onClick={() => toggleGroup(members)}
@@ -376,7 +376,29 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
                       </svg>
                     </button>
                   </div>
-                  {isOpen && <div className="pb-1">{members.map(m => renderRow(m, true))}</div>}
+                  {group.style === 'chips' && (
+                    <div className="flex flex-wrap gap-x-2.5 gap-y-1 pl-6 pr-2 pb-1.5">
+                      {members.map(m => {
+                        const gated = !zoomOverrides.has(m.config.id) && m.config.minZoom != null && zoom < m.config.minZoom;
+                        const lit = m.visible && inView.has(m.config.id);
+                        const label = group.shortLabels?.[m.config.id] ?? m.config.name;
+                        return (
+                          <button
+                            key={m.config.id}
+                            type="button"
+                            onClick={() => (!m.visible ? showRow(m.config.id, gated) : gated ? onSetZoomOverride(m.config.id, true) : hideRow(m.config.id))}
+                            aria-pressed={m.visible}
+                            title={!m.visible ? 'Hidden. Click to show' : gated ? `Drawn from zoom ${m.config.minZoom}. Click to show it now` : 'Click to hide'}
+                            className={`inline-flex items-center gap-1.5 text-[11px] leading-tight text-left rounded px-0.5 hover:text-deep-teal transition-colors ${!m.visible ? 'text-slate-blue/45 line-through decoration-slate-blue/30' : lit ? 'text-slate-blue font-semibold' : 'text-slate-blue/75'}`}
+                          >
+                            <Swatch config={m.config} />
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {isOpen && group.style !== 'chips' && <div className="pb-1">{members.map(m => renderRow(m, true))}</div>}
                 </div>
               );
             })}

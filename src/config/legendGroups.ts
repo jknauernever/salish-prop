@@ -11,9 +11,30 @@ export interface LegendGroup {
   layers: string[];
   /** Shown at the top of the group's info modal. */
   description: string;
+  /**
+   * 'rows' (default): collapsed by default, a chevron expands the per-layer rows.
+   * 'chips': always shows the members as a chip strip under the group name, the
+   * way Shoreline Geology shows its classes; each chip toggles its layer.
+   */
+  style?: 'rows' | 'chips';
+  /** Short member labels for the chip strip (falls back to the layer name). */
+  shortLabels?: Record<string, string>;
 }
 
 export const LEGEND_GROUPS: LegendGroup[] = [
+  {
+    id: 'forage-fish',
+    name: 'Forage Fish Spawning',
+    layers: ['friends-herring-spawning', 'friends-documented-forage-spawning', 'friends-potential-forage-spawning'],
+    style: 'chips',
+    shortLabels: {
+      'friends-herring-spawning': 'Herring spawning grounds',
+      'friends-documented-forage-spawning': 'Smelt & sand lance — documented beaches',
+      'friends-potential-forage-spawning': 'Smelt & sand lance — potential habitat',
+    },
+    description:
+      'Where forage fish spawn in San Juan County: Pacific herring on eelgrass and algae in sheltered bays (WDFW), and surf smelt and Pacific sand lance on upper-beach sand and gravel (Friends of the San Juans and WDFW surveys). Documented beaches have been surveyed with eggs found; potential habitat is beach substrate suitable for spawning that fronts the shore.',
+  },
   {
     id: 'shoreline-modifications',
     name: 'Shoreline Modifications',

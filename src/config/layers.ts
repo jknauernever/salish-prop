@@ -74,10 +74,10 @@ export const layerConfigs: LayerConfig[] = [
     visible: true,
     minZoom: 15,
     style: {
-      fillColor: '#E67E22',
+      fillColor: '#84CC16',
       fillOpacity: 0,
-      strokeColor: '#E67E22',
-      strokeWeight: 2.5,
+      strokeColor: '#84CC16', // lime: nothing else on the map is green, and it sits far from the orange parcel lines
+      strokeWeight: 4,
     },
     popupFields: [
       { key: 'Pipe_ID', label: 'Pipe ID' },
