@@ -844,7 +844,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Structures perpendicular to shore, intended to trap alongshore sediment transport',
     category: 'friends-data',
     source: '/data/friends-groins.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerScale: 0.85, // mid-size structures
     markerIcon: MARKER_ICONS.groin,
     style: {
@@ -890,7 +891,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Typically elevated boat ramp structures',
     category: 'friends-data',
     source: '/data/friends-marine-railway.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerScale: 0.85, // mid-size structures
     markerIcon: MARKER_ICONS.railway,
     style: {
@@ -939,7 +941,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Pilings not associated with a dock or marina',
     category: 'friends-data',
     source: '/data/friends-pilings.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerScale: 0.75, // minor structures
     markerIcon: MARKER_ICONS.piling,
     style: {
