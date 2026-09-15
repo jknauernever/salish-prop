@@ -70,8 +70,11 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
       const mq = window.matchMedia(MOBILE_QUERY);
       mq.addEventListener('change', () => mapInstance.setOptions(controlsFor(mq.matches)));
 
+      // One React update per frame during a pinch, not one per zoom tick
+      let zoomFrame: number | null = null;
       mapInstance.addListener('zoom_changed', () => {
-        setZoom(mapInstance.getZoom() ?? DEFAULT_ZOOM);
+        if (zoomFrame != null) return;
+        zoomFrame = requestAnimationFrame(() => { zoomFrame = null; setZoom(mapInstance.getZoom() ?? DEFAULT_ZOOM); });
       });
 
       // Mirror the viewport + basemap into the URL so the address bar is

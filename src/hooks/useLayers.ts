@@ -228,26 +228,52 @@ function nearReserved(x: number, y: number, reserved: [number, number][]): boole
 }
 
 /** Ids (the `mid` property) of the markers to show at this zoom. null = show all. */
+/** One pin's position (world px at zoom 0) and thinning rank, cached when the marker layer is built. */
+interface MarkerMeta { mid: number; x0: number; y0: number; rank: number }
+
+/** Cached pin metadata per marker layer — avoids walking Google's feature API on every zoom tick. */
+const markerMeta = new WeakMap<google.maps.Data, MarkerMeta[]>();
+
+function buildMarkerMeta(points: GeoJSON.FeatureCollection): MarkerMeta[] {
+  const out: MarkerMeta[] = [];
+  for (const f of points.features) {
+    if (f.geometry?.type !== 'Point') continue;
+    const [lng, lat] = f.geometry.coordinates;
+    const [x0, y0] = worldPixel(lng, lat, 0);
+    out.push({ mid: Number(f.properties?.mid), x0, y0, rank: Number(f.properties?.lengthRank ?? 1) });
+  }
+  return out;
+}
+
+/**
+ * Zoom is quantized to half-steps for thinning so a smooth pinch does not
+ * reshuffle pins on every tick; the tier string lets callers skip a restyle
+ * when nothing about the selection could have changed.
+ */
+function markerTier(config: LayerConfig, zoom: number): string {
+  const q = Math.round(zoom * 2) / 2;
+  const showAll = !config.markerAlwaysThin && zoom >= MARKER_SHOW_ALL_ZOOM;
+  return showAll ? `all@${Math.round(zoom)}` : `${markerGridPx(q)}@${q}`;
+}
+
 function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> | null {
-  const gridPx = markerGridPx(zoom);
-  const best = new Map<string, { id: number; rank: number }>();
+  const meta = markerMeta.get(ml);
+  if (!meta) return null; // nothing cached (should not happen): show everything
+  const q = Math.round(zoom * 2) / 2;
+  const scale = Math.pow(2, q);
+  const gridPx = markerGridPx(q);
   const showAll = !alwaysThin && zoom >= MARKER_SHOW_ALL_ZOOM;
-  ml.forEach((feature) => {
-    const g = feature.getGeometry();
-    if (!g || g.getType() !== 'Point') return;
-    const ll = (g as google.maps.Data.Point).get();
-    const [x, y] = worldPixel(ll.lng(), ll.lat(), zoom);
-    if (reserved.length && nearReserved(x, y, reserved)) return; // yield to a Friends' Projects pin
-    if (showAll) {
-      best.set(`f${feature.getProperty('mid')}`, { id: Number(feature.getProperty('mid')), rank: 0 });
-      return;
-    }
+  const best = new Map<string, { id: number; rank: number }>();
+  const chosen = new Set<number>();
+  for (const m of meta) {
+    const x = m.x0 * scale, y = m.y0 * scale;
+    if (reserved.length && nearReserved(x, y, reserved)) continue; // yield to a Friends' Projects pin
+    if (showAll) { chosen.add(m.mid); continue; }
     const key = `${Math.floor(x / gridPx)}:${Math.floor(y / gridPx)}`;
-    const id = Number(feature.getProperty('mid'));
-    const rank = Number(feature.getProperty('lengthRank') ?? 1);
     const cur = best.get(key);
-    if (!cur || rank < cur.rank) best.set(key, { id, rank });
-  });
+    if (!cur || m.rank < cur.rank) best.set(key, { id: m.mid, rank: m.rank });
+  }
+  if (showAll) return chosen;
   return new Set(Array.from(best.values(), v => v.id));
 }
 
@@ -395,8 +421,10 @@ export function useLayers(
   );
   // Friends' Projects marker positions: every other marker layer keeps clear of these
   const reservedLngLatRef = useRef<[number, number][]>([]);
-  const reservedAt = (zoom: number): [number, number][] =>
-    reservedLngLatRef.current.map(([lng, lat]) => worldPixel(lng, lat, zoom));
+  const reservedAt = (zoom: number): [number, number][] => {
+    const q = Math.round(zoom * 2) / 2; // matches the pin thinning's half-step quantization
+    return reservedLngLatRef.current.map(([lng, lat]) => worldPixel(lng, lat, q));
+  };
 
   // Layers the user asked to see regardless of their minZoom (legend "zoom in" click)
   const zoomOverridesRef = useRef<Set<string>>(new Set(initialZoomOverrides));
@@ -1081,6 +1109,7 @@ export function useLayers(
 
           dataLayersRef.current.set(config.id, dataLayer);
           warmHitCache(data); // so the first "what's here" click is instant
+          google.maps.event.trigger(map, 'ssx-layers-changed');
 
           if (config.hitStrokeWeight || config.casing) {
             const hitLayer = new google.maps.Data({ map });
@@ -1122,6 +1151,7 @@ export function useLayers(
               const midpoints = createMidpointMarkers(data, config.markerMinAcres ?? 0);
               const markerLayer = new google.maps.Data({ map });
               markerLayer.addGeoJson(midpoints);
+              markerMeta.set(markerLayer, buildMarkerMeta(midpoints));
               // A pin click opens the same popup as clicking the line it marks
               markerLayer.addListener('click', (event: google.maps.Data.MouseEvent) => {
                 const properties: Record<string, unknown> = {};
@@ -1186,56 +1216,75 @@ export function useLayers(
   useEffect(() => {
     if (!map) return;
 
-    const listener = map.addListener('zoom_changed', () => {
+    // What each layer was last styled for; a zoom tick only touches layers
+    // whose key changed (visibility, thinning tier, halo width, pin spacing).
+    const lastKey = new Map<string, string>();
+    let frame: number | null = null;
+
+    const applyZoom = () => {
+      frame = null;
       const zoom = map.getZoom() ?? 0;
 
       // Cheap: only re-style observation layers when the heatmap↔circles
       // tier actually changes. handleZoomForSpeciesObs compares the new
-      // tier against the cached one and no-ops when they match — which is
-      // the case for almost every zoom tick during a smooth zoom.
+      // tier against the cached one and no-ops when they match.
       handleZoomForSpeciesObs();
 
       getDeckManager(map).setZoom(zoom);
+      const reservedTier = reservedLngLatRef.current.length ? `r${Math.round(zoom * 2) / 2}` : '';
 
-      setLayers(prev => prev.map(layer => {
-        if (layer.config.tiles) return layer; // deck.gl gates these itself
-        // Midpoint-marker layers thin out with zoom — re-style on every change
-        const ml = layer.config.markerIcon ? markerLayersRef.current.get(layer.config.id) : undefined;
-        if (ml && layer.loaded) {
-          ml.setStyle(midpointMarkerStyle(ml, layer.config, layer.visible, zoom, reservedAt(zoom)));
-        }
+      setLayers(prev => {
+        for (const layer of prev) {
+          const { config } = layer;
+          if (config.tiles || config.viewportFiltered || !layer.loaded) continue; // deck gates tiles; idle handles viewport layers
 
-        const minZoom = layer.config.minZoom;
-        if (minZoom == null) {
-          // Halo strokes and marker spacing track zoom even without a minZoom gate
-          if ((layer.config.haloByZoom || layer.config.markerIcon) && layer.loaded && !layer.config.viewportFiltered) {
-            setVectorVisible(layer.config.id, layer.visible);
+          const shouldShow = layer.visible && gateOk(config.id, config.minZoom, zoom);
+          const raster = rasterLayersRef.current.get(config.id);
+          if (raster) {
+            const key = `raster|${shouldShow}`;
+            if (lastKey.get(config.id) !== key) {
+              lastKey.set(config.id, key);
+              raster.setOpacity(shouldShow ? (layer.opacity ?? 0.7) : 0);
+            }
+            continue;
           }
-          return layer;
+
+          const parts = [String(shouldShow)];
+          if (config.markerIcon) parts.push(markerTier(config, zoom), reservedTier);
+          if (config.haloByZoom) parts.push(String(Math.round(strokeAtZoom(config, zoom).strokeWeight * 4) / 4));
+          const key = parts.join('|');
+          if (lastKey.get(config.id) === key) continue;
+          lastKey.set(config.id, key);
+
+          const ml = config.markerIcon ? markerLayersRef.current.get(config.id) : undefined;
+          if (ml) ml.setStyle(midpointMarkerStyle(ml, config, layer.visible && shouldShow, zoom, reservedAt(zoom)));
+          if (config.minZoom != null || config.haloByZoom || config.markerIcon) setVectorVisible(config.id, shouldShow);
         }
-        // Viewport-filtered layers are handled by the idle listener
-        if (layer.config.viewportFiltered) return layer;
+        return prev; // nothing in React state changes on zoom
+      });
+    };
 
-        // Raster layers
-        const raster = rasterLayersRef.current.get(layer.config.id);
-        if (raster && layer.loaded) {
-          const shouldShow = layer.visible && gateOk(layer.config.id, minZoom, zoom);
-          raster.setOpacity(shouldShow ? (layer.opacity ?? 0.7) : 0);
-          return layer;
-        }
+    // Vector maps fire zoom_changed many times per second during a pinch:
+    // coalesce to one pass per animation frame, then settle once on idle.
+    const onZoom = () => { if (frame == null) frame = requestAnimationFrame(applyZoom); };
+    // Debug handle (harmless): time one zoom pass from the console
+    (window as unknown as Record<string, unknown>).__ssxZoomPass = applyZoom;
+    const zoomListener = map.addListener('zoom_changed', onZoom);
+    const idleListener = map.addListener('idle', onZoom);
+    // A layer that finishes loading or is toggled must not be skipped by a stale key
+    const invalidate = () => lastKey.clear();
+    const toggleListener = google.maps.event.addListener(map, 'ssx-layers-changed', invalidate);
 
-        // Standard vector layers
-        if (!layer.loaded) return layer;
-        const shouldShow = layer.visible && gateOk(layer.config.id, minZoom, zoom);
-        setVectorVisible(layer.config.id, shouldShow);
-        return layer;
-      }));
-    });
-
-    return () => google.maps.event.removeListener(listener);
+    return () => {
+      if (frame != null) cancelAnimationFrame(frame);
+      google.maps.event.removeListener(zoomListener);
+      google.maps.event.removeListener(idleListener);
+      google.maps.event.removeListener(toggleListener);
+    };
   }, [map, setVectorVisible, handleZoomForSpeciesObs]);
 
   const toggleLayer = useCallback((layerId: string) => {
+    if (map) google.maps.event.trigger(map, 'ssx-layers-changed');
     // First time on: fetch it now; it draws (and the legend lights up) when the data arrives
     const cfg = layerConfigs.find(c => c.id === layerId);
     if (cfg && !cfg.placeholder && !loadedRef.current.has(layerId)) {
@@ -1306,6 +1355,7 @@ export function useLayers(
   }, [map, setVectorVisible, updateViewportLayers, loadLayer]);
 
   const setAllVisible = useCallback((layerIds: string[], visible: boolean) => {
+    if (map) google.maps.event.trigger(map, 'ssx-layers-changed');
     const idSet = new Set(layerIds);
     if (visible) {
       for (const cfg of layerConfigs) {

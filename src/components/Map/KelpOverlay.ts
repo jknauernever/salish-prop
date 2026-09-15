@@ -72,6 +72,31 @@ const CREAM_RGB = '255, 244, 204';
 
 let cachedCtor: (new (style: OverlayStyle) => KelpOverlay) | null = null;
 
+/**
+ * One frame loop for every animated overlay (kelp sway, herring school,
+ * beach schools) instead of one per overlay, capped at ANIM_FPS. Phones get
+ * no animation at all: each overlay paints once and stays still.
+ */
+const ANIM_FPS = 15;
+const ANIMATE = !PHONE;
+const animSubscribers = new Set<(now: number) => void>();
+let animFrame: number | null = null;
+let animLast = 0;
+function animTick(now: number) {
+  animFrame = animSubscribers.size ? requestAnimationFrame(animTick) : null;
+  if (now - animLast < 1000 / ANIM_FPS) return;
+  animLast = now;
+  for (const fn of animSubscribers) fn(now);
+}
+function animSubscribe(fn: (now: number) => void) {
+  if (!ANIMATE) return;
+  animSubscribers.add(fn);
+  if (animFrame == null) animFrame = requestAnimationFrame(animTick);
+}
+function animUnsubscribe(fn: (now: number) => void) {
+  animSubscribers.delete(fn);
+}
+
 /** Deterministic PRNG so fish keep their places across reloads. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -181,29 +206,21 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
     // Sway animation: the squiggle pattern drifts a few pixels on a slow
     // sine so the fronds appear to stream in the current. Runs only while
     // the pattern is visible (zoomed in) and the overlay is on a map.
-    private animId: number | null = null;
     private animStart = performance.now();
-    private lastFrame = 0;
-    private frameInterval = 40;
+
+    private animating = false;
+    private readonly animPaint = (now: number) => this.paint(now);
 
     private startAnimation(): void {
-      if (this.animId != null) return;
-      const tick = (now: number) => {
-        this.animId = requestAnimationFrame(tick);
-        // ~24 fps is plenty for a slow drift; back off to ~8 fps if frames are slow
-        if (now - this.lastFrame < this.frameInterval) return;
-        this.lastFrame = now;
-        const t0 = performance.now();
-        this.paint(now);
-        const cost = performance.now() - t0;
-        this.frameInterval = cost > 25 ? 120 : 40;
-      };
-      this.animId = requestAnimationFrame(tick);
+      if (this.animating) return;
+      this.animating = true;
+      animSubscribe(this.animPaint);
     }
 
     private stopAnimation(): void {
-      if (this.animId != null) cancelAnimationFrame(this.animId);
-      this.animId = null;
+      if (!this.animating) return;
+      this.animating = false;
+      animUnsubscribe(this.animPaint);
     }
 
     setData(data: GeoJSON.FeatureCollection): void {
@@ -321,6 +338,7 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
     }
 
     private zoomListener: google.maps.MapsEventListener | null = null;
+    private zoomFrame: number | null = null;
 
     onAdd(): void {
       const canvas = document.createElement('canvas');
@@ -331,11 +349,16 @@ function buildClass(): new (style: OverlayStyle) => KelpOverlay {
       // Vector maps zoom fractionally and continuously; re-layout on every
       // zoom tick so the overlay follows the animation instead of snapping.
       const map = this.getMap() as google.maps.Map | null;
-      if (map) this.zoomListener = map.addListener('zoom_changed', () => this.draw());
+      if (map) this.zoomListener = map.addListener('zoom_changed', () => {
+        if (this.zoomFrame != null) return;
+        this.zoomFrame = requestAnimationFrame(() => { this.zoomFrame = null; this.draw(); });
+      });
     }
 
     onRemove(): void {
       this.stopAnimation();
+      if (this.zoomFrame != null) cancelAnimationFrame(this.zoomFrame);
+      this.zoomFrame = null;
       this.frame = null;
       this.zoomListener?.remove();
       this.zoomListener = null;
