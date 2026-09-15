@@ -36,3 +36,6 @@ export const LEGEND_GROUPS: LegendGroup[] = [
 export function legendGroupFor(layerId: string): LegendGroup | undefined {
   return LEGEND_GROUPS.find(g => g.layers.includes(layerId));
 }
+
+/** Layers pinned to the top of the "On the map" legend, in this order; everything else follows in config order. */
+export const LEGEND_FIRST: string[] = ['friends-projects'];

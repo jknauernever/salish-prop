@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { LayerConfig, LayerState } from '../../types';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { LayerInfoModal, Swatch, CategoryChips } from './LayerInfoModal';
-import { legendGroupFor, type LegendGroup } from '../../config/legendGroups';
+import { legendGroupFor, LEGEND_FIRST, type LegendGroup } from '../../config/legendGroups';
 
 // The legend unmounts while the dataset picker is open; remember its state
 // across mounts so closing the picker does not re-run the first-open reveal.
@@ -68,7 +68,10 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
   const [showSourcing, setShowSourcing] = useState(false);
   // Layers hidden from the legend row (click on the name) stay listed until ×
   const [kept, setKept] = useState<Set<string>>(() => new Set());
-  const on = layers.filter(l => (l.visible || kept.has(l.config.id)) && !l.config.placeholder);
+  const rank = (id: string) => { const i = LEGEND_FIRST.indexOf(id); return i === -1 ? LEGEND_FIRST.length : i; };
+  const on = layers
+    .filter(l => (l.visible || kept.has(l.config.id)) && !l.config.placeholder)
+    .sort((a, b) => rank(a.config.id) - rank(b.config.id)); // stable: config order otherwise
   const inViewCount = on.filter(l => l.visible && inView.has(l.config.id)).length;
 
   const hideRow = (id: string) => {
