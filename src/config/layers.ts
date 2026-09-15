@@ -872,7 +872,8 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Concrete or other structural boat ramps across inter- and subtidal habitats',
     category: 'friends-data',
     source: '/data/friends-boat-ramps.json',
-    visible: false,
+    visible: true, // on by default, drawn from zoom 16 (see minZoom)
+    minZoom: 16,
     markerScale: 0.85, // mid-size structures
     markerIcon: MARKER_ICONS.ramp,
     style: {
