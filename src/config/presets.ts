@@ -40,8 +40,9 @@ export const presets: Record<string, Preset> = {
       title: 'Salmon Habitat in the San Juan Islands',
       description:
         'Explore which San Juan Islands shorelines are moderate, high and highest priority for rearing juvenile Chinook, chum, and pink salmon.',
-      ogImage: 'https://salish-sea-propmapper.vercel.app/og/salmon-habitat.png',
-      ogUrl: 'https://salish-sea-propmapper.vercel.app/view/salmon-habitat',
+      // /og/salmon-habitat.png never existed; the site's own preview image endpoint does
+      ogImage: 'https://salishsea.knauernever.com/api/og',
+      ogUrl: 'https://salishsea.knauernever.com/view/salmon-habitat',
     },
   },
 };
