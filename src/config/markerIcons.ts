@@ -26,6 +26,8 @@ interface IconSpec {
   strokeGlyph?: boolean;
   /** Side of the square box the glyph is drawn in (default 24). */
   box?: number;
+  /** A second path drawn as a white line over a filled glyph (waves under the bluff). */
+  strokeExtra?: string;
 }
 
 // Glyphs are hand-drawn in a 24×24 box, centered.
@@ -98,6 +100,19 @@ const SPECS: Record<string, IconSpec> = {
       'M12 4.2a5.8 5.8 0 1 1 0 11.6 5.8 5.8 0 0 1 0-11.6zm0 2.4a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm0 1.6a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z M2 19.6c1.7-1.2 3.3-1.2 5 0s3.3 1.2 5 0 3.3-1.2 5 0 3.3 1.2 5 0v2.6H2z',
   },
   // Bird in flight
+  // Shoreline Geology: Shoreforms — a layered bluff over water. One neutral pin for the whole
+  // category; the line colors carry the shoreform class.
+  shoreform: {
+    color: '#475569',
+    glyph: 'M4 5h7.2l1.5 2.7H4zM4 9.1h9.5l1.5 2.7H4zM4 13.2h11.7l1.5 2.7H4z',
+    strokeExtra: 'M3.5 19.5c1.4-1.3 2.8-1.3 4.2 0s2.8 1.3 4.2 0 2.8-1.3 4.2 0 2.8 1.3 4.2 0',
+  },
+  // One generic fish for Priority Shorelines for Fish (same silhouette as the legend mark)
+  fish: {
+    color: '#1E5A8A',
+    box: 27,
+    glyph: 'M3 13.5c3.1-4.6 7.3-6.4 11.1-6.4 3 0 5.6 1.2 7.4 3.5l3-2.9v11.6l-3-2.9c-1.8 2.3-4.4 3.5-7.4 3.5-3.8 0-8-1.8-11.1-6.4z',
+  },
   bird: {
     color: '#E8710A',
     glyph:
@@ -121,7 +136,9 @@ function buildSvg(spec: IconSpec): string {
   <circle cx="${cx}" cy="${cy}" r="9" fill="${spec.color}"/>
   <g transform="translate(${cx - (box / 2) * g} ${cy - (box / 2) * g}) scale(${g})">${spec.strokeGlyph
     ? `<path d="${spec.glyph}" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`
-    : `<path d="${spec.glyph}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/>`}</g>
+    : `<path d="${spec.glyph}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="${spec.strokeExtra ? 0.6 : 0.9}" stroke-linejoin="round"/>`}${spec.strokeExtra
+    ? `<path d="${spec.strokeExtra}" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>`
+    : ''}</g>
 </svg>`;
 }
 

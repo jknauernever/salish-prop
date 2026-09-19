@@ -265,6 +265,26 @@ class DeckManager {
     return fishUseEntries(f.properties, codes)[0]?.tier ?? 1;
   }
 
+  /** A layer's pin markers (midpoint / centroid pins, already thinned by zoom in useLayers). */
+  private buildPins(e: Entry, visible: boolean): Layer[] {
+    if (!e.pins?.length) return [];
+    const { config } = e;
+    const scale = config.markerScale ?? 1;
+    const pinFilter = e.pinFilter;
+    const pins = pinFilter ? e.pins.filter(p => pinFilter.has(p.mid)) : e.pins;
+    return [new IconLayer<DeckPin>({
+      id: `${config.id}__pins`,
+      data: pins,
+      visible,
+      pickable: true,
+      getPosition: p => p.position,
+      getIcon: p => ({ url: p.icon, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false }),
+      getSize: MARKER_H * scale,
+      sizeUnits: 'pixels',
+      alphaCutoff: 0.05,
+    })];
+  }
+
   /**
    * Fish use: one line, colored and sized by priority level for the species
    * chosen under "Color by" (or the highest level among all seven), over a
@@ -306,6 +326,7 @@ class DeckManager {
         updateTriggers: { getLineWidth: [trigger], getLineColor: [trigger] },
       }),
     ];
+    out.push(...this.buildPins(e, visible));
     for (const l of out) this.live.set(l.id, l);
     return out;
   }
@@ -449,21 +470,7 @@ class DeckManager {
     }));
 
     // Pins on lines / polygons (kelp beds, eelgrass edges, armor, docks…)
-    if (e.pins?.length) {
-      const pinFilter = e.pinFilter;
-      const pins = pinFilter ? e.pins.filter(p => pinFilter.has(p.mid)) : e.pins;
-      out.push(new IconLayer<DeckPin>({
-        id: `${config.id}__pins`,
-        data: pins,
-        visible,
-        pickable: true,
-        getPosition: p => p.position,
-        getIcon: p => ({ url: p.icon, width: MARKER_W * 2, height: MARKER_H * 2, anchorY: MARKER_ANCHOR_Y * 2, mask: false }),
-        getSize: MARKER_H * scale,
-        sizeUnits: 'pixels',
-        alphaCutoff: 0.05,
-      }));
-    }
+    out.push(...this.buildPins(e, visible));
     for (const l of out) this.live.set(l.id, l);
     return out;
   }

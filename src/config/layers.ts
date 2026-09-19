@@ -129,6 +129,13 @@ export const layerConfigs: LayerConfig[] = [
     style: FISH_USE_STYLE,
     casing: FISH_USE_CASING,
     hitStrokeWeight: 14,
+    // Fish pins at segment midpoints: every shoreline has a segment, so they stay thinned at every zoom and sit farther apart than other layers' pins
+    markerIcon: MARKER_ICONS.fish,
+    markerAlwaysThin: true,
+    markerGridScale: 1.6,
+    // Shoreforms trace the same shore: fish pins sit a third of the way along, shoreform pins two thirds
+    markerPlacement: { along: 0.33, repeatEveryM: 1200 },
+    markerYield: true,
     legend: FISH_USE_LEGEND,
     // "Color by": one species, or the highest level among all seven (see config/fishUse.ts)
     visualizationModes: FISH_COLOR_MODES,
@@ -633,6 +640,13 @@ export const layerConfigs: LayerConfig[] = [
     visible: true, // on by default, drawn from zoom 13 (see minZoom)
     minZoom: 13,
     hitStrokeWeight: 14, // the colored line is 3 px; give it a forgiving click target
+    // One neutral pin for the category (line colors carry the class). Shoreform units line every
+    // shore, so pins stay thinned at every zoom and sit farther apart than the habitat pins.
+    markerIcon: MARKER_ICONS.shoreform,
+    markerAlwaysThin: true,
+    markerGridScale: 1.6,
+    markerPlacement: { along: 0.67, repeatEveryM: 1200 },
+    markerYield: true,
     style: {
       zIndex: 5,
       fillColor: '#708090',

@@ -47,8 +47,8 @@ function renderTier(zoom: number): RenderTier {
   return zoom < HEATMAP_MAX_ZOOM ? 'heatmap' : 'circles';
 }
 
-/** Compute midpoint of a LineString coordinate array */
-function lineMidpoint(coords: number[][]): [number, number] {
+/** The point a fraction of the way along a LineString coordinate array (0.5 = midpoint) */
+function linePointAt(coords: number[][], fraction = 0.5): [number, number] {
   if (coords.length === 0) return [0, 0];
   if (coords.length === 1) return [coords[0][0], coords[0][1]];
   // Walk along the line to find the midpoint by accumulated distance
@@ -61,7 +61,7 @@ function lineMidpoint(coords: number[][]): [number, number] {
     segments.push(d);
     totalDist += d;
   }
-  const half = totalDist / 2;
+  const half = totalDist * Math.min(1, Math.max(0, fraction));
   let acc = 0;
   for (let i = 0; i < segments.length; i++) {
     if (acc + segments[i] >= half) {
@@ -132,7 +132,10 @@ function ringArea(ring: number[][]): number {
   return a / 2;
 }
 
-function createMidpointMarkers(data: GeoJSON.FeatureCollection, minAcres = 0): GeoJSON.FeatureCollection {
+function createMidpointMarkers(data: GeoJSON.FeatureCollection, minAcres = 0, placement: LayerConfig['markerPlacement'] = undefined): GeoJSON.FeatureCollection {
+  const along = placement?.along ?? 0.5;
+  const repeatDeg = placement?.repeatEveryM ? placement.repeatEveryM / 111320 : 0; // lineLength is in latitude-scaled degrees
+  const MAX_REPEATS = 8;
   const points: { lng: number; lat: number; len: number; props: GeoJSON.GeoJsonProperties }[] = [];
   for (const f of data.features) {
     const geom = f.geometry;
@@ -165,8 +168,15 @@ function createMidpointMarkers(data: GeoJSON.FeatureCollection, minAcres = 0): G
       continue;
     }
     for (const coords of coordArrays) {
-      const [lng, lat] = lineMidpoint(coords);
-      points.push({ lng, lat, len: lineLength(coords), props: f.properties ?? {} });
+      const len = lineLength(coords);
+      // Long lines repeat their pin; the extras rank behind every line's own pin, so they
+      // only ever fill stretches of shore that would otherwise have no marker.
+      const n = repeatDeg > 0 ? Math.min(MAX_REPEATS, Math.max(1, Math.floor(len / repeatDeg))) : 1;
+      const first = Math.floor((n - 1) / 2);
+      for (let k = 0; k < n; k++) {
+        const [lng, lat] = linePointAt(coords, (k + along) / n);
+        points.push({ lng, lat, len: k === first ? len : len * 1e-6, props: f.properties ?? {} });
+      }
     }
   }
   const order = points.map((p, i) => [p.len, i] as const).sort((a, b) => b[0] - a[0]);
@@ -257,22 +267,43 @@ function markerTier(config: LayerConfig, zoom: number): string {
   return showAll ? `all@${Math.round(zoom)}` : `${markerGridPx(q)}@${q}`;
 }
 
-function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> | null {
+function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [number, number][] = [], alwaysThin = false, gridScale = 1): Set<number> | null {
   const meta = markerMeta.get(ml);
   if (!meta) return null; // nothing cached (should not happen): show everything
-  return selectFromMeta(meta, zoom, reserved, alwaysThin);
+  return selectFromMeta(meta, zoom, reserved, alwaysThin, gridScale);
 }
 
-function selectFromMeta(meta: MarkerMeta[], zoom: number, reserved: [number, number][] = [], alwaysThin = false): Set<number> {
+/** Pixel clearance a yielding pin keeps from another layer's pin (one 24 px pin plus a little air). */
+const AVOID_CLEAR_PX = 26;
+
+function selectFromMeta(meta: MarkerMeta[], zoom: number, reserved: [number, number][] = [], alwaysThin = false, gridScale = 1, avoid: [number, number][] = []): Set<number> {
+  // Other layers' pins, bucketed so each candidate only checks its neighbourhood
+  const taken = new Map<string, [number, number][]>();
+  for (const p of avoid) {
+    const k = `${Math.floor(p[0] / AVOID_CLEAR_PX)}:${Math.floor(p[1] / AVOID_CLEAR_PX)}`;
+    const list = taken.get(k);
+    if (list) list.push(p); else taken.set(k, [p]);
+  }
+  const nearTaken = (x: number, y: number): boolean => {
+    if (!avoid.length) return false;
+    const cx = Math.floor(x / AVOID_CLEAR_PX), cy = Math.floor(y / AVOID_CLEAR_PX);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const [ax, ay] of taken.get(`${cx + i}:${cy + j}`) ?? []) {
+        if (Math.abs(x - ax) < AVOID_CLEAR_PX && Math.abs(y - ay) < AVOID_CLEAR_PX) return true;
+      }
+    }
+    return false;
+  };
   const q = Math.round(zoom * 2) / 2;
   const scale = Math.pow(2, q);
-  const gridPx = markerGridPx(q);
+  const gridPx = markerGridPx(q) * gridScale;
   const showAll = !alwaysThin && zoom >= MARKER_SHOW_ALL_ZOOM;
   const best = new Map<string, { id: number; rank: number }>();
   const chosen = new Set<number>();
   for (const m of meta) {
     const x = m.x0 * scale, y = m.y0 * scale;
     if (reserved.length && nearReserved(x, y, reserved)) continue; // yield to a Friends' Projects pin
+    if (nearTaken(x, y)) continue; // yield to another layer's pin
     if (showAll) { chosen.add(m.mid); continue; }
     const key = `${Math.floor(x / gridPx)}:${Math.floor(y / gridPx)}`;
     const cur = best.get(key);
@@ -323,7 +354,7 @@ function midpointMarkerStyle(
   zoom: number,
   reserved: [number, number][] = [],
 ): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
-  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved, !!config.markerAlwaysThin) : null;
+  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved, !!config.markerAlwaysThin, config.markerGridScale ?? 1) : null;
   return (feature) => ({
     icon: markerIconSpec(config, iconUrlFor(config, feature)),
     clickable: true,
@@ -445,6 +476,8 @@ export function useLayers(
   // GPU (deck.gl) layers: cached pin metadata for zoom thinning, and point-feature positions for Friends-pin spacing
   const gpuPinMetaRef = useRef<Map<string, MarkerMeta[]>>(new Map());
   const gpuPointsRef = useRef<Map<string, { index: number; x0: number; y0: number }[]>>(new Map());
+  // Pins each GPU layer chose at the current zoom (world px at zoom 0): yielding layers keep clear of them
+  const gpuPinChosenRef = useRef<Map<string, [number, number][]>>(new Map());
   const pointLayersRef = useRef<Set<string>>(new Set());
   const rasterLayersRef = useRef<Map<string, google.maps.ImageMapType>>(new Map());
   // Canvas overlays for layers with a custom `renderer` (e.g. kelp squiggles)
@@ -1034,7 +1067,7 @@ export function useLayers(
             // Lines / polygons get midpoint or centroid pins, thinned by zoom
             const hasLines = data.features.some(f => f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString' || f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
             if (hasLines) {
-              const midpoints = createMidpointMarkers(data, config.markerMinAcres ?? 0);
+              const midpoints = createMidpointMarkers(data, config.markerMinAcres ?? 0, config.markerPlacement);
               gpuPinMetaRef.current.set(config.id, buildMarkerMeta(midpoints));
               const byProp = config.markerIconByProperty;
               const pins: DeckPin[] = midpoints.features.map(f => {
@@ -1278,11 +1311,15 @@ export function useLayers(
     });
   }, [map, loadLayer, isVisibleByDefault]);
 
-  // Projects switched on or off: every pin layer re-spaces itself around (or without) their pins
+  // Projects or any other pin layer switched on or off: pin layers re-space themselves
+  // around (or without) those pins
+  const pinLayersOnRef = useRef('');
   useEffect(() => {
     const on = !!layers.find(l => l.config.id === 'friends-projects')?.visible;
-    if (projectsOnRef.current === on) return;
+    const pinsOn = layers.filter(l => l.visible && l.loaded && l.config.markerIcon).map(l => l.config.id).join(',');
+    if (projectsOnRef.current === on && pinLayersOnRef.current === pinsOn) return;
     projectsOnRef.current = on;
+    pinLayersOnRef.current = pinsOn;
     if (map) google.maps.event.trigger(map, 'zoom_changed');
   }, [layers, map]);
 
@@ -1316,7 +1353,13 @@ export function useLayers(
       const reservedTier = reservedLngLatRef.current.length && projectsOnRef.current ? `r${Math.round(zoom * 2) / 2}` : '';
 
       setLayers(prev => {
-        for (const layer of prev) {
+        // Pin layers that yield (fish, shoreforms) choose last, around everyone else's pins
+        const ordered = [...prev.filter(l => !l.config.markerYield), ...prev.filter(l => l.config.markerYield)];
+        const shownPinLayers = prev
+          .filter(l => l.config.gpu && l.config.markerIcon && l.loaded && l.visible && gateOk(l.config.id, l.config.minZoom, zoom))
+          .map(l => l.config.id);
+        const pinScale = Math.pow(2, Math.round(zoom * 2) / 2);
+        for (const layer of ordered) {
           const { config } = layer;
           if (config.tiles || config.viewportFiltered || !layer.loaded) continue; // deck gates tiles; idle handles viewport layers
 
@@ -1324,12 +1367,18 @@ export function useLayers(
           if (config.gpu) {
             // deck gates visibility itself; we only refresh which pins / points show
             if (!config.markerIcon) continue;
-            const key = `gpu|${markerTier(config, zoom)}|${reservedTier}`;
+            // A yielding layer re-chooses whenever the set of other pin layers on the map changes
+            // (other yielding layers only count if they chose before this one, so two never chase each other)
+            const earlier = new Set(ordered.slice(0, ordered.indexOf(layer)).map(l => l.config.id));
+            const others = config.markerYield ? shownPinLayers.filter(id => earlier.has(id)) : [];
+            const key = `gpu|${markerTier(config, zoom)}|${reservedTier}|${others.join(',')}`;
             if (lastKey.get(config.id) === key) continue;
             lastKey.set(config.id, key);
             const reserved = config.id === 'friends-projects' ? [] : reservedAt(zoom);
             const meta = gpuPinMetaRef.current.get(config.id);
-            const pinFilter = meta ? selectFromMeta(meta, zoom, reserved, !!config.markerAlwaysThin) : null;
+            const avoid = others.flatMap(id => (gpuPinChosenRef.current.get(id) ?? []).map(([x0, y0]) => [x0 * pinScale, y0 * pinScale] as [number, number]));
+            const pinFilter = meta ? selectFromMeta(meta, zoom, reserved, !!config.markerAlwaysThin, config.markerGridScale ?? 1, avoid) : null;
+            if (meta && pinFilter) gpuPinChosenRef.current.set(config.id, meta.filter(m => pinFilter.has(m.mid)).map(m => [m.x0, m.y0]));
             const pts = gpuPointsRef.current.get(config.id);
             let pointFilter: Set<number> | null = null;
             if (pts && reserved.length) {

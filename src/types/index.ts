@@ -129,6 +129,17 @@ export interface LayerConfig {
    */
   markerAlwaysThin?: boolean;
   /**
+   * Where line pins sit. `along` = fraction of the line's length (default 0.5, the midpoint);
+   * layers that trace the same shore use different fractions so their pins do not stack.
+   * `repeatEveryM` = long lines get a pin roughly every this many metres (still thinned by
+   * the zoom grid, and ranked behind every line's own first pin).
+   */
+  markerPlacement?: { along?: number; repeatEveryM?: number };
+  /** This layer's pins give way to every other visible layer's pins (kept a pin's width apart). */
+  markerYield?: boolean;
+  /** Multiplier on the pin thinning grid (2 = pins twice as far apart) for layers that cover every shoreline. */
+  markerGridScale?: number;
+  /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer
    * styling. 'kelp-squiggle' = nautical-chart kelp symbol pattern fill (see
    * components/Map/KelpOverlay.ts); the Data layer stays as an invisible
