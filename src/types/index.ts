@@ -137,7 +137,7 @@ export interface LayerConfig {
   markerPlacement?: { along?: number; repeatEveryM?: number };
   /** This layer's pins give way to every other visible layer's pins (kept a pin's width apart). */
   markerYield?: boolean;
-  /** Multiplier on the pin thinning grid (2 = pins twice as far apart) for layers that cover every shoreline. */
+  /** Multiplier on the pin thinning grid (2 = pins twice as far apart) for layers that cover every shoreline. Applies in full from zoom 14; eases to 0.85 by zoom 12 so county views still get pins. */
   markerGridScale?: number;
   /**
    * Draw this polygon layer with a custom canvas overlay instead of Data-layer

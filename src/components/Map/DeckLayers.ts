@@ -286,6 +286,16 @@ class DeckManager {
     this.live.clear();
   }
 
+  /**
+   * Fish-use line widths are for a zoomed-in shoreline (4–6 px). Zoomed out, the whole county's
+   * coast at that weight is a fat smear, so the line thins toward county scale: 35% at zoom 10
+   * and below, full weight from zoom 14.
+   */
+  private fishWidthScale(): number {
+    const t = Math.min(1, Math.max(0, (this.zoom - 10) / 4));
+    return 0.35 + 0.65 * t;
+  }
+
   /** Priority level of a segment for the species the fish-use line is colored by (highest among them). */
   private fishLevel(f: GeoJSON.Feature, codes: string[]): FishTier {
     return fishUseEntries(f.properties, codes)[0]?.tier ?? 1;
@@ -321,7 +331,10 @@ class DeckManager {
     if (!data) return [];
     const visible = e.visible && !this.gated(e);
     const codes = fishCodesForMode(e.vizMode);
-    const trigger = codes.join(',');
+    const k = this.fishWidthScale();
+    const trigger = `${codes.join(',')}|${k.toFixed(2)}`;
+    // White casing: none at county scale (it only fattened the thin line), fading in from zoom 12 to full at zoom 14
+    const halo = 3 * Math.min(1, Math.max(0, (this.zoom - 12) / 2));
     const c = config.casing;
     const level = (f: GeoJSON.Feature) => this.fishLevel(f, codes);
     const common = { data: data.features, visible, stroked: true, filled: false, lineWidthUnits: 'pixels' as const, lineCapRounded: true, lineJointRounded: true };
@@ -330,15 +343,16 @@ class DeckManager {
         ...common,
         id: `${config.id}__casing`,
         pickable: true,
-        getLineWidth: (f: GeoJSON.Feature) => Math.max(FISH_TIERS[level(f)].weight + 3, config.hitStrokeWeight ?? 0),
+        getLineWidth: (f: GeoJSON.Feature) => Math.max(FISH_TIERS[level(f)].weight * k + halo, config.hitStrokeWeight ?? 0),
         getLineColor: [255, 255, 255, 1], // invisible: a forgiving click target
         updateTriggers: { getLineWidth: [trigger] },
       }),
       new GeoJsonLayer({
         ...common,
         id: `${config.id}__halo`,
+        visible: visible && halo > 0.2,
         pickable: false,
-        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight + 3,
+        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight * k + halo,
         getLineColor: rgba(c?.color ?? '#FFFFFF', c?.opacity ?? 0.9),
         updateTriggers: { getLineWidth: [trigger] },
       }),
@@ -347,7 +361,7 @@ class DeckManager {
         id: config.id,
         pickable: true,
         lineWidthMinPixels: 1,
-        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight,
+        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight * k,
         getLineColor: (f: GeoJSON.Feature) => rgba(FISH_TIERS[level(f)].color, 1),
         updateTriggers: { getLineWidth: [trigger], getLineColor: [trigger] },
       }),
@@ -529,7 +543,7 @@ class DeckManager {
     if (config.fishUse) {
       const lv = this.fishLevel(f, fishCodesForMode(h.entry.vizMode));
       base.line = rgba(FISH_TIERS[lv].color, 1);
-      base.width = FISH_TIERS[lv].weight;
+      base.width = FISH_TIERS[lv].weight * this.fishWidthScale();
     }
     const isPoint = f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint';
     const icon = config.markerIcon;
@@ -616,6 +630,27 @@ class DeckManager {
       }
     }
     this.overlay.setProps({ layers: [...tiles, ...geometry, ...pins, ...top, ...this.buildHover()] });
+    this.wakeMap();
+  }
+
+  private waking = false;
+  private wakeTries = 0;
+
+  /**
+   * On a vector map deck only learns where the camera is when Google draws a frame, and Google
+   * only draws when something changes. A layer that arrives after the basemap has settled (a
+   * share link with one slow-loading layer and nothing else keeping the map busy) therefore sat
+   * at deck's placeholder view — invisible — until the person nudged the map. Ask Google for a
+   * frame whenever the layers change, and keep asking until deck has come up.
+   */
+  private wakeMap() {
+    const o = this.overlay as unknown as { _overlay?: { requestRedraw?: () => void }; _deck?: { isInitialized?: boolean } | null };
+    o._overlay?.requestRedraw?.();
+    if (o._deck?.isInitialized) { this.wakeTries = 0; return; }
+    if (this.waking || this.wakeTries >= 60) return;
+    this.waking = true;
+    this.wakeTries++;
+    setTimeout(() => { this.waking = false; this.wakeMap(); }, 250);
   }
 }
 

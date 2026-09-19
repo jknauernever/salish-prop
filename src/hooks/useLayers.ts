@@ -273,6 +273,19 @@ function selectMarkersForZoom(ml: google.maps.Data, zoom: number, reserved: [num
   return selectFromMeta(meta, zoom, reserved, alwaysThin, gridScale);
 }
 
+/**
+ * A layer's pin-grid multiplier at this zoom. The wide spacing (markerGridScale) is for zoomed-in
+ * views, where a shoreline fills the screen and its pins would otherwise line up every 70 px. Zoomed
+ * out, the same multiplier left a whole county with a dozen pins, so it eases to slightly tighter
+ * than standard by zoom 12.
+ */
+function pinGridScale(config: LayerConfig, zoom: number): number {
+  const wide = config.markerGridScale ?? 1;
+  if (wide <= 1) return wide;
+  const t = Math.min(1, Math.max(0, (zoom - 12) / 2));
+  return 0.85 + (wide - 0.85) * t;
+}
+
 /** Pixel clearance a yielding pin keeps from another layer's pin (one 24 px pin plus a little air). */
 const AVOID_CLEAR_PX = 26;
 
@@ -354,7 +367,7 @@ function midpointMarkerStyle(
   zoom: number,
   reserved: [number, number][] = [],
 ): (feature: google.maps.Data.Feature) => google.maps.Data.StyleOptions {
-  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved, !!config.markerAlwaysThin, config.markerGridScale ?? 1) : null;
+  const chosen = visible ? selectMarkersForZoom(ml, zoom, reserved, !!config.markerAlwaysThin, pinGridScale(config, zoom)) : null;
   return (feature) => ({
     icon: markerIconSpec(config, iconUrlFor(config, feature)),
     clickable: true,
@@ -1378,7 +1391,7 @@ export function useLayers(
             const reserved = config.id === 'friends-projects' ? [] : reservedAt(zoom);
             const meta = gpuPinMetaRef.current.get(config.id);
             const avoid = others.flatMap(id => (gpuPinChosenRef.current.get(id) ?? []).map(([x0, y0]) => [x0 * pinScale, y0 * pinScale] as [number, number]));
-            const pinFilter = meta ? selectFromMeta(meta, zoom, reserved, !!config.markerAlwaysThin, config.markerGridScale ?? 1, avoid) : null;
+            const pinFilter = meta ? selectFromMeta(meta, zoom, reserved, !!config.markerAlwaysThin, pinGridScale(config, zoom), avoid) : null;
             if (meta && pinFilter) gpuPinChosenRef.current.set(config.id, meta.filter(m => pinFilter.has(m.mid)).map(m => [m.x0, m.y0]));
             const pts = gpuPointsRef.current.get(config.id);
             let pointFilter: Set<number> | null = null;
