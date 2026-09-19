@@ -22,6 +22,7 @@
  */
 
 import type { DateRange } from '../types';
+import { FISH_USE_LAYER_ID, fishModeForLegacyLayers, isLegacyFishLayerId } from '../config/fishUse';
 
 export interface UrlView {
   center: { lat: number; lng: number };
@@ -86,7 +87,12 @@ export function parseUrlState(queryString: string): InitialUrlState {
   const basemap = b && BASEMAPS.has(b) ? b : null;
 
   const lRaw = sp.get('l');
-  const layers = lRaw === null ? null : lRaw.split(',').filter(id => ID_RE.test(id));
+  let layers = lRaw === null ? null : lRaw.split(',').filter(id => ID_RE.test(id));
+  // Links from before the seven fish layers became one: same view, as Fish Use colored by that species
+  const legacyFishMode = layers ? fishModeForLegacyLayers(layers) : null;
+  if (layers && legacyFishMode) {
+    layers = [...new Set(layers.map(id => (isLegacyFishLayerId(id) ? FISH_USE_LAYER_ID : id)))];
+  }
   const zoomOverrides = (sp.get('zo') ?? '').split(',').filter(id => ID_RE.test(id));
 
   const layerUi: Record<string, UrlLayerUi> = {};
@@ -98,6 +104,7 @@ export function parseUrlState(queryString: string): InitialUrlState {
   for (const [id, v] of parsePairs(sp.get('m'))) {
     if (ID_RE.test(v)) ui(id).vizMode = v;
   }
+  if (legacyFishMode && !layerUi[FISH_USE_LAYER_ID]?.vizMode) ui(FISH_USE_LAYER_ID).vizMode = legacyFishMode;
   for (const [id, v] of parsePairs(sp.get('s'))) {
     if (ID_RE.test(v)) ui(id).season = v;
   }

@@ -16,6 +16,7 @@ import { countIntersectingBuildings, nearshoreFromStats } from '../../services/p
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
 import { fetchParcelDetail, findParcelAtPoint, getFidToTaxArea } from '../../services/parcelDetail';
 import { DECK_CLICK_EVENT, type DeckClickDetail } from './DeckLayers';
+import { FISH_TIERS, FISH_USE_NAME, fishIconSvg, fishSpeciesForCode, FISH_SPECIES, fishUseEntries, fishUseLinesHtml, fishUseListHtml, fishTierPill, fishTier, visibleFishCodes, type FishUseEntry } from '../../config/fishUse';
 import { getFriendsContentSync, preloadFriendsContent, articleForUrl, articleForProject, articlesForFeature, photosForSubject, articleDate, type ContentItem } from '../../services/friendsContent';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
 import type { BuildingQueryResult, ShorelineQueryResult, NearshoreVegetationResult } from '../../services/popupSpatial';
@@ -169,6 +170,9 @@ interface FeaturePopupProps {
 // can share the same overlay layer.
 import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighlight';
 
+/** Species codes the Fish Use line is colored by right now (they lead the hover label, chooser row and popup). */
+let fishCodesOn: string[] = [];
+
 export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps) {
   const { map } = useMap();
   const infoWindowRef = useRef<PopupHost | null>(null);
@@ -212,6 +216,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
   // Click handlers are re-registered whenever the set of Data layers changes.
   useEffect(() => {
     if (!map) return;
+    fishCodesOn = visibleFishCodes(layers);
 
     const listeners: google.maps.MapsEventListener[] = [];
 
@@ -335,6 +340,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
       if (!layerId || !properties) { hideHoverLabel(); return; }
       const layer = layersRef.current.find(l => l.config.id === layerId);
       if (!layer) { hideHoverLabel(); return; }
+      if (layer.config.fishUse) { showHoverLabelAt(map, x, y, '', fishUseLinesHtml(fishUseEntries(properties), 'fish', fishCodesOn)); return; }
       showHoverLabelAt(map, x, y, `${layer.config.name} · ${rowFor(layer, properties).title}`);
     };
     window.addEventListener(DECK_HOVER_EVENT, onDeckHover);
@@ -416,7 +422,7 @@ function openHabitatInfoWindow() {
 </head>
 <body>
   <button class="close-btn" onclick="window.close()">Close</button>
-  <h1>Habitat Relevance Score</h1>
+  <h1>Priority Shorelines for Fish: Scores and Levels</h1>
   <p class="subtitle">Technical reference for fish and forage fish habitat data displayed in the Salish Sea Explorer</p>
 
   <h2>What the Score Means</h2>
@@ -429,32 +435,32 @@ function openHabitatInfoWindow() {
   <p>The HRM score is the product of the fish presence rate for both variables, yielding a value between 0 and 1. Higher scores indicate shoreline segments where a species is more likely to be present and where habitat conditions are most relevant to that species' life cycle.</p>
 
   <div class="highlight">
-    <p><strong>Example:</strong> A Chinook Salmon HRM of 0.35 means the model predicts a 35% probability of encountering juvenile Chinook at that shoreline type and location during any given sampling event.</p>
+    <p><strong>Example:</strong> A juvenile Chinook HRM of 0.35 means the model predicts a 35% probability of encountering juvenile Chinook at that shoreline type and location during any given sampling event.</p>
   </div>
 
-  <h2>Lower Resolution Model (LRM)</h2>
-  <p>The dataset also includes a <strong>Lower Resolution Model (LRM)</strong> score, which uses coarser spatial and habitat variables:</p>
-  <ul>
-    <li><strong>Spatial variable:</strong> Interior vs. exterior shoreline (relative to the island archipelago)</li>
-    <li><strong>Habitat variable:</strong> Enclosure vs. passage (whether the shoreline is in a protected embayment or an open passage)</li>
-  </ul>
-  <p>The LRM provides a baseline estimate for shoreline segments where fine-scale geomorphic data may be less precise. The Salish Sea Explorer displays the HRM score by default, as it provides higher spatial resolution.</p>
+  <h2>Priority Levels</h2>
+  <p>The map, hover labels and popups show each species' score as one of three <strong>priority levels</strong>. The researchers' high-resolution model maps use five or six bins per species; Friends of the San Juans combines them into three, as was done for the countywide salmon recovery planning prioritization. <strong>Nothing is ranked low:</strong> fish can and do use every shoreline, but some places are more likely to have both presence and abundance. For salmon, the levels describe <strong>rearing juvenile</strong> fish.</p>
+  <table>
+    <tr><th>Species</th><th>Moderate priority</th><th>High priority</th><th>Highest priority</th></tr>
+    ${FISH_SPECIES.map(sp => `<tr><td>${sp.name}</td><td>up to ${sp.moderateMax}</td><td>above ${sp.moderateMax}, up to ${sp.highMax}</td><td>above ${sp.highMax}</td></tr>`).join('\n    ')}
+  </table>
+  <p>The line is colored for the species chosen under <strong>Color by</strong>, or by the <strong>highest level among all seven</strong>. Hover over or click the line to see every species' level on that segment.</p>
 
   <h2>Data Collection</h2>
   <h3>Beach Seine Surveys (2008–2009)</h3>
-  <p>Researchers conducted <strong>1,350 beach seine sets</strong> across <strong>82 sites</strong> throughout the San Juan Islands during 2008 and 2009. Sites were sampled <strong>twice per month from March through October</strong>, covering the period when juvenile salmon and forage fish are most likely present in nearshore habitats.</p>
+  <p>Researchers conducted <strong>1,350 beach seine sets</strong> across <strong>80 sites</strong> throughout the San Juan Islands during 2008 and 2009. Sites were sampled <strong>twice per month from March through October</strong>, covering the period when juvenile salmon and forage fish are most likely present in nearshore habitats.</p>
   <p>The sampling plan was designed to capture spatial and temporal variation in fish use across a range of shoreline types, from protected pocket estuaries to exposed rocky shores.</p>
 
   <h3>Species Surveyed</h3>
   <table>
     <tr><th>Species</th><th>HRM Field</th><th>Significance</th></tr>
-    <tr><td>Chinook Salmon</td><td>HRM_Ck</td><td>ESA-listed as Threatened; juveniles rear in nearshore habitats</td></tr>
-    <tr><td>Chum Salmon</td><td>HRM_Chum</td><td>Depend on estuarine/nearshore transition zones</td></tr>
-    <tr><td>Pink Salmon</td><td>HRM_Pk</td><td>Minimal freshwater time; nearshore-critical during outmigration</td></tr>
-    <tr><td>Pacific Herring</td><td>HRM_Herr</td><td>Keystone forage fish; spawn on eelgrass/algae</td></tr>
-    <tr><td>Pacific Sand Lance</td><td>HRM_Lance</td><td>Spawn in upper intertidal sand-gravel beaches</td></tr>
-    <tr><td>Surf Smelt</td><td>HRM_Smelt</td><td>Spawn on mixed sand-gravel beaches</td></tr>
-    <tr><td>Lingcod &amp; Greenling</td><td>HRM_Hex</td><td>Use rocky nearshore habitats for spawning/rearing</td></tr>
+    <tr><td>Juvenile Chinook</td><td>HRM_Ck</td><td>ESA-listed as Threatened; juveniles rear in nearshore habitats</td></tr>
+    <tr><td>Juvenile Chum</td><td>HRM_Chum</td><td>Depend on estuarine/nearshore transition zones</td></tr>
+    <tr><td>Juvenile Pink</td><td>HRM_Pk</td><td>Minimal freshwater time; nearshore-critical during outmigration</td></tr>
+    <tr><td>Pacific herring</td><td>HRM_Herr</td><td>Keystone forage fish; spawn on eelgrass/algae</td></tr>
+    <tr><td>Pacific sand lance</td><td>HRM_Lance</td><td>Spawn in upper intertidal sand-gravel beaches</td></tr>
+    <tr><td>Surf smelt</td><td>HRM_Smelt</td><td>Spawn on mixed sand-gravel beaches</td></tr>
+    <tr><td>Greenlings and Cods</td><td>HRM_Hex</td><td>Use rocky nearshore habitats for spawning/rearing</td></tr>
   </table>
 
   <h3>Statistical Method</h3>
@@ -755,12 +761,7 @@ const COLOR = { dark: '#1A1A1A', mid: '#33302A', light: '#7A746B', teal: '#036E8
 const CARD = `background:${COLOR.bg};border-radius:8px;padding:14px 16px;margin-bottom:12px;`;
 const HEADING = `font-family:'Montserrat',system-ui,sans-serif;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6A5324;margin:0 0 10px 0;`;
 const BODY = `font-size:14.5px;color:${COLOR.dark};line-height:1.55;margin:0;`;
-const PILL = `display:inline;color:${COLOR.teal};font-weight:700;font-size:14.5px;`;
 const BIG_NUM = `font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:700;color:${COLOR.teal};line-height:1;`;
-
-function pill(text: string): string {
-  return `<span style="${PILL}">${esc(text)}</span>`;
-}
 
 function bigStat(value: string, label: string): string {
   return `
@@ -844,6 +845,8 @@ interface ChooserRow {
   swatch: string; // small inline HTML swatch
   layerName: string;
   title: string;
+  /** Trusted HTML shown instead of `title` (the fish-use row: one line per species, with its priority color). */
+  titleHtml?: string;
   open: () => void;
 }
 
@@ -873,6 +876,16 @@ function parcelStreetAddress(props: Record<string, unknown>): string {
 }
 
 function rowFor(layer: LayerState, props: Record<string, unknown>): Omit<ChooserRow, 'open'> {
+  if (layer.config.fishUse) {
+    // The species the line is colored by, with its priority level (all seven under "Highest of all")
+    const entries = fishUseEntries(props, fishCodesOn);
+    return {
+      swatch: fishIconSvg(16),
+      layerName: FISH_USE_NAME,
+      title: entries.map(e => `${e.species.name}: ${FISH_TIERS[e.tier].label}`).join(', '),
+      titleHtml: fishUseLinesHtml(entries),
+    };
+  }
   const spec = POPUP_SPECS[layer.config.id];
   const title = layer.config.id === 'tax-parcels'
     ? parcelStreetAddress(props)
@@ -887,6 +900,20 @@ function sameProps(a: Record<string, unknown>, b: Record<string, unknown>): bool
     if (a[k] != null && b[k] != null) return String(a[k]) === String(b[k]);
   }
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * What counts as "the same thing" in the chooser. Shoreline layers are cut into
+ * many short segments and the reach is wide when zoomed out, so one click can
+ * touch a dozen neighbours. Lines and areas: one row per layer, the nearest
+ * feature (hits come closest first). Points (pins, buoys, projects): one row
+ * per layer + title, so distinct places nearby are still offered.
+ */
+function chooserKey(layer: LayerState, feature: GeoJSON.Feature | null, props: Record<string, unknown>): string {
+  const t = feature?.geometry?.type;
+  if (t && t !== 'Point' && t !== 'MultiPoint') return layer.config.id;
+  const r = rowFor(layer, props);
+  return `${layer.config.id}|${r.title}`;
 }
 
 /**
@@ -906,11 +933,13 @@ function chooserRows(
   const zoom = map.getZoom() ?? 0;
   const rows: ChooserRow[] = [];
   const seen = new Set<string>();
+  const clicked = allLayers.find(l => l.config.id === skip.layerId);
+  if (clicked) { seen.add(skip.layerId); seen.add(chooserKey(clicked, null, skip.props)); }
   const hits: HitCandidate[] = featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX);
   for (const h of hits) {
     const props = (h.feature.properties ?? {}) as Record<string, unknown>;
     if (h.layer.config.id === skip.layerId && sameProps(props, skip.props)) continue;
-    const key = `${h.layer.config.id}|${JSON.stringify(props).slice(0, 200)}`;
+    const key = chooserKey(h.layer, h.feature, props);
     if (seen.has(key)) continue;
     seen.add(key);
     const layer = h.layer;
@@ -951,7 +980,7 @@ export function chooserHtml(rows: Omit<ChooserRow, 'open'>[]): string {
   const body = `<div class="ssx-picks">${rows.map((r, i) => `
     <button type="button" class="ssx-pick" data-ssx-pick="${i}">
       <span class="ssx-pick-sw">${r.swatch}</span>
-      <span class="ssx-pick-body"><span class="ssx-pick-layer">${escHtml(r.layerName)}</span><span class="ssx-pick-title">${escHtml(r.title)}</span></span>
+      <span class="ssx-pick-body"><span class="ssx-pick-layer">${escHtml(r.layerName)}</span><span class="ssx-pick-title">${r.titleHtml ?? escHtml(r.title)}</span></span>
       <span class="ssx-pick-go">&#8250;</span>
     </button>`).join('')}</div>`;
   return buildPopupFrame({
@@ -967,7 +996,11 @@ export function chooserHtml(rows: Omit<ChooserRow, 'open'>[]): string {
 
 /** Rows for a click at `lat,lng` with nothing pre-selected (exported for the popup harness). */
 export function chooserRowsAt(allLayers: LayerState[], lat: number, lng: number, zoom: number): Omit<ChooserRow, 'open'>[] {
-  return featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX).map(h => rowFor(h.layer, (h.feature.properties ?? {}) as Record<string, unknown>));
+  fishCodesOn = visibleFishCodes(allLayers);
+  const seen = new Set<string>();
+  return featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX)
+    .filter(h => { const k = chooserKey(h.layer, h.feature, (h.feature.properties ?? {}) as Record<string, unknown>); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(h => rowFor(h.layer, (h.feature.properties ?? {}) as Record<string, unknown>));
 }
 
 function openClickChooser(map: google.maps.Map, infoWindowRef: React.RefObject<PopupHost | null>, latLng: google.maps.LatLng, rows: ChooserRow[]): void {
@@ -1012,13 +1045,14 @@ function showHoverLabel(map: google.maps.Map, e: google.maps.Data.MouseEvent, te
 }
 
 /** Show the label at a position relative to the map div (deck.gl picking coordinates). */
-function showHoverLabelAt(map: google.maps.Map, x: number, y: number, text: string): void {
+function showHoverLabelAt(map: google.maps.Map, x: number, y: number, text: string, html?: string): void {
   if (!hoverEl) {
     hoverEl = document.createElement('div');
     hoverEl.className = 'ssx-hover';
     hoverHost(map).appendChild(hoverEl);
   }
-  hoverEl.textContent = text;
+  if (html) hoverEl.innerHTML = html; // trusted: built from config names only
+  else hoverEl.textContent = text;
   hoverEl.hidden = false;
   const mr = map.getDiv().getBoundingClientRect();
   const hr = hoverHost(map).getBoundingClientRect();
@@ -1239,11 +1273,6 @@ function runBuildingQuery(
 // Shoreline / Fish / Modifications / Wildlife tabs (all from the precompute)
 // ---------------------------------------------------------------------------
 
-const FISH_CODE_NAMES: Record<string, string> = {
-  Ck: 'Chinook Salmon', Chum: 'Chum Salmon', Pk: 'Pink Salmon', Herr: 'Pacific Herring',
-  Lance: 'Pacific Sand Lance', Smelt: 'Surf Smelt', Hex: 'Lingcod & Greenling',
-};
-
 function renderShorelineTab(popupId: string, veg: NearshoreVegetationResult) {
   const el = document.getElementById(`${popupId}-shoreline`);
   if (!el) return;
@@ -1255,12 +1284,15 @@ function renderFishTab(popupId: string, veg: NearshoreVegetationResult) {
   if (!el) return;
   let scoresHtml: string;
   if (veg.fish && Object.keys(veg.fish.scores).length > 0) {
-    const species = Object.entries(veg.fish.scores)
-      .map(([code, v]) => ({ species: FISH_CODE_NAMES[code] ?? code, hrmValue: v.hrm, lrmValue: v.lrm }))
-      .sort((a, b) => b.hrmValue - a.hrmValue);
-    scoresHtml = buildFishCard({ species, shorelineDescription: veg.fish.segment }, veg.modDistances.fishFt, veg.fish.distFt);
+    const entries: FishUseEntry[] = Object.entries(veg.fish.scores)
+      .flatMap(([code, v]) => {
+        const sp = fishSpeciesForCode(code);
+        return sp ? [{ species: sp, hrm: v.hrm, tier: fishTier(sp, v.hrm) }] : [];
+      })
+      .sort((a, b) => b.tier - a.tier);
+    scoresHtml = buildFishCard(entries, veg.modDistances.fishFt, veg.fish.distFt);
   } else {
-    scoresHtml = `<div style="${CARD}">${sectionHeading('Fish Utilization')}<p style="${BODY};color:${COLOR.mid};">No surveyed shoreline segment lies within ${veg.modDistances.fishFt} ft of this parcel, so there are no fish use scores to show. Shoreline segments are scored countywide; inland parcels have none.</p></div>`;
+    scoresHtml = `<div style="${CARD}">${sectionHeading(FISH_USE_NAME)}<p style="${BODY};color:${COLOR.mid};">No surveyed shoreline segment lies within ${veg.modDistances.fishFt} ft of this parcel, so there are no fish use levels to show. Shoreline segments are scored countywide; inland parcels have none.</p></div>`;
   }
   el.innerHTML = scoresHtml + buildNearshoreVegetationHtml(veg, 'spawn');
 }
@@ -2103,14 +2135,16 @@ export function buildFeaturePopupHtml(
   const accent = config.style.strokeColor || config.style.fillColor || '#0297BA';
   const swatch = config.markerIcon ? 'point' : (config.style.fillOpacity ?? 0) > 0.05 ? 'fill' : 'line';
 
-  const title = spec?.title?.(props) || (label && label !== 'Feature' ? label : fallbackTitle(config, props));
-  const subtitle = spec?.subtitle?.(props);
+  // Fish use: one popup lists all seven species on the segment
+  const fish = config.fishUse ? fishUsePopupParts(props) : null;
+  const title = fish?.title || spec?.title?.(props) || (label && label !== 'Feature' ? label : fallbackTitle(config, props));
+  const subtitle = fish?.subtitle ?? spec?.subtitle?.(props);
   const island = String(props.ISLAND ?? props.Island ?? props.island ?? '');
 
   // Friends' website content: the feature's own article (projects) or the
   // best articles for this layer supply photos and a "Related content from Friends" list.
-  const idx = getFriendsContentSync();
-  const own = config.id === 'friends-projects'
+  const idx = spec?.dataOnly ? null : getFriendsContentSync();
+  const own = config.id === 'friends-projects' && !spec?.dataOnly
     ? (articleForUrl(idx, typeof props.LINK === 'string' ? props.LINK : undefined) ?? articleForProject(idx, String(props.NAME ?? ''), island))
     : null;
   const related = articlesForFeature(idx, config.id, props, 3).filter(a => a.id !== own?.id);
@@ -2122,7 +2156,9 @@ export function buildFeaturePopupHtml(
     const c = t.trim();
     return c.length > 0 && c.length <= 70 ? c : '';
   };
-  if (!photos.length) {
+  if (spec?.dataOnly) {
+    // the record's own fields only
+  } else if (!photos.length) {
     if (own) {
       // A project's own article: its photos are the project (before / after)
       photos.push(...own.images.slice(0, 4).map(im => ({ url: im.url, caption: shortCaption(im.caption), credit: 'Friends of the San Juans' })));
@@ -2139,21 +2175,24 @@ export function buildFeaturePopupHtml(
       }
     }
   }
-  if (!photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
+  if (!spec?.dataOnly && !photos.length && LAYER_PHOTOS[config.id]) photos.push(LAYER_PHOTOS[config.id]);
 
   // "Why it matters" only ever carries Friends' own words: a project's own
   // article (its WordPress excerpt), or the layer's sourced whyItMatters text.
   // Layers without sourced text show no story block at all.
+  const byMode = config.whyItMattersByMode?.[layer.vizMode ?? ''];
   const story = spec?.story?.(props)
     ?? (own?.excerpt ? { kicker: 'About this project', html: escHtml(own.excerpt), source: { credit: own.title, url: own.url } } : undefined)
+    ?? (byMode ? { kicker: 'Why it matters', html: escHtml(byMode.text), source: byMode.source } : undefined)
     ?? (config.whyItMatters ? { kicker: 'Why it matters', html: escHtml(config.whyItMatters.text), source: config.whyItMatters.source } : undefined);
   const link = spec?.link?.(props);
   const footerButtons = link ? [{ label: link.label, href: link.href }] : [];
 
   return buildPopupFrame({
     id: `feature-${Date.now()}`,
-    accent,
-    layerName: config.name,
+    accent: fish ? '#0D4F4F' : accent,
+    layerName: fish ? FISH_USE_NAME : config.name,
+    lead: fish?.lead,
     swatch,
     swatchColor: config.style.fillColor,
     title,
@@ -2163,11 +2202,30 @@ export function buildFeaturePopupHtml(
     chips: spec?.chips?.(props),
     story,
     action: spec?.action,
-    body: fromFriendsHtml(articles, own && !spec?.story?.(props) ? own.id : undefined),
+    body: spec?.dataOnly ? '' : fromFriendsHtml(articles, own && !spec?.story?.(props) ? own.id : undefined),
     fields: spec?.noDetails ? [] : fields,
+    detailsOpen: spec?.detailsOpen,
     source: { credit: config.sourceCredit, url: config.sourceUrl },
     footerButtons,
   });
+}
+
+/** Title, subtitle and species list for a fish-use shoreline segment. */
+function fishUsePopupParts(props: Record<string, unknown>): { title: string; subtitle?: string; lead: string } {
+  const name = String(props.Name ?? '').trim().toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+  const unit = String(props.GeoUnit ?? '').trim();
+  const area = String(props.SiteType2 ?? '').trim();
+  const entries = fishUseEntries(props);
+  const moreInfo = `<a href="#" style="color:${COLOR.teal};text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();window.__openHabitatInfo();">More about this data &rarr;</a>`;
+  const lead = `
+    ${sectionHeading('Priority by species')}
+    ${fishUseListHtml(entries, fishCodesOn)}
+    <p style="font-size:13px;line-height:1.45;color:${COLOR.mid};margin:8px 0 0;">Priority reflects how likely fish are to be present and abundant here. Salmon levels are for rearing juveniles. Nothing is ranked low: fish can and do use every shoreline. ${moreInfo}</p>`;
+  return {
+    title: name || (unit ? `${unit} shoreline` : 'Shoreline segment'),
+    subtitle: [name ? unit : '', area].filter(Boolean).join(' · ') || undefined,
+    lead,
+  };
 }
 
 /** Open a feature popup; if the Friends content index hasn't arrived yet, refresh the content once it does. */
@@ -2625,44 +2683,23 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
   `;
 }
 
-function buildFishCard(result: ShorelineQueryResult, withinFt?: number, distFt?: number): string {
-  const { species } = result;
-  const count = species.length;
-  const top = species[0];
-  const topPct = Math.round(top.hrmValue * 100);
+function buildFishCard(entries: FishUseEntry[], withinFt?: number, distFt?: number): string {
+  const top = entries.filter(e => e.tier === entries[0].tier);
+  const names = top.map(e => e.species.name);
+  const nameList = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
+  const intro = `Along this shoreline, ${esc(nameList)} ${top.length === 1 ? 'ranks' : 'rank'} ${fishTierPill(entries[0].tier)} for fish use.`;
 
-  const intro = count === 1
-    ? `Survey data shows ${pill(top.species)} using the shallow-water habitat along this shoreline.`
-    : `Survey data shows ${pill(String(count) + ' fish species')} using the shallow-water habitat along this shoreline. ${esc(top.species)} scores highest at ${pill(topPct + '%')}.`;
-
-  const hrmDesc = `The shorelines of the San Juans are critical rearing, resting and feeding habitat for out-migrating juvenile salmon from rivers across Puget Sound and southern British Columbia, as well as other fish species that support marine food webs. These scores show what species of fish are using the shallow water habitats in this region of the county. Higher scores mean higher fish presence and abundance for that species, relative to other places in the county.`;
-
-  const BAR_COLORS = ['#0D4F4F', '#1A7A7A', '#2A9D8F', '#4DB8A4', '#76C7B7', '#9DD6CB', '#C4E5DF'];
-
-  const bars = species.map((sp, i) => {
-    const pct = Math.round(sp.hrmValue * 100);
-    const color = BAR_COLORS[i % BAR_COLORS.length];
-    return `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <div style="width:120px;font-size:14px;color:${COLOR.dark};text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(sp.species)}</div>
-        <div style="flex:1;background:${COLOR.border};border-radius:3px;height:14px;overflow:hidden;">
-          <div style="background:${color};height:100%;width:${pct}%;border-radius:3px;transition:width 0.3s;"></div>
-        </div>
-        <div style="width:36px;font-size:14px;font-weight:600;color:${COLOR.dark};flex-shrink:0;">${pct}%</div>
-      </div>
-    `;
-  }).join('');
+  const hrmDesc = `The shorelines of the San Juans are critical rearing, resting and feeding habitat for out-migrating juvenile salmon from rivers across Puget Sound and southern British Columbia, as well as other fish species that support marine food webs. Priority levels show where each species is more likely to be both present and abundant, relative to other places in the county. Salmon levels are for rearing juveniles. Nothing is ranked low: fish can and do use every shoreline.`;
 
   const moreInfoLink = `<a href="#" style="color:${COLOR.teal};font-size:14px;text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();window.__openHabitatInfo();">More about this data &rarr;</a>`;
 
   return `
     <div style="${CARD}">
-      ${sectionHeading('Fish Utilization')}
+      ${sectionHeading(FISH_USE_NAME)}
       <p style="${BODY};margin-bottom:8px;">${intro}</p>
       <p style="${BODY};margin-bottom:12px;color:${COLOR.mid};">${hrmDesc} ${moreInfoLink}</p>
-      <div style="font-size:14px;color:${COLOR.dark};margin-bottom:6px;">Habitat relevance score</div>
-      ${bars}
-      ${withinFt != null ? `<p style="font-size:13.5px;color:${COLOR.mid};margin:10px 0 0;line-height:1.45;">Scores are for the surveyed shoreline segment${distFt != null && distFt > 0 ? ` ${distFt} ft from the parcel line` : ' along this parcel'} (segments within ${withinFt} ft are considered). Source: Beamer &amp; Fresh 2012, Skagit River System Cooperative.</p>` : ''}
+      ${fishUseListHtml(entries)}
+      ${withinFt != null ? `<p style="font-size:13.5px;color:${COLOR.mid};margin:10px 0 0;line-height:1.45;">Levels are for the surveyed shoreline segment${distFt != null && distFt > 0 ? ` ${distFt} ft from the parcel line` : ' along this parcel'} (segments within ${withinFt} ft are considered). Source: Beamer &amp; Fresh 2012, Skagit River System Cooperative.</p>` : ''}
     </div>
   `;
 }

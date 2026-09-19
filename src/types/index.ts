@@ -61,9 +61,10 @@ export interface LayerConfig {
   /** For dynamic-raster layers that don't need a date picker (e.g. cumulative datasets). */
   hideDateRange?: boolean;
   /**
-   * Visualization modes for dynamic-raster layers that render the same dataset
-   * multiple ways. Renders as a segmented toggle under the layer row; the
-   * selected mode's `id` is passed to `apiEndpoint` as `?mode=...`. First entry
+   * Visualization modes for layers that render the same dataset multiple ways.
+   * Dynamic rasters: a segmented toggle under the layer row; the selected
+   * mode's `id` is passed to `apiEndpoint` as `?mode=...`. Vector layers (fish
+   * use): a "Color by" select in the sidebar and the legend. First entry
    * is the default. Per-mode `legend` overrides the row's top-level legend
    * while that mode is selected.
    */
@@ -114,6 +115,11 @@ export interface LayerConfig {
    * overlays all work. Use for anything with more than a few hundred features.
    */
   gpu?: boolean;
+  /**
+   * The Beamer & Fresh fish-use layer: one line colored by priority level for
+   * the species chosen under "Color by" (its vizMode); see config/fishUse.ts.
+   */
+  fishUse?: boolean;
   /** Polygon layers: no marker for features whose `acres` property is below this. */
   markerMinAcres?: number;
   /**
@@ -138,6 +144,8 @@ export interface LayerConfig {
    * they came from; layers without sourced text show no story block.
    */
   whyItMatters?: { text: string; source: { credit: string; url: string } };
+  /** Overrides `whyItMatters` while that visualization mode is selected (fish use: forage fish vs salmon text). */
+  whyItMattersByMode?: Record<string, { text: string; source: { credit: string; url: string } }>;
   /**
    * Structured definitions for the layer's info panel (legend / sidebar /
    * sourcing modal), rendered as a list under `standardMessage`: one bold

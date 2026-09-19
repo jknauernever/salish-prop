@@ -6,6 +6,8 @@ import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingState';
 import { LayerInfoModal } from './LayerInfoModal';
 import { useMap } from '../../hooks/useMap';
+import { FISH_ICON_URL } from '../../config/fishUse';
+import { ColorBySelect } from './ColorBySelect';
 
 interface LayerControlsProps {
   layers: LayerState[];
@@ -175,6 +177,8 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
             alt=""
             className="w-5 h-5 shrink-0"
           />
+        ) : config.fishUse ? (
+          <img src={FISH_ICON_URL} alt="" className="w-4 h-4 shrink-0 object-contain" />
         ) : (
           <div
             className="w-4 h-4 rounded-sm shrink-0 border border-black/10"
@@ -277,6 +281,11 @@ function LayerRow({ layer, onToggle, onOpacityChange, onSetDynamicTileUrl, onSet
             <span className="text-[10px] text-slate-blue/50">{legend.maxLabel}</span>
           </div>
         </div>
+      )}
+
+      {/* "Color by" for vector layers with modes (fish use) */}
+      {!isDynamic && visible && loaded && config.fishUse && (
+        <ColorBySelect layer={layer} onChange={setVizMode} className="ml-5 mr-2 mb-1" />
       )}
 
       {/* Visualization-mode segmented toggle */}

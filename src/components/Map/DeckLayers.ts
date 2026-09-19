@@ -23,6 +23,7 @@ import { GeoJsonLayer, IconLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { LayerConfig } from '../../types';
 import { MARKER_W, MARKER_H, MARKER_ANCHOR_Y } from '../../config/markerIcons';
+import { FISH_TIERS, fishCodesForMode, fishUseEntries, type FishTier } from '../../config/fishUse';
 
 export const DECK_CLICK_EVENT = 'ssx-deck-click';
 export const DECK_HOVER_EVENT = 'ssx-deck-hover';
@@ -68,6 +69,8 @@ interface Entry {
   visible: boolean;
   /** User asked to see this layer at any zoom (ignore config.minZoom). */
   ignoreGate?: boolean;
+  /** Selected visualization mode, for layers styled by it (fish use) */
+  vizMode?: string;
   /** GeoJSON entries only */
   data?: GeoJSON.FeatureCollection;
   /** Point features to draw (after Friends-pin spacing); null = all */
@@ -111,7 +114,7 @@ function featureStyle(config: LayerConfig, f: GeoJSON.Feature | undefined, width
 
 /** Strip the sub-layer suffix so events name the layer config. */
 function baseId(deckLayerId: string): string {
-  return deckLayerId.replace(/__(casing|pins|hit)$/, '');
+  return deckLayerId.replace(/__(casing|halo|pins|hit)$/, '');
 }
 
 class DeckManager {
@@ -185,6 +188,14 @@ class DeckManager {
     this.rebuild();
   }
 
+  /** Selected visualization mode (fish use: which species colors the line). */
+  setVizMode(layerId: string, mode: string | undefined) {
+    const e = this.entries.get(layerId);
+    if (!e || e.vizMode === mode) return;
+    e.vizMode = mode;
+    this.rebuild();
+  }
+
   /** Pins (midpoint / centroid markers) for a GeoJSON layer. */
   setPins(layerId: string, pins: DeckPin[]) {
     const e = this.entries.get(layerId);
@@ -247,6 +258,56 @@ class DeckManager {
     this.overlay.finalize();
     this.entries.clear();
     this.live.clear();
+  }
+
+  /** Priority level of a segment for the species the fish-use line is colored by (highest among them). */
+  private fishLevel(f: GeoJSON.Feature, codes: string[]): FishTier {
+    return fishUseEntries(f.properties, codes)[0]?.tier ?? 1;
+  }
+
+  /**
+   * Fish use: one line, colored and sized by priority level for the species
+   * chosen under "Color by" (or the highest level among all seven), over a
+   * white casing that keeps it legible on imagery.
+   */
+  private buildFishUse(e: Entry): Layer[] {
+    const { config, data } = e;
+    if (!data) return [];
+    const visible = e.visible && !this.gated(e);
+    const codes = fishCodesForMode(e.vizMode);
+    const trigger = codes.join(',');
+    const c = config.casing;
+    const level = (f: GeoJSON.Feature) => this.fishLevel(f, codes);
+    const common = { data: data.features, visible, stroked: true, filled: false, lineWidthUnits: 'pixels' as const, lineCapRounded: true, lineJointRounded: true };
+    const out: Layer[] = [
+      new GeoJsonLayer({
+        ...common,
+        id: `${config.id}__casing`,
+        pickable: true,
+        getLineWidth: (f: GeoJSON.Feature) => Math.max(FISH_TIERS[level(f)].weight + 3, config.hitStrokeWeight ?? 0),
+        getLineColor: [255, 255, 255, 1], // invisible: a forgiving click target
+        updateTriggers: { getLineWidth: [trigger] },
+      }),
+      new GeoJsonLayer({
+        ...common,
+        id: `${config.id}__halo`,
+        pickable: false,
+        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight + 3,
+        getLineColor: rgba(c?.color ?? '#FFFFFF', c?.opacity ?? 0.9),
+        updateTriggers: { getLineWidth: [trigger] },
+      }),
+      new GeoJsonLayer({
+        ...common,
+        id: config.id,
+        pickable: true,
+        lineWidthMinPixels: 1,
+        getLineWidth: (f: GeoJSON.Feature) => FISH_TIERS[level(f)].weight,
+        getLineColor: (f: GeoJSON.Feature) => rgba(FISH_TIERS[level(f)].color, 1),
+        updateTriggers: { getLineWidth: [trigger], getLineColor: [trigger] },
+      }),
+    ];
+    for (const l of out) this.live.set(l.id, l);
+    return out;
   }
 
   private gated(e: Entry): boolean {
@@ -432,6 +493,11 @@ class DeckManager {
     }
     const f = h.feature!;
     const base = featureStyle(config, f, strokeWeightAt(config, this.zoom));
+    if (config.fishUse) {
+      const lv = this.fishLevel(f, fishCodesForMode(h.entry.vizMode));
+      base.line = rgba(FISH_TIERS[lv].color, 1);
+      base.width = FISH_TIERS[lv].weight;
+    }
     const isPoint = f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint';
     const icon = config.markerIcon;
     const byProp = config.markerIconByProperty;
@@ -507,7 +573,7 @@ class DeckManager {
     const pins: Layer[] = [];
     const top: Layer[] = [];
     for (const e of geoEntries) {
-      const group = this.buildGeoJson(e);
+      const group = e.config.fishUse ? this.buildFishUse(e) : this.buildGeoJson(e);
       for (const l of group) {
         if (e.config.id === TOPMOST_LAYER) top.push(l);
         else (l.id.endsWith('__pins') ? pins : geometry).push(l);

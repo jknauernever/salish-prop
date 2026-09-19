@@ -27,6 +27,13 @@ export interface PopupSpec {
   link?: (p: Props) => { label: string; href: string } | undefined;
   /** Feature-level photos (observations, future admin uploads). */
   photos?: (p: Props) => PopupPhoto[];
+  /**
+   * Show only what the feature's own record says: no photos, no "Related
+   * content from Friends", no text borrowed from a matched website article.
+   */
+  dataOnly?: boolean;
+  /** Show the all-details table open instead of behind its toggle. */
+  detailsOpen?: boolean;
   /** Skip the all-details table (layers whose fields are all shown as facts). */
   noDetails?: boolean;
 }
@@ -136,14 +143,9 @@ export const PHOTO_SUBJECTS: Record<string, RegExp> = {
   'eelgrass': /eelgrass|seagrass/i,
   'friends-bull-kelp': /\bkelp\b/i,
   'friends-herring-spawning': /herring/i,
-  'pacific-herring': /herring/i,
   'friends-documented-forage-spawning': /forage fish|sand lance|smelt|spawn/i,
   'friends-potential-forage-spawning': /forage fish|sand lance|smelt|spawn/i,
-  'pacific-sand-lance': /sand lance|forage fish/i,
-  'surf-smelt': /smelt|forage fish/i,
-  'chinook-salmon': /salmon/i,
-  'chum-salmon': /salmon/i,
-  'pink-salmon': /salmon/i,
+  'fish-use': /salmon|herring|smelt|sand lance|forage fish/i,
   'friends-shoreline-geology': /bluff|beach|shoreline/i,
   'friends-armor': /armor|bulkhead|riprap|seawall|rock/i,
   'friends-armor-change-2019': /armor|bulkhead|riprap|seawall|rock/i,
@@ -163,6 +165,7 @@ export const PHOTO_EXCLUDE = /sculpture|tile|mural|art\b|canoe|kayak|ship|tanker
 
 const GUIDE = '/reports/living-with-the-shoreline.html';
 const KELP_REPORT = '/reports/kelp-habitat-value-and-threats.html';
+const SITE_VISIT = 'https://sanjuans.org/our-work/landowner-resources/#SiteVisit';
 
 const ACTIONS = {
   onTheWater: {
@@ -184,6 +187,12 @@ const ACTIONS = {
     kicker: 'If this is your shoreline',
     html: 'Ask about a shore-friendly stabilization site visit before adding or replacing armor.',
     button: { label: 'Living with the shoreline', href: GUIDE },
+  },
+  // Armor: the button signs the landowner up for Friends' free site visit; the guide stays as a text link
+  armor: {
+    kicker: 'If this is your shoreline',
+    html: `Ask about a shore-friendly stabilization site visit before adding or replacing armor. <a href="${GUIDE}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">Living with the shoreline</a> has more.`,
+    button: { label: 'Request a free site visit', href: SITE_VISIT },
   },
   structure: {
     kicker: 'If this is yours',
@@ -340,9 +349,9 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       return `${material} ${noun}`;
     },
     subtitle: p => {
+      // Condition stays in the details table only (client, Sept 2026)
       const ft = num(p.ArmorLength_Value);
-      const cond = str(p.ArmorCondition).toLowerCase().replace(/^unknown.*/, 'condition not rated');
-      return join(island(p), ft && ft > 0 ? `${fmtInt(ft)} ft` : undefined, cond && cond !== 'none' ? (cond.startsWith('condition') ? cond : `${cond} condition`) : undefined);
+      return join(island(p), ft && ft > 0 ? `${fmtInt(ft)} ft` : undefined);
     },
     chips: p => {
       const chips: PopupChip[] = [];
@@ -359,10 +368,9 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       else if (change === 'increase') chips.push({ label: 'Enlarged since 2009', tone: 'warn' });
       else if (change === 'removed') chips.push({ label: 'Removed since 2009', tone: 'on' });
       else if (YN(p.SurveyData_2009)) chips.push({ label: 'Unchanged since 2009' });
-      if (/low quality/i.test(str(p.ArmorCond_unknown_DESC))) chips.push({ label: 'Low-quality construction' });
       return chips;
     },
-    action: ACTIONS.shoreline,
+    action: ACTIONS.armor,
   },
   'friends-armor-change-2019': {
     title: () => 'Shoreline armor',
@@ -381,9 +389,12 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       chips.unshift(str(p.Year_originalArmorMapping) === '2019' ? { label: 'New since 2009', tone: 'warn' } : { label: 'Mapped in 2009' });
       return chips;
     },
-    action: ACTIONS.shoreline,
+    action: ACTIONS.armor,
   },
   'friends-projects': {
+    // Tina, Sept 2026: for now only Friends' own project records — no photos or related website content
+    dataOnly: true,
+    detailsOpen: true,
     title: p => str(p.NAME) || str(p.kind) || "Friends' project",
     subtitle: p => join(str(p.kind), island(p), str(p.DATE) ? `completed ${str(p.DATE)}` : undefined),
     chips: p => str(p.HABITAT_TYPES).split(',').map(t => t.trim()).filter(Boolean)

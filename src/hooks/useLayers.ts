@@ -197,12 +197,13 @@ const MARKER_SHOW_ALL_ZOOM = 16;
  * user zooms in until every marker shows at MARKER_SHOW_ALL_ZOOM.
  */
 function markerGridPx(zoom: number): number {
-  if (zoom <= 10) return 260;
-  if (zoom <= 11) return 210;
-  if (zoom <= 12) return 165;
-  if (zoom <= 13) return 130;
-  if (zoom <= 14) return 100;
-  return 76;
+  // Tightened Sept 2026: with Friends' project pins off the main map, habitat pins have the room
+  if (zoom <= 10) return 180;
+  if (zoom <= 11) return 150;
+  if (zoom <= 12) return 120;
+  if (zoom <= 13) return 100;
+  if (zoom <= 14) return 84;
+  return 70;
 }
 
 function worldPixel(lng: number, lat: number, zoom: number): [number, number] {
@@ -425,7 +426,10 @@ export function useLayers(
   );
   // Friends' Projects marker positions: every other marker layer keeps clear of these
   const reservedLngLatRef = useRef<[number, number][]>([]);
+  // …but only while the projects are showing (the layer's data loads even when it is off)
+  const projectsOnRef = useRef(!!layers.find(l => l.config.id === 'friends-projects')?.visible);
   const reservedAt = (zoom: number): [number, number][] => {
+    if (!projectsOnRef.current) return [];
     const q = Math.round(zoom * 2) / 2; // matches the pin thinning's half-step quantization
     return reservedLngLatRef.current.map(([lng, lat]) => worldPixel(lng, lat, q));
   };
@@ -449,6 +453,10 @@ export function useLayers(
   // them are re-dispatched to the visible layer, so a near miss still opens the popup
   const hitLayersRef = useRef<Map<string, google.maps.Data>>(new Map());
   const loadedRef = useRef<Set<string>>(new Set());
+  // Selected visualization modes, readable from the async layer loaders (seeded from the URL)
+  const vizModeRef = useRef<Map<string, string>>(new Map(
+    Object.entries(initialUi ?? {}).flatMap(([id, ui]) => (ui.vizMode ? [[id, ui.vizMode] as [string, string]] : [])),
+  ));
 
   // Viewport-filtered layer data: full GeoJSON + spatial index
   const viewportIndexRef = useRef<Map<string, ViewportIndex>>(new Map());
@@ -1001,6 +1009,7 @@ export function useLayers(
           registerDeckManager(deck);
           if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
           deck.setGeoJson(config, data, visibleNow);
+          if (config.fishUse) deck.setVizMode(config.id, vizModeRef.current.get(config.id));
           warmHitCache(data);
 
           if (config.renderer) {
@@ -1264,9 +1273,18 @@ export function useLayers(
       if (config.placeholder || loadedRef.current.has(config.id)) return;
       const on = isVisibleByDefault(config.id);
       // Tile and raster layers cost nothing to register; data layers wait until they are on
-      if (on || config.layerType === 'raster' || config.tiles) loadLayer(config, on);
+      // Friends' projects (17 KB) load even when off: the property report lists the island's projects from them
+      if (on || config.layerType === 'raster' || config.tiles || config.id === 'friends-projects') loadLayer(config, on);
     });
   }, [map, loadLayer, isVisibleByDefault]);
+
+  // Projects switched on or off: every pin layer re-spaces itself around (or without) their pins
+  useEffect(() => {
+    const on = !!layers.find(l => l.config.id === 'friends-projects')?.visible;
+    if (projectsOnRef.current === on) return;
+    projectsOnRef.current = on;
+    if (map) google.maps.event.trigger(map, 'zoom_changed');
+  }, [layers, map]);
 
   // Update viewport-filtered layers on map idle (after pan/zoom settles)
   useEffect(() => {
@@ -1295,7 +1313,7 @@ export function useLayers(
       handleZoomForSpeciesObs();
 
       getDeckManager(map).setZoom(zoom);
-      const reservedTier = reservedLngLatRef.current.length ? `r${Math.round(zoom * 2) / 2}` : '';
+      const reservedTier = reservedLngLatRef.current.length && projectsOnRef.current ? `r${Math.round(zoom * 2) / 2}` : '';
 
       setLayers(prev => {
         for (const layer of prev) {
@@ -1570,7 +1588,13 @@ export function useLayers(
   /** Update UI-only layer state (viz mode, season) that the URL mirrors. */
   const setLayerUi = useCallback((layerId: string, patch: { vizMode?: string; season?: string }) => {
     setLayers(prev => prev.map(l => (l.config.id === layerId ? { ...l, ...patch } : l)));
-  }, []);
+    // GPU layers styled by their mode (fish use "Color by") restyle on the spot
+    if (patch.vizMode !== undefined && map) {
+      vizModeRef.current.set(layerId, patch.vizMode);
+      const cfg = layerConfigs.find(c => c.id === layerId);
+      if (cfg?.fishUse) getDeckManager(map).setVizMode(layerId, patch.vizMode);
+    }
+  }, [map]);
 
   /** Show (or stop showing) a layer at zooms below its minZoom. */
   const setZoomOverride = useCallback((layerId: string, on: boolean) => {

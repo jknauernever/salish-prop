@@ -49,7 +49,7 @@
 - **Summary** — Mini-map snapshot with NDVI overlay clipped to parcel, at-a-glance stats (acres, buildings, sq ft, assessed value, waterfront footage), location & classification, last sale info, clickable address
 - **Property** — Full parcel record (PIN, legal description, tax area, land/building/appraised values, use code, sale date/price)
 - **Buildings** — Count and total sq ft of buildings on the parcel, per-building details
-- **Shoreline** — Fish species habitat relevance (HRM / LRM scores) for seven species, shoreline geomorphic description, methodology info window with academic citations
+- **Shoreline** — Fish use priority levels (moderate / high / highest) for seven species, shoreline geomorphic description, methodology info window with academic citations
 
 ### Vegetation Analysis (NDVI)
 - Two raster layers: high-resolution NAIP (0.6 m) and seasonal Sentinel-2 (10 m)
@@ -179,15 +179,9 @@ All data lives in `public/data/` and is fetched at runtime via HTTP.
 | `Tax_Parcels.geojson` | 133 MB | 19,020 | Polygon (3D) | San Juan County tax parcels — PIN, legal description, valuation, sale history, use codes (33 fields) |
 | `Building_Footprints.geojson` | 17 MB | 31,026 | Polygon | Building footprints — sq ft, island, PIN, source (5 fields) |
 | `Stormwater_Pipes.geojson` | 1.9 MB | 1,785 | LineString | Stormwater pipe network — pipe ID, diameter, material, elevation, installation year (38 fields) |
-| `chinook-salmon.geojson` | 5.2 MB | 2,842 | LineString | Chinook salmon shoreline habitat (HRM/LRM scores, geomorphic data) |
-| `chum-salmon.geojson` | 5.2 MB | 2,842 | LineString | Chum salmon shoreline habitat |
-| `pink-salmon.geojson` | 5.2 MB | 2,842 | LineString | Pink salmon shoreline habitat |
-| `pacific-herring.geojson` | 5.2 MB | 2,842 | LineString | Pacific herring shoreline habitat |
-| `pacific-sand-lance.geojson` | 5.2 MB | 2,842 | LineString | Pacific sand lance shoreline habitat |
-| `surf-smelt.geojson` | 5.2 MB | 2,842 | LineString | Surf smelt shoreline habitat |
-| `lingcod-greenling.geojson` | 5.2 MB | 2,842 | LineString | Lingcod & greenling shoreline habitat |
+| `fish-use.geojson` | 3.9 MB | 2,842 | LineString | Beamer & Fresh 2012 fish use: one shoreline file with all seven species' scores (HRM scores per species, geomorphic data); built by `scripts/build-fish-use.py`, priority bins in `src/config/fishUse.ts` |
 
-All seven fish habitat files share an identical 56-field schema including HRM/LRM pairs for every species, geomorphic unit classification, material class, and slope data.
+`fish-use.geojson` replaces seven byte-identical per-species copies (38 MB total). It carries a high-resolution-model score (`HRM_<code>`) for every species on every segment, plus geomorphic unit classification, material class, and slope data. The low-resolution-model columns (`LRM_*`) are dropped.
 
 ### JSON Lookup Files
 
@@ -200,7 +194,7 @@ All seven fish habitat files share an identical 56-field schema including HRM/LR
 
 - **Tax_Parcels.geojson has 3D coordinates** — every vertex includes `z = 0.0`. The `fetchGeoJSON()` utility strips the Z coordinate automatically before passing data to Turf.js (which doesn't handle 3D geometries).
 - **Building_Footprints.geojson has minimal properties** — only FID, Sq_Ft, Island, PIN, and Source. Address info comes from `address_lookup.json`.
-- **Fish habitat files are identical in schema** — each contains HRM/LRM scores for *all* seven species, not just the one named in the filename. The UI filters to the relevant species per layer.
+- **One fish-use file, one layer** — `fish-use.geojson` carries every species' score; the line is colored for the species chosen under Color by (`DeckLayers.ts` → `buildFishUse`).
 
 ---
 
@@ -208,18 +202,18 @@ All seven fish habitat files share an identical 56-field schema including HRM/LR
 
 Configured in `src/config/layers.ts`. Layers are grouped into categories:
 
-### Fish Habitat (7 layers)
-Shoreline segments scored by Habitat Relevance Modeling (HRM) and Landscape Relevance Modeling (LRM) for each species. Line geometry, no fill.
+### Priority Shorelines for Fish (1 layer, "Color by" species)
+Beamer & Fresh 2012 shoreline segments, layer id `fish-use`, drawn from zoom 12. One standard for every species (`src/config/fishUse.ts`): the high-resolution-model score is binned into three priority levels — moderate `#FCD34D` 4 px, high `#F97316` 5 px, highest `#B91C1C` 6 px — over a white casing. Nothing is ranked low. A **Color by** select (sidebar row and legend row; the layer's `vizMode`, URL `m=fish-use:pink`) picks the species that colors the line, or the highest level among all seven; juvenile Chinook is the default. The hover label and popup always list all seven species with their levels, the chosen one first. Share links that name the old per-species layers (`l=chinook-salmon`) are translated on load.
 
-| Layer | Stroke Color | Species Fields |
-|---|---|---|
-| Chinook Salmon | `#E63946` (red) | HRM_Ck / LRM_Ck |
-| Chum Salmon | `#7B2D8E` (purple) | HRM_Chum / LRM_Chum |
-| Pink Salmon | `#FF6B9D` (pink) | HRM_Pk / LRM_Pk |
-| Pacific Herring | `#F4D35E` (yellow) | HRM_Herr / LRM_Herr |
-| Pacific Sand Lance | `#FF8C42` (orange) | HRM_Lance / LRM_Lance |
-| Surf Smelt | `#4ECDC4` (cyan) | HRM_Smelt / LRM_Smelt |
-| Lingcod & Greenling | `#6B8F71` (olive) | HRM_Hex / LRM_Hex |
+| Species (Color by id) | Score field | Moderate up to | High up to |
+|---|---|---|---|
+| Juvenile Chinook (`chinook`) | HRM_Ck | 0.084656 | 0.214912 |
+| Juvenile Chum (`chum`) | HRM_Chum | 0.323232 | 0.611842 |
+| Juvenile Pink (`pink`) | HRM_Pk | 0.300752 | 0.477273 |
+| Pacific herring (`herring`) | HRM_Herr | 0.0888889 | 0.208333 |
+| Surf smelt (`smelt`) | HRM_Smelt | 0.073333 | 0.2 |
+| Pacific sand lance (`sand-lance`) | HRM_Lance | 0.113636 | 0.27778 |
+| Greenlings and Cods (`greenlings`) | HRM_Hex | 0.357955 | 0.614035 |
 
 ### Ecological (6 layers)
 | Layer | Type | Source | Notes |
@@ -898,13 +892,7 @@ salish-sea-propmapper/
 │       ├── Tax_Parcels.geojson         # 133 MB, 19K parcels
 │       ├── Building_Footprints.geojson # 17 MB, 31K buildings
 │       ├── Stormwater_Pipes.geojson    # 1.9 MB, 1.8K pipes
-│       ├── chinook-salmon.geojson      # 5.2 MB each (×7 species)
-│       ├── chum-salmon.geojson
-│       ├── pink-salmon.geojson
-│       ├── pacific-herring.geojson
-│       ├── pacific-sand-lance.geojson
-│       ├── surf-smelt.geojson
-│       ├── lingcod-greenling.geojson
+│       ├── fish-use.geojson            # 3.9 MB, Fish Use layer (all 7 species' scores)
 │       ├── address_lookup.json         # PIN → address records
 │       └── ndvi_parcel_stats.json      # Per-parcel NDVI stats
 ├── src/

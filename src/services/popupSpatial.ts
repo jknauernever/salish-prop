@@ -1,6 +1,7 @@
 import * as turf from '@turf/turf';
 import type { LayerState } from '../types';
 import type { NearshoreParcelRecord, NearshoreStatsMeta } from './nearshoreStats';
+import { FISH_SPECIES } from '../config/fishUse';
 
 export interface BuildingProperties {
   address?: string;
@@ -20,7 +21,6 @@ export interface BuildingQueryResult {
 export interface ShorelineSpeciesResult {
   species: string;
   hrmValue: number;
-  lrmValue: number;
 }
 
 export interface ShorelineQueryResult {
@@ -35,20 +35,7 @@ export interface ShorelineQueryResult {
   } | null;
 }
 
-const FISH_HABITAT_LAYER_IDS = [
-  'chinook-salmon', 'chum-salmon', 'pink-salmon',
-  'pacific-herring', 'pacific-sand-lance', 'surf-smelt', 'lingcod-greenling',
-];
-
-const SPECIES_CONFIG = [
-  { name: 'Chinook Salmon', hrmKey: 'HRM_Ck', lrmKey: 'LRM_Ck' },
-  { name: 'Chum Salmon', hrmKey: 'HRM_Chum', lrmKey: 'LRM_Chum' },
-  { name: 'Pink Salmon', hrmKey: 'HRM_Pk', lrmKey: 'LRM_Pk' },
-  { name: 'Pacific Herring', hrmKey: 'HRM_Herr', lrmKey: 'LRM_Herr' },
-  { name: 'Pacific Sand Lance', hrmKey: 'HRM_Lance', lrmKey: 'LRM_Lance' },
-  { name: 'Surf Smelt', hrmKey: 'HRM_Smelt', lrmKey: 'LRM_Smelt' },
-  { name: 'Lingcod & Greenling', hrmKey: 'HRM_Hex', lrmKey: 'LRM_Hex' },
-];
+const SPECIES_CONFIG = FISH_SPECIES.map(sp => ({ name: sp.name, hrmKey: `HRM_${sp.code}` }));
 
 type BBox = GeoJSON.BBox;
 
@@ -193,9 +180,9 @@ export function queryShorelineHabitat(
   parcelFeature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
   layers: LayerState[],
 ): ShorelineQueryResult {
-  // Find any loaded fish habitat layer — they all share geometry and properties
+  // The fish-use layer carries every species' score on each segment
   const fishLayer = layers.find(
-    l => FISH_HABITAT_LAYER_IDS.includes(l.config.id) && l.loaded && l.geojsonData,
+    l => l.config.fishUse && l.loaded && l.geojsonData,
   );
 
   if (!fishLayer?.geojsonData) {
@@ -228,20 +215,15 @@ export function queryShorelineHabitat(
     return { species: [], shorelineDescription: null };
   }
 
-  // Aggregate max HRM/LRM per species across all intersecting segments
+  // Aggregate max HRM per species across all intersecting segments
   const species: ShorelineSpeciesResult[] = [];
   for (const sp of SPECIES_CONFIG) {
     let maxHrm = 0;
-    let maxLrm = 0;
     for (const feat of intersecting) {
       const hrm = Number(feat.properties?.[sp.hrmKey]) || 0;
-      const lrm = Number(feat.properties?.[sp.lrmKey]) || 0;
       maxHrm = Math.max(maxHrm, hrm);
-      maxLrm = Math.max(maxLrm, lrm);
     }
-    if (maxHrm > 0 || maxLrm > 0) {
-      species.push({ species: sp.name, hrmValue: maxHrm, lrmValue: maxLrm });
-    }
+    species.push({ species: sp.name, hrmValue: maxHrm });
   }
 
   species.sort((a, b) => b.hrmValue - a.hrmValue);

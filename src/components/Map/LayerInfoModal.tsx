@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { LayerConfig, LayerState } from '../../types';
 import { LayerInfoBody } from './LayerInfoBody';
+import { FISH_ICON_URL } from '../../config/fishUse';
 
 /** Small swatch that mirrors how the layer draws on the map. */
 export function Swatch({ config }: { config: LayerConfig }) {
@@ -16,6 +17,10 @@ export function Swatch({ config }: { config: LayerConfig }) {
   }
   if (config.markerIcon) {
     return <img src={config.markerIcon} alt="" className="w-4 h-[18px] shrink-0 object-contain" />;
+  }
+  if (config.fishUse) {
+    // One fish mark for every species; color is reserved for the priority level
+    return <img src={FISH_ICON_URL} alt="" className="w-4 h-3 shrink-0 object-contain" />;
   }
   if (config.layerType === 'raster' || config.layerType === 'dynamic-raster') {
     const g = config.legend?.type === 'gradient' ? config.legend : null;

@@ -45,7 +45,7 @@ export interface NearshoreParcelRecord {
   fish?: {
     distFt: number;
     /** Keyed by species code (Ck, Chum, Pk, Herr, Lance, Smelt, Hex); values 0–1. */
-    scores: Record<string, { hrm: number; lrm: number }>;
+    scores: Record<string, { hrm: number }>;
     segment: { name: string; geoUnit: string; systemType: string; subType: string; materialClass: string; featureType: string };
   };
   /** Nearest surveyed shoreline at any distance (every parcel has one). */

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { LayerConfig, LayerState } from '../../types';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { LayerInfoModal, Swatch, CategoryChips } from './LayerInfoModal';
+import { ColorBySelect } from './ColorBySelect';
 import { legendGroupFor, LEGEND_FIRST, type LegendGroup } from '../../config/legendGroups';
 
 // The legend unmounts while the dataset picker is open; remember its state
@@ -21,6 +22,7 @@ interface MapLegendProps {
   /** Layers the user asked to see regardless of their minZoom. */
   zoomOverrides: Set<string>;
   onSetZoomOverride: (layerId: string, on: boolean) => void;
+  onSetLayerUi: (layerId: string, patch: { vizMode?: string }) => void;
 }
 
 /** Swatch for a legend group: three stacked pin heads. */
@@ -45,7 +47,7 @@ function hasInfo(config: LayerConfig): boolean {
  * footer opens the full dataset picker, and "How this is sourced" opens a
  * modal describing every visible dataset.
  */
-export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoomOverrides, onSetZoomOverride }: MapLegendProps) {
+export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoomOverrides, onSetZoomOverride, onSetLayerUi }: MapLegendProps) {
   const mobile = useIsMobile();
   // Drawer from the left edge: starts tucked away, slides open shortly after
   // first paint so people see it arrive, then a handle (or the ×) toggles it.
@@ -186,6 +188,7 @@ export function MapLegend({ layers, onToggleLayer, onExplore, zoom, inView, zoom
             </svg>
           </button>
         </div>
+        {!hidden && config.fishUse && <ColorBySelect layer={layer} onChange={mode => onSetLayerUi(config.id, { vizMode: mode })} className="mt-1 ml-6" />}
         {!gated && <CategoryChips config={config} className="mt-1 ml-6" />}
       </div>
     );

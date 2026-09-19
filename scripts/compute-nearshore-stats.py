@@ -9,7 +9,7 @@ For every tax parcel (keyed by FID, same as ndvi_parcel_stats.json) this writes:
             only where it fronts the parcel (POTENTIAL_FT) and the parcel's own shoreform is not rocky
   herring   herring spawning grounds within HERRING_FT of the parcel
   shoreform nearest Friends geomorphic shoreform segment within SHOREFORM_FT (class + attributes)
-  fish      Beamer & Fresh fish-use scores (max HRM/LRM per species) for segments within FISH_FT
+  fish      Beamer & Fresh fish-use scores (max high-resolution-model score per species) for segments within FISH_FT
   mods      shoreline modifications: armor within ARMOR_FT (length), docks / groins / ramps /
             railways / pilings within STRUCTURE_FT, mooring buoys & floats within BUOY_FT
   shore     nearest surveyed shoreline segment at any distance (feet + place name) — every parcel
@@ -54,7 +54,7 @@ ARMOR_FT = 50  # shoreline armor touching / hugging the parcel line
 STRUCTURE_FT = 100  # docks, groins, ramps, railways, pilings
 BUOY_FT = 300  # mooring buoys and floats sit offshore
 
-# Beamer & Fresh species column suffixes (HRM_<code> / LRM_<code>) — keep in sync with popupSpatial.ts SPECIES_CONFIG
+# Beamer & Fresh species column suffixes (HRM_<code>) — keep in sync with src/config/fishUse.ts FISH_SPECIES
 FISH_CODES = ['Ck', 'Chum', 'Pk', 'Herr', 'Lance', 'Smelt', 'Hex']
 
 # WGS84 → NAD83(HARN) / Washington North (US survey feet) so buffers are in feet
@@ -99,7 +99,7 @@ def main():
     pot = load('friends-potential-forage-spawning.json')
     her = load('friends-herring-spawning.json')
     sf = load('friends-shoreline-geology.json')
-    fish = load('chinook-salmon.geojson')  # all seven fish layers share this geometry + HRM_/LRM_ columns
+    fish = load('fish-use.geojson')  # one file for all seven fish-use layers (HRM_<code> columns), see build-fish-use.py
     armor = load('friends-armor.json')
     docks = load('friends-docks.geojson')
     groins = load('friends-groins.json')
@@ -264,18 +264,18 @@ def main():
                 'publicOwnership': clean(p.get('SomePublicOwnership')) == 'Y',
             }
 
-        # --- Beamer & Fresh fish use scores: max HRM/LRM per species across nearby segments ---
+        # --- Beamer & Fresh fish use scores: max high-resolution-model score per species across nearby segments ---
+        # 6 decimals, not 3: the priority bins (src/config/fishUse.ts) end exactly on data values, so coarser
+        # rounding pushes edge segments up a level. A score of 0 is kept (it ranks as moderate, never "low").
         fh = hits(fish_t, fish_i, fish_g, pg, FISH_FT)
         if fh:
             scores = {}
             for code in FISH_CODES:
-                hmax = lmax = 0.0
+                hmax = 0.0
                 for i, _ in fh:
                     p = fish[i].get('properties') or {}
                     hmax = max(hmax, float(p.get(f'HRM_{code}') or 0))
-                    lmax = max(lmax, float(p.get(f'LRM_{code}') or 0))
-                if hmax > 0 or lmax > 0:
-                    scores[code] = {'hrm': round(hmax, 3), 'lrm': round(lmax, 3)}
+                scores[code] = {'hrm': round(hmax, 6)}
             i, d = min(fh, key=lambda x: x[1])
             p = fish[i].get('properties') or {}
             def cl(v):

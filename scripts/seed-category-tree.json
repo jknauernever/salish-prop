@@ -28,15 +28,9 @@
       "id": "fish-habitat",
       "label": "Fish Habitat",
       "layers": [
-        "chinook-salmon",
-        "chum-salmon",
-        "pink-salmon",
-        "pacific-herring",
-        "pacific-sand-lance",
-        "surf-smelt",
+        "fish-use",
         "marbled-murrelet-breeding",
-        "marbled-murrelet-winter",
-        "lingcod-greenling"
+        "marbled-murrelet-winter"
       ],
       "children": []
     },

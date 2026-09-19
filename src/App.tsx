@@ -216,7 +216,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
 
       {/* Floating legend: only what's on the map, plus the door to the full picker */}
       {!layersLocked && !sidebarOpen && (
-        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} inView={layersInView} zoomOverrides={zoomOverrides} onSetZoomOverride={setZoomOverride} />
+        <MapLegend layers={layers} onToggleLayer={toggleLayer} onExplore={onOpenSidebar} zoom={zoom} inView={layersInView} zoomOverrides={zoomOverrides} onSetZoomOverride={setZoomOverride} onSetLayerUi={setLayerUi} />
       )}
 
       {!layersLocked && (

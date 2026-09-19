@@ -66,6 +66,8 @@ export interface PopupFrameOptions {
   chips?: PopupChip[];
   /** Element id for a chips row that is filled in asynchronously. */
   chipsId?: string;
+  /** Trusted HTML placed straight under the header, ahead of the story (the fish-use species list). */
+  lead?: string;
   story?: PopupBlock;
   action?: PopupBlock;
   /** Arbitrary HTML placed between the blocks and the details table. */
@@ -188,6 +190,7 @@ export function buildPopupFrame(o: PopupFrameOptions): string {
     </div>
     ${chipsHtml}
     ${statsHtml}
+    ${o.lead ? `<div style="margin:0 18px 12px;">${o.lead}</div>` : ''}
     ${o.story ? blockHtml('ssx-story', o.story) : ''}
     ${o.action ? blockHtml('ssx-act', o.action) : ''}
     ${o.body ?? ''}

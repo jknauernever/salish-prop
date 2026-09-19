@@ -26,8 +26,8 @@ export type Preset = {
 export const presets: Record<string, Preset> = {
   'salmon-habitat': {
     title: 'Salmon Habitat',
-    description: 'Chinook, chum, and pink salmon shoreline habitat across the San Juan Islands.',
-    layers: ['chinook-salmon', 'chum-salmon', 'pink-salmon', 'eelgrass'],
+    description: 'Where juvenile Chinook, chum, and pink salmon are most likely to rear along San Juan Islands shorelines.',
+    layers: ['fish-use', 'eelgrass'],
     features: {
       propertyClick: true,
     },
@@ -39,7 +39,7 @@ export const presets: Record<string, Preset> = {
     meta: {
       title: 'Salmon Habitat in the San Juan Islands',
       description:
-        'Explore nearshore habitat relevance for Chinook, chum, and pink salmon across the San Juan Islands.',
+        'Explore which San Juan Islands shorelines are moderate, high and highest priority for rearing juvenile Chinook, chum, and pink salmon.',
       ogImage: 'https://salish-sea-propmapper.vercel.app/og/salmon-habitat.png',
       ogUrl: 'https://salish-sea-propmapper.vercel.app/view/salmon-habitat',
     },

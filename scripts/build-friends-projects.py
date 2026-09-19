@@ -73,6 +73,10 @@ def main():
     def add(f, kind, name, island, date, desc, link, types, extra=None):
         props = {'kind': kind, 'NAME': name, 'ISLAND': island, 'DATE': date, 'DESCRIPTION': desc,
                  'LINK': link, 'HABITAT_TYPES': ', '.join(t for t in types if t)}
+        # The source record's id (OBJECTID restarts in each source file; the popup labels it "Feature ID")
+        fid = s(f['properties'].get('OBJECTID'))
+        if fid:
+            props['FEATURE_ID'] = fid
         if extra:
             props.update({k: v for k, v in extra.items() if v not in (None, '')})
         out.append({'type': 'Feature', 'geometry': f['geometry'], 'properties': props})
@@ -94,8 +98,17 @@ def main():
             link, [s(p.get('HABITAT_TYPE'))], {'AMOUNT': s(p.get('AMOUNT'))})
     for f in load('friends-restoration-sites.json'):
         p = f['properties']
+        # Armor-survey records: the surveyor's comment is the description (there is no Notes field),
+        # plus the armor facts. Owner names, office photo paths and survey bookkeeping stay out.
+        spaced = lambda v: ', '.join(t.strip() for t in s(v).split(',') if t.strip())
+        length = p.get('ArmorLength_Value')
         add(f, 'Restoration site', 'Shoreline restoration site', s(p.get('Island')), s(p.get('DateTimeS'))[:4],
-            s(p.get('Notes')), '', [])
+            s(p.get('Comment')), '', [],
+            {'ARMOR_LENGTH_FT': int(length) if isinstance(length, (int, float)) and length > 0 else '',
+             'ARMOR_MATERIAL': spaced(p.get('ArmorMaterial')),
+             'ARMOR_WITH': spaced(p.get('ArmorAssoc')),
+             'ARMOR_CONDITION': s(p.get('ArmorCondition')),
+             'ARMOR_CONDITION_NOTE': s(p.get('ArmorCond_unknown_DESC'))})
 
     with open(OUT, 'w') as f:
         json.dump({'type': 'FeatureCollection', 'features': out}, f, separators=(',', ':'))

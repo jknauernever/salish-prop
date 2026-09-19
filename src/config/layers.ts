@@ -1,6 +1,19 @@
 import type { LayerConfig } from '../types';
 import { SHOREFORM_TYPES, SHOREFORM_GROUPS, SHOREFORM_GROUP_ORDER } from './shoreforms.js';
 import { MARKER_ICONS, FRIENDS_PROJECT_ICONS, FRIENDS_PROJECT_COLORS } from './markerIcons.js'; // .js extension: this file is also loaded by the Node share function (ESM)
+import { FISH_USE_LAYER_ID, FISH_USE_NAME, FISH_USE_SOURCE, FISH_USE_LEGEND, FISH_USE_POPUP_FIELDS, FISH_COLOR_MODES, FISH_TIERS } from './fishUse.js';
+
+// Fish Use draws one shoreline line, colored by priority level for the chosen
+// species (see config/fishUse.ts). This base style is what swatches and accents
+// fall back to; the line itself takes its color and width from the level.
+const FISH_USE_STYLE: LayerConfig['style'] = {
+  fillColor: FISH_TIERS[2].color,
+  fillOpacity: 0,
+  strokeColor: FISH_TIERS[2].color,
+  strokeWeight: FISH_TIERS[2].weight,
+  zIndex: 4.5, // over the wide spawning-beach bands, under the thin geology and armor lines
+};
+const FISH_USE_CASING = { color: '#FFFFFF', weight: 9, opacity: 0.9 };
 
 export const layerConfigs: LayerConfig[] = [
   // === Property Layers ===
@@ -72,7 +85,7 @@ export const layerConfigs: LayerConfig[] = [
     description: 'County stormwater pipe network',
     category: 'planning',
     source: '/data/Stormwater_Pipes.geojson',
-    visible: true,
+    visible: false,
     minZoom: 15,
     casing: { color: '#93C5FD', weight: 7.5, opacity: 0.9 },
     markerScale: 0.75, // minor structures
@@ -104,170 +117,40 @@ export const layerConfigs: LayerConfig[] = [
 
   // === Fish Habitat Layers ===
   {
-    id: 'chinook-salmon',
-    name: 'Chinook Salmon',
-    description: 'Shoreline habitat relevance for Chinook salmon',
+    id: FISH_USE_LAYER_ID,
+    name: FISH_USE_NAME,
+    description: 'Fish use priority along the shoreline for juvenile salmon, forage fish, and greenlings and cods: how likely each is to be present and abundant, as moderate, high or highest priority',
     category: 'fish-habitat',
-    source: '/data/chinook-salmon.geojson',
-    visible: false,
-    style: {
-      fillColor: '#DC2626',
-      fillOpacity: 0,
-      strokeColor: '#DC2626',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Ck', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Ck', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
+    source: FISH_USE_SOURCE,
+    visible: true, // on by default (drawn from zoom 12), colored by juvenile Chinook until another species is chosen
+    fishUse: true,
+    gpu: true,
+    minZoom: 12, // county-wide the thick priority line swamps everything else
+    style: FISH_USE_STYLE,
+    casing: FISH_USE_CASING,
+    hitStrokeWeight: 14,
+    legend: FISH_USE_LEGEND,
+    // "Color by": one species, or the highest level among all seven (see config/fishUse.ts)
+    visualizationModes: FISH_COLOR_MODES,
+    popupFields: FISH_USE_POPUP_FIELDS,
+    standardMessage: 'How likely juvenile salmon, forage fish, and greenlings and cods are to be present and abundant along each stretch of shoreline, from 1,350 beach seine sets at 80 sites across the San Juan Islands (high-resolution model). Friends of the San Juans groups the model scores into moderate, high and highest priority, as in the countywide salmon recovery prioritization. Salmon levels are for rearing juveniles. Nothing is ranked low: fish can and do use every shoreline. Choose which species colors the line; the hover label and popup list all seven.',
+    infoItems: [
+      { label: 'Juvenile Chinook', text: 'Chinook salmon are listed as threatened under the Endangered Species Act. Nearshore habitat is critical for juvenile Chinook rearing and migration. Shoreline modification can reduce prey availability and disrupt migration corridors.' },
+      { label: 'Juvenile Chum', text: 'Chum salmon depend on nearshore habitats during early marine life stages. Estuaries and pocket beaches provide critical transition zones where juveniles feed and grow before moving offshore.' },
+      { label: 'Juvenile Pink', text: 'Pink salmon are the most abundant Pacific salmon species. Their juveniles spend minimal time in freshwater, making nearshore marine habitat especially critical during outmigration.' },
+      { label: 'Pacific herring', text: 'Pacific herring are a keystone forage fish species, spawning on eelgrass and algae in nearshore areas. Herring are a primary food source for salmon, seabirds, and marine mammals throughout the Salish Sea.' },
+      { label: 'Surf smelt', text: 'Surf smelt spawn on mixed sand-gravel beaches in the upper intertidal zone. Like sand lance, their spawning habitat is directly threatened by shoreline hardening and development.' },
+      { label: 'Pacific sand lance', text: 'Sand lance spawn in the upper intertidal zone on sand-gravel beaches. Shoreline armoring and beach modification directly destroy spawning habitat for this essential forage fish.' },
+      { label: 'Greenlings and Cods', text: 'Lingcod and greenling use rocky nearshore habitats for spawning and juvenile rearing. Kelp forests and rocky reefs are essential for their life cycle.' },
     ],
-    standardMessage: 'Chinook salmon are listed as threatened under the Endangered Species Act. Nearshore habitat is critical for juvenile Chinook rearing and migration. Shoreline modification can reduce prey availability and disrupt migration corridors.',
     whyItMatters: {
       text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
       source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
     },
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
-  },
-  {
-    id: 'chum-salmon',
-    name: 'Chum Salmon',
-    description: 'Shoreline habitat relevance for Chum salmon',
-    category: 'fish-habitat',
-    source: '/data/chum-salmon.geojson',
-    visible: false,
-    style: {
-      fillColor: '#7C3AED',
-      fillOpacity: 0,
-      strokeColor: '#7C3AED',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Chum', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Chum', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Chum salmon depend on nearshore habitats during early marine life stages. Estuaries and pocket beaches provide critical transition zones where juveniles feed and grow before moving offshore.',
-    whyItMatters: {
-      text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
-      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
-    },
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
-  },
-  {
-    id: 'pink-salmon',
-    name: 'Pink Salmon',
-    description: 'Shoreline habitat relevance for Pink salmon',
-    category: 'fish-habitat',
-    source: '/data/pink-salmon.geojson',
-    visible: false,
-    style: {
-      fillColor: '#EC4899',
-      fillOpacity: 0,
-      strokeColor: '#EC4899',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Pk', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Pk', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Pink salmon are the most abundant Pacific salmon species. Their juveniles spend minimal time in freshwater, making nearshore marine habitat especially critical during outmigration.',
-    whyItMatters: {
-      text: 'The San Juans are important rearing habitat for out-migrating juvenile salmon. Researchers have found juvenile salmon from twenty of the twenty two populations of threatened Puget Sound Chinook salmon (along with many other species and populations of young salmon) throughout the shallow waters of the San Juans. The time young salmon spend in the marine nearshore is critical to their ability to survive as adults. Shorelines with native vegetation, eelgrass, and kelp help young salmon feed, grow, and avoid predators as they migrate to the open ocean.',
-      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
-    },
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
-  },
-  {
-    id: 'pacific-herring',
-    name: 'Pacific Herring',
-    description: 'Shoreline habitat relevance for Pacific herring',
-    category: 'fish-habitat',
-    source: '/data/pacific-herring.geojson',
-    visible: false,
-    style: {
-      fillColor: '#EAB308',
-      fillOpacity: 0,
-      strokeColor: '#EAB308',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Herr', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Herr', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Pacific herring are a keystone forage fish species, spawning on eelgrass and algae in nearshore areas. Herring are a primary food source for salmon, seabirds, and marine mammals throughout the Salish Sea.',
-    whyItMatters: {
-      text: 'Herring, crucial for marine food webs, spawn on eelgrass habitat in just a few locations in San Juan County that are also popular with boaters including Eastsound and West Sound, Blind Bay, Mud Bay, and Hunter Bay. Eelgrass, a vital marine habitat in the Salish Sea, supports Dungeness crabs, Chinook salmon, Pacific herring, and ultimately the Southern Resident killer whales.',
-      source: { credit: 'Become a Green Boater Today (sanjuans.org)', url: 'https://sanjuans.org/become-a-green-boater-today/' },
-    },
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
-  },
-  {
-    id: 'pacific-sand-lance',
-    name: 'Pacific Sand Lance',
-    description: 'Shoreline habitat relevance for Pacific sand lance',
-    category: 'fish-habitat',
-    source: '/data/pacific-sand-lance.geojson',
-    visible: false,
-    style: {
-      fillColor: '#F97316',
-      fillOpacity: 0,
-      strokeColor: '#F97316',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Lance', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Lance', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Sand lance spawn in the upper intertidal zone on sand-gravel beaches. Shoreline armoring and beach modification directly destroy spawning habitat for this essential forage fish.',
-    whyItMatters: {
-      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
-      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
-    },
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
-  },
-  {
-    id: 'surf-smelt',
-    name: 'Surf Smelt',
-    description: 'Shoreline habitat relevance for Surf smelt',
-    category: 'fish-habitat',
-    source: '/data/surf-smelt.geojson',
-    visible: false,
-    style: {
-      fillColor: '#06B6D4',
-      fillOpacity: 0,
-      strokeColor: '#06B6D4',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Smelt', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Smelt', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Surf smelt spawn on mixed sand-gravel beaches in the upper intertidal zone. Like sand lance, their spawning habitat is directly threatened by shoreline hardening and development.',
-    whyItMatters: {
-      text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.',
-      source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
+    whyItMattersByMode: {
+      herring: { text: 'Herring, crucial for marine food webs, spawn on eelgrass habitat in just a few locations in San Juan County that are also popular with boaters including Eastsound and West Sound, Blind Bay, Mud Bay, and Hunter Bay. Eelgrass, a vital marine habitat in the Salish Sea, supports Dungeness crabs, Chinook salmon, Pacific herring, and ultimately the Southern Resident killer whales.', source: { credit: 'Become a Green Boater Today (sanjuans.org)', url: 'https://sanjuans.org/become-a-green-boater-today/' } },
+      smelt: { text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.', source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' } },
+      'sand-lance': { text: 'Forage fish are small schooling fish that are eaten by larger fish, seabirds, and marine mammals. Forage fish are staples in the diets of Chinook and Coho salmon, lingcod, Marbled Murrelets, Rhinoceros Auklets, and Minke whales. Forage fish utilize the same shoreline areas that humans do, which makes them vulnerable to modifications such as bulkheads, docks, roads, and the removal of vegetation. A NOAA Fisheries study in northern Puget Sound found that surf smelt egg survival was reduced by 50% in places where the beach habitat was both warmer and drier as a result of the presence of hard armored bulkheads and the absence of trees and shrubs.', source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' } },
     },
     sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
@@ -352,30 +235,6 @@ export const layerConfigs: LayerConfig[] = [
     sourceCredit: 'Washington Department of Fish and Wildlife / Puget Sound Ecosystem Monitoring Program (PSEMP) surveys',
     sourceUrl:
       'https://geodataservices.wdfw.wa.gov/arcgis/rest/services/WP_WildlifeSurveys/PSEMP/MapServer',
-  },
-  {
-    id: 'lingcod-greenling',
-    name: 'Lingcod & Greenling',
-    description: 'Shoreline habitat relevance for Lingcod and Greenling (Hexagrammidae)',
-    category: 'fish-habitat',
-    source: '/data/lingcod-greenling.geojson',
-    visible: false,
-    style: {
-      fillColor: '#65A30D',
-      fillOpacity: 0,
-      strokeColor: '#65A30D',
-      strokeWeight: 2.5,
-    },
-    popupFields: [
-      { key: 'Name', label: 'Location' },
-      { key: 'HRM_Hex', label: 'Habitat Relevance (High)' },
-      { key: 'LRM_Hex', label: 'Habitat Relevance (Low)' },
-      { key: 'GeoUnit', label: 'Geomorphic Unit' },
-      { key: 'RITT_SysTy', label: 'System Type' },
-      { key: 'RITT_SubTy', label: 'Sub Type' },
-    ],
-    standardMessage: 'Lingcod and greenling use rocky nearshore habitats for spawning and juvenile rearing. Kelp forests and rocky reefs are essential for their life cycle.',
-    sourceCredit: 'Beamer & Fresh 2012, Skagit River System Cooperative (juvenile salmon and forage fish shoreline surveys, 2008–2009)',
   },
 
   // === Ecological Layers ===
@@ -1022,7 +881,7 @@ export const layerConfigs: LayerConfig[] = [
     description: 'Restoration, riparian, and in/over-water structure projects by Friends of the San Juans',
     category: 'friends-data',
     source: '/data/friends-projects.geojson',
-    visible: true, // always on: this is Friends' own work on the map
+    visible: false, // off on the main map (client, Sept 2026); in the picker under Explore more data
     markerIcon: MARKER_ICONS.friends,
     markerIconByProperty: { property: 'kind', icons: FRIENDS_PROJECT_ICONS },
     markerScale: 1.5, // hero layer: half again the size of every other pin
@@ -1047,8 +906,14 @@ export const layerConfigs: LayerConfig[] = [
       { key: 'LINEARFEET_SHORELINE', label: 'Shoreline restored (ft)' },
       { key: 'ACRES_PROTECTED', label: 'Acres protected' },
       { key: 'SQFT_HABITATRESTORED', label: 'Habitat restored (sq ft)' },
+      { key: 'ARMOR_LENGTH_FT', label: 'Armor length (ft)' },
+      { key: 'ARMOR_MATERIAL', label: 'Armor material' },
+      { key: 'ARMOR_WITH', label: 'Armor associated with' },
+      { key: 'ARMOR_CONDITION', label: 'Armor condition' },
+      { key: 'ARMOR_CONDITION_NOTE', label: 'Condition note' },
       { key: 'AMOUNT', label: 'Structures' },
       { key: 'LINK', label: 'Project page' },
+      { key: 'FEATURE_ID', label: 'Feature ID' },
     ],
     standardMessage: "Projects completed by Friends of the San Juans and partners: armor removal, beach and tidal-marsh restoration, culvert replacement, riparian planting, and eelgrass-friendly upgrades to mooring buoys, docks, and pilings. Click a project for its story.",
     sourceCredit: 'Friends of the San Juans restoration program',
