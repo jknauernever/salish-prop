@@ -55,6 +55,32 @@ const TILE_EXTENT: [number, number, number, number] = [-123.35, 48.33, -122.65, 
 
 type RGBA = [number, number, number, number];
 
+/**
+ * Which vector tiles exist (scripts/build-tile-manifest.py). The tilesets only
+ * cover land, so most tiles in a San Juans viewport are missing; known-missing
+ * tiles are answered locally with an empty tile instead of a request that 404s.
+ * Until the manifest arrives (or if it fails to load) every tile is requested.
+ */
+type TileManifest = Record<string, Record<string, Record<string, [number, number][]>>>;
+let tileManifest: TileManifest | null = null;
+fetch('/data/tile-manifest.json')
+  .then(r => (r.ok ? r.json() : null))
+  .then(m => { tileManifest = m; })
+  .catch(() => { /* keep requesting everything */ });
+
+function tileExists(url: string): boolean {
+  if (!tileManifest) return true;
+  const m = /\/tiles\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.pbf/.exec(url);
+  if (!m) return true;
+  const set = tileManifest[m[1]];
+  if (!set) return true;
+  const y = Number(m[4]);
+  return (set[m[2]]?.[m[3]] ?? []).some(([a, b]) => y >= a && y <= b);
+}
+
+const tileFetch = (url: string, options?: RequestInit): Promise<Response> =>
+  tileExists(url) ? fetch(url, options) : Promise.resolve(new Response(new ArrayBuffer(0), { status: 200 }));
+
 /** A pin: position, the source feature's properties, and its icon URL. */
 export interface DeckPin {
   position: [number, number];
@@ -352,7 +378,7 @@ class DeckManager {
       // map is zoomed out past it (instead of loading nothing), so a layer
       // gate like 13.5 works even though the tiles start at z13.
       extent: TILE_EXTENT,
-      loadOptions: { mvt: { layers: [t.sourceLayer] } },
+      loadOptions: { fetch: tileFetch, mvt: { layers: [t.sourceLayer] } },
       uniqueIdProperty: t.idProperty ?? 'FID',
       visible: e.visible && !this.gated(e),
       pickable: true,
@@ -572,7 +598,10 @@ class DeckManager {
     // within each band by zIndex; then every layer's pins; then Friends'
     // projects (their points and pins), which nothing may cover; then hover.
     const entries = Array.from(this.entries.values());
-    const tiles = entries.filter(e => e.config.tiles).map(e => this.buildMvt(e));
+    // Tile layers that are off or behind their zoom gate are left out entirely: an MVTLayer
+    // downloads the tiles in view even while invisible (hundreds at county zoom)
+    const tiles = entries.filter(e => e.config.tiles && e.visible && !this.gated(e)).map(e => this.buildMvt(e));
+    for (const e of entries) if (e.config.tiles && !(e.visible && !this.gated(e))) this.live.delete(e.config.id);
     const geoEntries = entries
       .filter(e => e.data)
       .sort((a, b) => (this.geometryRank(a) - this.geometryRank(b)) || ((a.config.style.zIndex ?? 0) - (b.config.style.zIndex ?? 0)));

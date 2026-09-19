@@ -1040,8 +1040,9 @@ export function useLayers(
           // --- GPU (deck.gl) layer: no google.maps.Data at all ---
           const deck = getDeckManager(map);
           registerDeckManager(deck);
-          if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
           deck.setGeoJson(config, data, visibleNow);
+          // After setGeoJson: the override needs the entry to exist (a share link's zo= was dropped otherwise)
+          if (zoomOverridesRef.current.has(config.id)) deck.setGateOverride(config.id, true);
           if (config.fishUse) deck.setVizMode(config.id, vizModeRef.current.get(config.id));
           warmHitCache(data);
 
