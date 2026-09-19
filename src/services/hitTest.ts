@@ -106,7 +106,7 @@ export function warmHitCache(data: GeoJSON.FeatureCollection): void {
  * Features within `tolPx` of the click on every visible, loaded GeoJSON
  * layer (closest first). Layers that manage their own popups are skipped.
  */
-export function featuresNear(layers: LayerState[], lat: number, lng: number, zoom: number, tolPx = 12): HitCandidate[] {
+export function featuresNear(layers: LayerState[], lat: number, lng: number, zoom: number, tolPx = 12, zoomOverrides?: ReadonlySet<string>): HitCandidate[] {
   const [px, py] = worldPx(lng, lat, zoom);
   // bbox test in degrees: tolerance converted at this latitude
   const degPerPx = 360 / (256 * Math.pow(2, zoom));
@@ -115,6 +115,8 @@ export function featuresNear(layers: LayerState[], lat: number, lng: number, zoo
   for (const layer of layers) {
     const { config } = layer;
     if (!layer.visible || !layer.loaded || !layer.geojsonData) continue;
+    // Switched on but not drawn at this zoom (behind its minZoom): it is not "here" as far as the person can see
+    if (config.minZoom != null && zoom < config.minZoom && !zoomOverrides?.has(config.id)) continue;
     if (config.id === 'ebird-hotspots' || config.source === 'observations:multi' || config.placeholder) continue;
     for (const f of layer.geojsonData.features) {
       const b = bboxOf(f);

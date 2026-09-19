@@ -58,5 +58,23 @@ export function legendGroupFor(layerId: string): LegendGroup | undefined {
   return LEGEND_GROUPS.find(g => g.layers.includes(layerId));
 }
 
+/**
+ * Position of each layer in the "On the map" legend, for the given visible layer ids (in config
+ * order): pinned layers first, the rest in config order, and a group's members together where
+ * the group's first member falls. The "what's here" list uses it so both read in the same order.
+ */
+export function legendOrder(visibleIds: string[]): Map<string, number> {
+  const rank = (id: string) => { const i = LEGEND_FIRST.indexOf(id); return i === -1 ? LEGEND_FIRST.length : i; };
+  const sorted = visibleIds.map((id, i) => ({ id, i })).sort((a, b) => rank(a.id) - rank(b.id) || a.i - b.i).map(x => x.id);
+  const order = new Map<string, number>();
+  for (const id of sorted) {
+    if (order.has(id)) continue;
+    const g = legendGroupFor(id);
+    const members = g ? g.layers.filter(m => visibleIds.includes(m)) : [id];
+    for (const m of members) if (!order.has(m)) order.set(m, order.size);
+  }
+  return order;
+}
+
 /** Layers pinned to the top of the "On the map" legend, in this order; everything else follows in config order. */
 export const LEGEND_FIRST: string[] = ['friends-projects', 'friends-bull-kelp', 'friends-deepwater-eelgrass'];

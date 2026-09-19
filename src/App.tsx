@@ -207,7 +207,7 @@ function AppContent({ sidebarOpen, onOpenSidebar, placeSelectedRef, preset, laye
         radiusMeters={402}
       />
 
-      <FeaturePopup layers={layers} propertyClick={preset?.features.propertyClick ?? true} />
+      <FeaturePopup layers={layers} propertyClick={preset?.features.propertyClick ?? true} zoomOverrides={zoomOverrides} />
       <ForestLossPopup layers={layers} />
       <DistAlertPopup layers={layers} />
 

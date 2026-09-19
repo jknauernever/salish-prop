@@ -16,6 +16,7 @@ import { countIntersectingBuildings, nearshoreFromStats } from '../../services/p
 import { getNearshoreStats, DEFAULT_NEARSHORE_META } from '../../services/nearshoreStats';
 import { fetchParcelDetail, findParcelAtPoint, getFidToTaxArea } from '../../services/parcelDetail';
 import { DECK_CLICK_EVENT, type DeckClickDetail } from './DeckLayers';
+import { legendOrder } from '../../config/legendGroups';
 import { FISH_TIERS, FISH_USE_NAME, fishIconSvg, fishSpeciesForCode, FISH_SPECIES, fishUseEntries, fishUseLinesHtml, fishUseListHtml, fishTierPill, fishTier, visibleFishCodes, type FishUseEntry } from '../../config/fishUse';
 import { getFriendsContentSync, preloadFriendsContent, articleForUrl, articleForProject, articlesForFeature, photosForSubject, articleDate, type ContentItem } from '../../services/friendsContent';
 import { SHOREFORM_TYPES } from '../../config/shoreforms';
@@ -164,6 +165,8 @@ function emitParcelPopupState(detail: ParcelPopupStateDetail) {
 interface FeaturePopupProps {
   layers: LayerState[];
   propertyClick?: boolean;
+  /** Layers shown below their minZoom on request; others behind their zoom gate are left out of "what's here". */
+  zoomOverrides?: ReadonlySet<string>;
 }
 
 // Highlight helpers live in featureHighlight.ts so other popups (e.g. ForestLossPopup)
@@ -173,7 +176,13 @@ import { highlightFeatureGeometry, clearFeatureHighlight } from './featureHighli
 /** Species codes the Fish Use line is colored by right now (they lead the hover label, chooser row and popup). */
 let fishCodesOn: string[] = [];
 
-export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps) {
+/** Current layers, for ordering the chooser like the legend. */
+let layersForOrder: LayerState[] = [];
+
+/** Layers the person asked to see below their minZoom (mirrors useLayers; read by the chooser). */
+let zoomOverridesNow: ReadonlySet<string> = new Set();
+
+export function FeaturePopup({ layers, propertyClick = true, zoomOverrides }: FeaturePopupProps) {
   const { map } = useMap();
   const infoWindowRef = useRef<PopupHost | null>(null);
   const layersRef = useRef(layers);
@@ -217,6 +226,8 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
   useEffect(() => {
     if (!map) return;
     fishCodesOn = visibleFishCodes(layers);
+    zoomOverridesNow = zoomOverrides ?? new Set();
+    layersForOrder = layers;
 
     const listeners: google.maps.MapsEventListener[] = [];
 
@@ -381,7 +392,7 @@ export function FeaturePopup({ layers, propertyClick = true }: FeaturePopupProps
         window.removeEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
       }
     };
-  }, [map, layers, propertyClick]);
+  }, [map, layers, propertyClick, zoomOverrides]);
 
   return null;
 }
@@ -842,6 +853,7 @@ function setAddressLink(
 // ---------------------------------------------------------------------------
 
 interface ChooserRow {
+  layerId: string;
   swatch: string; // small inline HTML swatch
   layerName: string;
   title: string;
@@ -880,6 +892,7 @@ function rowFor(layer: LayerState, props: Record<string, unknown>): Omit<Chooser
     // The species the line is colored by, with its priority level (all seven under "Highest of all")
     const entries = fishUseEntries(props, fishCodesOn);
     return {
+      layerId: layer.config.id,
       swatch: fishIconSvg(16),
       layerName: FISH_USE_NAME,
       title: entries.map(e => `${e.species.name}: ${FISH_TIERS[e.tier].label}`).join(', '),
@@ -892,7 +905,7 @@ function rowFor(layer: LayerState, props: Record<string, unknown>): Omit<Chooser
     : layer.config.id === 'building-footprints'
       ? 'Building'
       : (spec?.title?.(props) || fallbackTitle(layer.config, props)).replace(/\s+/g, ' ');
-  return { swatch: swatchFor(layer.config), layerName: layer.config.name, title };
+  return { layerId: layer.config.id, swatch: swatchFor(layer.config), layerName: layer.config.name, title };
 }
 
 function sameProps(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
@@ -935,7 +948,7 @@ function chooserRows(
   const seen = new Set<string>();
   const clicked = allLayers.find(l => l.config.id === skip.layerId);
   if (clicked) { seen.add(skip.layerId); seen.add(chooserKey(clicked, null, skip.props)); }
-  const hits: HitCandidate[] = featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX);
+  const hits: HitCandidate[] = featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX, zoomOverridesNow);
   for (const h of hits) {
     const props = (h.feature.properties ?? {}) as Record<string, unknown>;
     if (h.layer.config.id === skip.layerId && sameProps(props, skip.props)) continue;
@@ -965,6 +978,7 @@ function chooserRows(
       const props = (here.properties ?? {}) as Record<string, unknown>;
       const geo: GeoJSON.Feature = { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [0, 0] } };
       rows.push({
+        layerId: parcels.config.id,
         swatch: swatchFor(parcels.config),
         layerName: parcels.config.name,
         title: props.PIN ? `Parcel ${String(props.PIN)}` : 'Property report',
@@ -998,12 +1012,16 @@ export function chooserHtml(rows: Omit<ChooserRow, 'open'>[]): string {
 export function chooserRowsAt(allLayers: LayerState[], lat: number, lng: number, zoom: number): Omit<ChooserRow, 'open'>[] {
   fishCodesOn = visibleFishCodes(allLayers);
   const seen = new Set<string>();
-  return featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX)
+  return featuresNear(allLayers, lat, lng, zoom, CHOOSER_TOL_PX, zoomOverridesNow)
     .filter(h => { const k = chooserKey(h.layer, h.feature, (h.feature.properties ?? {}) as Record<string, unknown>); if (seen.has(k)) return false; seen.add(k); return true; })
     .map(h => rowFor(h.layer, (h.feature.properties ?? {}) as Record<string, unknown>));
 }
 
-function openClickChooser(map: google.maps.Map, infoWindowRef: React.RefObject<PopupHost | null>, latLng: google.maps.LatLng, rows: ChooserRow[]): void {
+function openClickChooser(map: google.maps.Map, infoWindowRef: React.RefObject<PopupHost | null>, latLng: google.maps.LatLng, unordered: ChooserRow[]): void {
+  // Same order as the "On the map" legend, so the list and the legend read alike
+  const order = legendOrder(layersForOrder.filter(l => l.visible && !l.config.placeholder).map(l => l.config.id));
+  const at = (r: ChooserRow) => order.get(r.layerId) ?? Number.MAX_SAFE_INTEGER;
+  const rows = unordered.map((r, i) => ({ r, i })).sort((a, b) => at(a.r) - at(b.r) || a.i - b.i).map(x => x.r);
   chooserOpen = rows;
   clearFeatureHighlight();
   const html = chooserHtml(rows);
