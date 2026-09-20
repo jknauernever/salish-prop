@@ -19,6 +19,10 @@
  */
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
 import { MVTLayer } from '@deck.gl/geo-layers';
+// loaders.gl would otherwise fetch this worker from unpkg.com at runtime —
+// third-party code the CSP blocks. Vite serves the installed copy from our own
+// origin. (Relative path: the package's exports map hides dist/ from bare imports.)
+import mvtWorkerUrl from '../../../node_modules/@loaders.gl/mvt/dist/mvt-worker.js?url';
 import { GeoJsonLayer, IconLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { LayerConfig } from '../../types';
@@ -392,7 +396,7 @@ class DeckManager {
       // map is zoomed out past it (instead of loading nothing), so a layer
       // gate like 13.5 works even though the tiles start at z13.
       extent: TILE_EXTENT,
-      loadOptions: { fetch: tileFetch, mvt: { layers: [t.sourceLayer] } },
+      loadOptions: { fetch: tileFetch, mvt: { layers: [t.sourceLayer], workerUrl: mvtWorkerUrl } },
       uniqueIdProperty: t.idProperty ?? 'FID',
       visible: e.visible && !this.gated(e),
       pickable: true,
