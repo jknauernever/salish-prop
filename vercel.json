@@ -6,8 +6,7 @@
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "camera=(), microphone=(), payment=(), usb=()",
-        "Content-Security-Policy": "frame-ancestors 'self' https://sanjuans.org https://*.sanjuans.org; object-src 'none'; base-uri 'self'",
-        "Content-Security-Policy-Report-Only": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://*.googleapis.com https://*.gstatic.com *.google.com https://*.ggpht.com *.googleusercontent.com blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' data: blob: https://*.googleapis.com *.google.com https://*.gstatic.com https://us-west1-salish-sea-property-mapper.cloudfunctions.net https://api.ebird.org https://api.gbif.org https://api.inaturalist.org https://geodataservices.wdfw.wa.gov; worker-src 'self' blob:; frame-src *.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://*.googleapis.com https://*.gstatic.com *.google.com https://*.ggpht.com *.googleusercontent.com blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' data: blob: https://*.googleapis.com *.google.com https://*.gstatic.com https://us-west1-salish-sea-property-mapper.cloudfunctions.net https://api.ebird.org https://api.gbif.org https://api.inaturalist.org https://geodataservices.wdfw.wa.gov; worker-src 'self' blob:; frame-src *.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://sanjuans.org https://*.sanjuans.org"
       },
       "continue": true
     },
