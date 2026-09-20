@@ -237,3 +237,7 @@ body {
 .address-search-container gmp-place-autocomplete { display: block; width: 100%; min-width: 0; }
 /* In the phone sheet the sheet itself scrolls; tab panels must not add a second scroller */
 .ssx-sheet .ssx-panel { min-height: 0 !important; max-height: none !important; overflow: visible !important; }
+
+/* eBird species link in the Birds tab (hover colour was an inline handler; the CSP forbids those). */
+.ssx-bird-link { color: #1A1A1A; text-decoration: none; }
+.ssx-bird-link:hover { color: #036E88; }

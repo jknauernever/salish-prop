@@ -300,9 +300,28 @@ export function FeaturePopup({ layers, propertyClick = true, zoomOverrides }: Fe
       }
     });
 
-    // Register global handlers for "More info" links in popup cards
-    (window as unknown as Record<string, unknown>).__openHabitatInfo = openHabitatInfoWindow;
-    (window as unknown as Record<string, unknown>).__openNdviInfo = openNdviInfoWindow;
+    // Popup HTML carries no inline handlers (the CSP forbids them): "More
+    // info" links are tagged data-ssx-action and image fallbacks
+    // data-ssx-onerror, both handled by these delegated listeners.
+    const onPopupAction = (e: MouseEvent) => {
+      const el = (e.target as Element | null)?.closest?.('[data-ssx-action]');
+      if (!el) return;
+      e.preventDefault();
+      const action = el.getAttribute('data-ssx-action');
+      if (action === 'habitat-info') openHabitatInfoWindow();
+      else if (action === 'ndvi-info') openNdviInfoWindow();
+    };
+    // `error` doesn't bubble, so listen in the capture phase.
+    const onPopupImgError = (e: Event) => {
+      const img = e.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      const mode = img.getAttribute('data-ssx-onerror');
+      if (mode === 'hide-photo') img.closest('.ssx-photo')?.setAttribute('hidden', '');
+      else if (mode === 'remove-slide') img.closest('.ssx-slide')?.remove();
+      else if (mode === 'remove') img.remove();
+    };
+    document.addEventListener('click', onPopupAction);
+    document.addEventListener('error', onPopupImgError, true);
 
     // Listen for programmatic popup requests (e.g. from address search) — only when property details are enabled
     const popupHandler = propertyClick
@@ -386,8 +405,8 @@ export function FeaturePopup({ layers, propertyClick = true, zoomOverrides }: Fe
       hideHoverLabel();
       window.removeEventListener(DECK_CLICK_EVENT, onDeckClick);
       listeners.forEach(l => google.maps.event.removeListener(l));
-      delete (window as unknown as Record<string, unknown>).__openHabitatInfo;
-      delete (window as unknown as Record<string, unknown>).__openNdviInfo;
+      document.removeEventListener('click', onPopupAction);
+      document.removeEventListener('error', onPopupImgError, true);
       if (popupHandler) {
         window.removeEventListener(OPEN_PARCEL_POPUP_EVENT, popupHandler);
       }
@@ -432,7 +451,7 @@ function openHabitatInfoWindow() {
   </style>
 </head>
 <body>
-  <button class="close-btn" onclick="window.close()">Close</button>
+  <button class="close-btn">Close</button>
   <h1>Priority Shorelines for Fish: Scores and Levels</h1>
   <p class="subtitle">Technical reference for fish and forage fish habitat data displayed in the Salish Sea Explorer</p>
 
@@ -543,6 +562,7 @@ function openHabitatInfoWindow() {
 </body>
 </html>`);
   w.document.close();
+  w.document.querySelector('.close-btn')?.addEventListener('click', () => w.close());
 }
 
 // ---------------------------------------------------------------------------
@@ -582,7 +602,7 @@ function openNdviInfoWindow() {
   </style>
 </head>
 <body>
-  <button class="close-btn" onclick="window.close()">Close</button>
+  <button class="close-btn">Close</button>
   <h1>Greenery &amp; Tree Cover</h1>
   <p class="subtitle">Technical reference for vegetation analysis displayed in the Salish Sea Explorer</p>
 
@@ -759,6 +779,7 @@ function openNdviInfoWindow() {
 </body>
 </html>`);
   w.document.close();
+  w.document.querySelector('.close-btn')?.addEventListener('click', () => w.close());
 }
 
 // ---------------------------------------------------------------------------
@@ -1608,7 +1629,7 @@ function renderBirdsTab(
     const rows = results.map(sp => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid ${COLOR.border};">
         <div style="min-width:0;">
-          <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="https://ebird.org/species/${encodeURIComponent(sp.speciesCode)}" target="_blank" style="color:${COLOR.dark};text-decoration:none;" onmouseover="this.style.color='${COLOR.teal}'" onmouseout="this.style.color='${COLOR.dark}'">${esc(sp.comName)}</a></div>
+          <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="https://ebird.org/species/${encodeURIComponent(sp.speciesCode)}" target="_blank" rel="noopener noreferrer" class="ssx-bird-link">${esc(sp.comName)}</a></div>
           <div style="font-size:13px;color:${COLOR.mid};font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(sp.sciName)}</div>
         </div>
         <div style="
@@ -2132,7 +2153,7 @@ function fromFriendsHtml(articles: ContentItem[], skipSummaryId?: string): strin
   if (!articles.length) return '';
   const rows = articles.map((a, i) => `
     <a class="ssx-art" href="${escHtml(a.url)}" target="_blank" rel="noopener noreferrer">
-      ${a.image ? `<img class="ssx-art-img" src="${escHtml(a.image.url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      ${a.image ? `<img class="ssx-art-img" src="${escHtml(a.image.url)}" alt="" loading="lazy" data-ssx-onerror="remove">` : ''}
       <span class="ssx-art-body">
         <span class="ssx-art-title">${escHtml(a.title)}</span>
         <span class="ssx-art-meta">${escHtml(articleDate(a.date))}</span>
@@ -2234,7 +2255,7 @@ function fishUsePopupParts(props: Record<string, unknown>): { title: string; sub
   const unit = String(props.GeoUnit ?? '').trim();
   const area = String(props.SiteType2 ?? '').trim();
   const entries = fishUseEntries(props);
-  const moreInfo = `<a href="#" style="color:${COLOR.teal};text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();window.__openHabitatInfo();">More about this data &rarr;</a>`;
+  const moreInfo = `<a href="#" style="color:${COLOR.teal};text-decoration:underline;cursor:pointer;" data-ssx-action="habitat-info">More about this data &rarr;</a>`;
   const lead = `
     ${sectionHeading('Priority by species')}
     ${fishUseListHtml(entries, fishCodesOn)}
@@ -2685,7 +2706,7 @@ function buildGreeneryCard(stats: NdviStats, isWaterfront: boolean, island: Isla
     variabilityNote = `<p style="font-size:14px;color:${COLOR.dark};margin:10px 0 0 0;">This property has a mix of open and heavily vegetated areas.</p>`;
   }
 
-  const moreInfoLink = `<div style="margin-top:10px;"><a href="#" onclick="window.__openNdviInfo?.();return false;" style="font-size:14px;color:${COLOR.teal};font-weight:600;text-decoration:none;">More about this data \u2192</a></div>`;
+  const moreInfoLink = `<div style="margin-top:10px;"><a href="#" data-ssx-action="ndvi-info" style="font-size:14px;color:${COLOR.teal};font-weight:600;text-decoration:none;">More about this data \u2192</a></div>`;
 
   return `
     <div style="${CARD}">
@@ -2709,7 +2730,7 @@ function buildFishCard(entries: FishUseEntry[], withinFt?: number, distFt?: numb
 
   const hrmDesc = `The shorelines of the San Juans are critical rearing, resting and feeding habitat for out-migrating juvenile salmon from rivers across Puget Sound and southern British Columbia, as well as other fish species that support marine food webs. Priority levels show where each species is more likely to be both present and abundant, relative to other places in the county. Salmon levels are for rearing juveniles. Nothing is ranked low: fish can and do use every shoreline.`;
 
-  const moreInfoLink = `<a href="#" style="color:${COLOR.teal};font-size:14px;text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();window.__openHabitatInfo();">More about this data &rarr;</a>`;
+  const moreInfoLink = `<a href="#" style="color:${COLOR.teal};font-size:14px;text-decoration:underline;cursor:pointer;" data-ssx-action="habitat-info">More about this data &rarr;</a>`;
 
   return `
     <div style="${CARD}">
