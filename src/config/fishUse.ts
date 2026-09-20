@@ -56,9 +56,9 @@ export interface FishSpecies {
 }
 
 export const FISH_SPECIES: FishSpecies[] = [
-  { mode: 'chinook', legacyLayerId: 'chinook-salmon', code: 'Ck', name: 'Juvenile Chinook', moderateMax: 0.084656, highMax: 0.214912 },
-  { mode: 'chum', legacyLayerId: 'chum-salmon', code: 'Chum', name: 'Juvenile Chum', moderateMax: 0.323232, highMax: 0.611842 },
-  { mode: 'pink', legacyLayerId: 'pink-salmon', code: 'Pk', name: 'Juvenile Pink', moderateMax: 0.300752, highMax: 0.477273 },
+  { mode: 'chinook', legacyLayerId: 'chinook-salmon', code: 'Ck', name: 'Juvenile Chinook Salmon', moderateMax: 0.084656, highMax: 0.214912 },
+  { mode: 'chum', legacyLayerId: 'chum-salmon', code: 'Chum', name: 'Juvenile Chum Salmon', moderateMax: 0.323232, highMax: 0.611842 },
+  { mode: 'pink', legacyLayerId: 'pink-salmon', code: 'Pk', name: 'Juvenile Pink Salmon', moderateMax: 0.300752, highMax: 0.477273 },
   { mode: 'herring', legacyLayerId: 'pacific-herring', code: 'Herr', name: 'Pacific herring', moderateMax: 0.0888889, highMax: 0.208333 },
   { mode: 'smelt', legacyLayerId: 'surf-smelt', code: 'Smelt', name: 'Surf smelt', moderateMax: 0.073333, highMax: 0.2 },
   { mode: 'sand-lance', legacyLayerId: 'pacific-sand-lance', code: 'Lance', name: 'Pacific sand lance', moderateMax: 0.113636, highMax: 0.27778 },
@@ -172,7 +172,7 @@ const dot = (tier: FishTier): string =>
   `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${FISH_TIERS[tier].color};box-shadow:0 0 0 1px rgba(0,0,0,.25);flex-shrink:0;"></span>`;
 
 /**
- * Compact lines for the hover label and chooser row: "● Juvenile Chinook · Highest priority".
+ * Compact lines for the hover label and chooser row: "● Juvenile Chinook Salmon · Highest priority".
  * With `emphasize` (codes of the species the line is colored by) those come
  * first at full strength and the rest follow, quieter: the shoreline matters to all seven.
  */

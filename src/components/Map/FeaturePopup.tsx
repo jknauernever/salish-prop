@@ -484,9 +484,9 @@ function openHabitatInfoWindow() {
   <h3>Species Surveyed</h3>
   <table>
     <tr><th>Species</th><th>HRM Field</th><th>Significance</th></tr>
-    <tr><td>Juvenile Chinook</td><td>HRM_Ck</td><td>ESA-listed as Threatened; juveniles rear in nearshore habitats</td></tr>
-    <tr><td>Juvenile Chum</td><td>HRM_Chum</td><td>Depend on estuarine/nearshore transition zones</td></tr>
-    <tr><td>Juvenile Pink</td><td>HRM_Pk</td><td>Minimal freshwater time; nearshore-critical during outmigration</td></tr>
+    <tr><td>Juvenile Chinook Salmon</td><td>HRM_Ck</td><td>ESA-listed as Threatened; juveniles rear in nearshore habitats</td></tr>
+    <tr><td>Juvenile Chum Salmon</td><td>HRM_Chum</td><td>Depend on estuarine/nearshore transition zones</td></tr>
+    <tr><td>Juvenile Pink Salmon</td><td>HRM_Pk</td><td>Minimal freshwater time; nearshore-critical during outmigration</td></tr>
     <tr><td>Pacific herring</td><td>HRM_Herr</td><td>Keystone forage fish; spawn on eelgrass/algae</td></tr>
     <tr><td>Pacific sand lance</td><td>HRM_Lance</td><td>Spawn in upper intertidal sand-gravel beaches</td></tr>
     <tr><td>Surf smelt</td><td>HRM_Smelt</td><td>Spawn on mixed sand-gravel beaches</td></tr>
@@ -2171,6 +2171,9 @@ export function buildFeaturePopupHtml(
 ): string {
   const { config } = layer;
   const spec = POPUP_SPECS[config.id];
+  if (spec?.allFields) {
+    fields = extractAllFeatureProperties({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [0, 0] } }, config.popupFields, true);
+  }
   const accent = config.style.strokeColor || config.style.fillColor || '#0297BA';
   const swatch = config.markerIcon ? 'point' : (config.style.fillOpacity ?? 0) > 0.05 ? 'fill' : 'line';
 
@@ -2220,7 +2223,7 @@ export function buildFeaturePopupHtml(
   // article (its WordPress excerpt), or the layer's sourced whyItMatters text.
   // Layers without sourced text show no story block at all.
   const byMode = config.whyItMattersByMode?.[layer.vizMode ?? ''];
-  const story = spec?.story?.(props)
+  const story = spec?.dataOnly ? spec.story?.(props) : spec?.story?.(props)
     ?? (own?.excerpt ? { kicker: 'About this project', html: escHtml(own.excerpt), source: { credit: own.title, url: own.url } } : undefined)
     ?? (byMode ? { kicker: 'Why it matters', html: escHtml(byMode.text), source: byMode.source } : undefined)
     ?? (config.whyItMatters ? { kicker: 'Why it matters', html: escHtml(config.whyItMatters.text), source: config.whyItMatters.source } : undefined);

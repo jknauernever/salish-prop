@@ -11,7 +11,7 @@
 
 import type { LayerConfig } from '../types';
 import type { PopupBlock, PopupChip, PopupPhoto, PopupStat } from '../components/Map/popupFrame';
-import { SHOREFORM_TYPES, shoreformLabel, shoreformGroup } from './shoreforms';
+import { shoreformLabel, shoreformGroup } from './shoreforms';
 
 type Props = Record<string, unknown>;
 
@@ -32,6 +32,8 @@ export interface PopupSpec {
    * content from Friends", no text borrowed from a matched website article.
    */
   dataOnly?: boolean;
+  /** List every attribute in the record, blank values included, so data gaps stay visible. */
+  allFields?: boolean;
   /** Show the all-details table open instead of behind its toggle. */
   detailsOpen?: boolean;
   /** Skip the all-details table (layers whose fields are all shown as facts). */
@@ -293,6 +295,11 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
   },
 
   'friends-shoreline-geology': {
+    // Tina, Sept 2026: only what the shoreform dataset says — no photos, related website content or guide text;
+    // every attribute is listed, blanks included, so Friends can see the quality of the data
+    dataOnly: true,
+    allFields: true,
+    detailsOpen: true,
     title: p => shoreformLabel(str(p.PIAT_shoreforms)) || 'Shoreline unit',
     subtitle: p => {
       const g = shoreformGroup(str(p.PIAT_shoreforms));
@@ -306,24 +313,8 @@ export const POPUP_SPECS: Record<string, PopupSpec> = {
       if (r) chips.push({ label: `Restoration priority: ${r}`, tone: r === 'high' ? 'warn' : 'default' });
       const pr = HML[str(p.PIATprotection).toUpperCase()];
       if (pr) chips.push({ label: `Protection priority: ${pr}`, tone: pr === 'high' ? 'teal' : 'default' });
-      const fu = HML[str(p.FISHuse_SF).toUpperCase()];
-      if (fu) chips.push({ label: `Fish use: ${fu}` });
-      const ff = YN(p.FFhab);
-      if (ff != null) chips.push({ label: ff ? 'Forage fish habitat' : 'Not forage fish habitat', tone: ff ? 'on' : 'default' });
       return chips;
     },
-    story: p => {
-      const t = SHOREFORM_TYPES[str(p.PIAT_shoreforms)];
-      if (!t) return undefined;
-      // Class definition from Friends' shoreform mapping, then Friends' own
-      // words on why bluffs and beaches matter (Living with the Shoreline).
-      return {
-        kicker: t.label,
-        html: `<p>${t.description}</p><div class="ssx-cite">&mdash; Friends of the San Juans geomorphic shoreform mapping</div><p style="margin-top:10px">Feeder bluffs provide the sand that forms and maintains beaches and marine habitats. Experts estimate that over 90% of the sand and gravel that comprise the beaches of Puget Sound and the San Juans comes from eroding banks and bluffs. If your property has a feeder bluff, be sure to set structures far away from the bluff.</p>`,
-        source: { credit: 'Living with the Shoreline (Friends of the San Juans)', url: '/reports/living-with-the-shoreline.html' },
-      };
-    },
-    action: ACTIONS.shoreline,
   },
 
   'friends-armor': {

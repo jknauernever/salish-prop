@@ -55,6 +55,9 @@ const HIDDEN_KEYS = new Set([
   'image_path', 'img_id', 'Assessor', 'Tax_Info',
 ]);
 
+const BLANK = '(blank)';
+const isBlank = (raw: unknown) => raw == null || String(raw).trim() === '';
+
 function formatValue(key: string, label: string, raw: unknown): string {
   let value = String(raw).trim();
   // Format currency-like values
@@ -81,7 +84,9 @@ function humanizeKey(key: string): string {
 
 export function extractAllFeatureProperties(
   feature: GeoJSON.Feature,
-  configuredFields: PopupField[]
+  configuredFields: PopupField[],
+  /** Every attribute in the record, blank ones and housekeeping keys included (data-quality review). */
+  showAll = false,
 ): { label: string; value: string }[] {
   if (!feature.properties) return [];
 
@@ -93,17 +98,21 @@ export function extractAllFeatureProperties(
 
   for (const field of configuredFields) {
     const raw = feature.properties[field.key];
-    if (raw == null || raw === '' || String(raw).trim() === '') continue;
+    if (isBlank(raw)) {
+      if (!showAll || !(field.key in feature.properties)) continue;
+      results.push({ label: field.label, value: BLANK });
+      seenKeys.add(field.key);
+      continue;
+    }
     results.push({ label: field.label, value: formatValue(field.key, field.label, raw) });
     seenKeys.add(field.key);
   }
 
   for (const [key, raw] of Object.entries(feature.properties)) {
     if (seenKeys.has(key)) continue;
-    if (HIDDEN_KEYS.has(key)) continue;
-    if (raw == null || raw === '' || String(raw).trim() === '') continue;
+    if (!showAll && (HIDDEN_KEYS.has(key) || isBlank(raw))) continue;
     const label = labelMap.get(key) || humanizeKey(key);
-    results.push({ label, value: formatValue(key, label, raw) });
+    results.push({ label, value: isBlank(raw) ? BLANK : formatValue(key, label, raw) });
   }
 
   return results;
