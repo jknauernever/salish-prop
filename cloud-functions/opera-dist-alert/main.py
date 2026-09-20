@@ -21,6 +21,8 @@ GET /?lat=<lat>&lng=<lng>       → returns alert info at the click point:
 """
 from datetime import date, timedelta
 
+import logging
+
 import ee
 import google.auth
 import functions_framework
@@ -251,7 +253,15 @@ def get_tiles(request):
         lat = request.args.get('lat')
         lng = request.args.get('lng')
         if lat is not None and lng is not None:
-            return _handle_point_request(float(lat), float(lng))
+            try:
+                lat_f, lng_f = float(lat), float(lng)
+            except ValueError:
+                return (jsonify({'error': 'lat/lng must be numbers'}), 400, CORS_HEADERS)
+            # Only the county is served; anything else is wasted EE compute.
+            # (NaN fails both comparisons, so it is rejected here too.)
+            if not (48.0 <= lat_f <= 49.2 and -123.8 <= lng_f <= -122.2):
+                return (jsonify({'error': 'Point is outside the service area'}), 400, CORS_HEADERS)
+            return _handle_point_request(lat_f, lng_f)
 
         mode = (request.args.get('mode') or 'recency').lower()
         if mode == 'severity':
@@ -259,5 +269,7 @@ def get_tiles(request):
         if mode == 'status':
             return _handle_status()
         return _handle_recency()
-    except Exception as e:
-        return (jsonify({'error': str(e)}), 500, CORS_HEADERS)
+    except Exception:
+        # Details go to Cloud Logging, not to the caller.
+        logging.exception('request failed')
+        return (jsonify({'error': 'Internal error'}), 500, CORS_HEADERS)

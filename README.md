@@ -661,6 +661,8 @@ One function, two documents, switched on the request path (`/` = category tree, 
 | `POST` | Full save: validates token, JSON-schema-validates the payload (tree: id uniqueness; content: HTML sanitization), server-bumps `version` and `updated_at`, writes the JSON to GCS with `Cache-Control: no-cache, max-age=0` and refreshes the public-read ACL. |
 | `OPTIONS` | CORS preflight. |
 
+> **Security hardening (2026-09-19):** [`scripts/security-hardening.sh`](scripts/security-hardening.sh) moves `ADMIN_PASSWORD`, `OG_SIGNING_SECRET` and `GOOGLE_STATIC_MAPS_KEY` into Secret Manager, gives each function a least-privilege service account, and caps every function at 5 instances. Once it has run, it is the source of truth for the deploy flags of all five functions — a plain redeploy keeps those settings, but never pass the secrets as `--set-env-vars` again.
+
 Deploy (env vars `ADMIN_PASSWORD` / `GCS_BUCKET` persist across redeploys):
 
 ```bash

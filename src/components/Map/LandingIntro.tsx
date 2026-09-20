@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import DOMPurify from 'dompurify';
 import { isBlankHtml } from '../../services/siteContent';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
@@ -32,9 +33,20 @@ interface LandingIntroCardProps {
  * live preview so what admins see is exactly what the map shows.
  *
  * The HTML is sanitized server-side (allowlisted tags only) before it is
- * stored, so rendering it here is safe.
+ * stored. It is sanitized again here with the same allowlist, so a bucket
+ * object written by any other path still can't run script on the site.
  */
+const INTRO_SANITIZE = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a', 'ul', 'ol', 'li', 'h3', 'h4'],
+  ALLOWED_ATTR: ['href', 'title', 'target', 'rel'],
+  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
+  // DOMPurify tests every attribute value against the URI regexp unless the
+  // attribute is listed here — without this, target="_blank" and rel are dropped.
+  ADD_URI_SAFE_ATTR: ['target', 'rel', 'title'],
+};
+
 export function LandingIntroCard({ html, onClose, className = '' }: LandingIntroCardProps) {
+  const safeHtml = useMemo(() => DOMPurify.sanitize(html, INTRO_SANITIZE), [html]);
   return (
     <div
       className={`bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-fog-gray-dark/40 ${className}`}
@@ -52,7 +64,7 @@ export function LandingIntroCard({ html, onClose, className = '' }: LandingIntro
       )}
       <div
         className="rich-text text-sm text-slate-blue px-4 py-3.5 pr-9 max-h-[55vh] overflow-y-auto"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
       {onClose && (
         <div className="px-4 pb-3.5">

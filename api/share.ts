@@ -74,7 +74,11 @@ export default async function handler(req: Req, res: Res) {
   const origin = `${proto}://${host}`;
 
   const url = new URL(req.url ?? '/', origin);
-  const path = url.searchParams.get('path') || '/';
+  // `path` is attacker-controllable (anyone can call /api/share directly), and
+  // it lands in og:url, a file read and a redirect — accept only the two
+  // shapes vercel.json routes here, everything else is the root.
+  const rawPath = url.searchParams.get('path') || '/';
+  const path = /^\/view\/[a-z0-9-]+\/?$/i.test(rawPath) ? rawPath : '/';
   url.searchParams.delete('path');
   const qs = url.searchParams.toString();
 

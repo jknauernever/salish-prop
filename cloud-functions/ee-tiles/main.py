@@ -7,6 +7,9 @@ San Juan County, and returns a tile URL that Google Maps can consume directly.
 Endpoint: GET /get-tiles?start=2024-06-01&end=2024-08-31
 Response: { "tileUrl": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}" }
 """
+import logging
+from datetime import date
+
 import ee
 import google.auth
 import functions_framework
@@ -73,6 +76,16 @@ def get_tiles(request):
     if not start or not end:
         return (jsonify({'error': 'Missing start/end parameters'}), 400, cors_headers)
 
+    # Strict YYYY-MM-DD, Sentinel-2 SR era only, and a bounded span — an
+    # arbitrary range is an arbitrarily expensive median composite.
+    try:
+        start_d, end_d = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        return (jsonify({'error': 'start/end must be YYYY-MM-DD'}), 400, cors_headers)
+    if not (date(2017, 1, 1) <= start_d < end_d <= date.today()) or (end_d - start_d).days > 366:
+        return (jsonify({'error': 'Date range not supported'}), 400, cors_headers)
+    start, end = start_d.isoformat(), end_d.isoformat()
+
     try:
         _ensure_ee()
 
@@ -96,5 +109,7 @@ def get_tiles(request):
 
         return (jsonify({'tileUrl': tile_url}), 200, cors_headers)
 
-    except Exception as e:
-        return (jsonify({'error': str(e)}), 500, cors_headers)
+    except Exception:
+        # Details go to Cloud Logging, not to the caller.
+        logging.exception('request failed')
+        return (jsonify({'error': 'Internal error'}), 500, cors_headers)

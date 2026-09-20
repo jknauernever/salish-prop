@@ -1,4 +1,4 @@
-functions-framework
-google-cloud-storage
-jsonschema
-nh3
+functions-framework==3.10.2
+google-cloud-storage==3.14.1
+jsonschema==4.26.0
+nh3==0.3.7

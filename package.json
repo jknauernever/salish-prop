@@ -21,6 +21,7 @@
     "@tiptap/starter-kit": "^3.31.0",
     "@turf/turf": "^7.3.4",
     "deck.gl": "^9.3.11",
+    "dompurify": "^3.4.15",
     "react": "^19.2.0",
     "react-arborist": "^3.6.1",
     "react-dom": "^19.2.0",

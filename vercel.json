@@ -1,6 +1,20 @@
 {
   "routes": [
     {
+      "src": "/(.*)",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), payment=(), usb=()",
+        "Content-Security-Policy": "frame-ancestors 'self' https://sanjuans.org https://*.sanjuans.org; object-src 'none'; base-uri 'self'"
+      },
+      "continue": true
+    },
+    {
+      "src": "/_(mobile|popup)-test\\.html",
+      "status": 404
+    },
+    {
       "src": "/api/admin/categories",
       "dest": "https://us-west1-salish-sea-property-mapper.cloudfunctions.net/admin-config"
     },
