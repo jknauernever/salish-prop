@@ -4,6 +4,7 @@ import { MapContext } from '../../hooks/useMap';
 import { Footer } from '../Layout/Footer';
 import { setUrlParams, fmtLatLng } from '../../services/urlState';
 import { MOBILE_QUERY, isMobileNow } from '../../hooks/useIsMobile';
+import { createCountyAerials, showsCountyAerials, isCountyAerials, COUNTY_AERIALS_SERVICE, COUNTY_AERIALS_ATTRIBUTION, COUNTY_AERIALS_MIN_ZOOM } from './countyAerials';
 import type { ReactNode } from 'react';
 
 const SAN_JUAN_CENTER = { lat: 48.605, lng: -123.0 };
@@ -85,9 +86,30 @@ export function MapContainer({ header, children, initialView, initialMapTypeId }
         if (!c || z == null) return;
         setUrlParams({ c: fmtLatLng(c.lat(), c.lng()), z: (Math.round(z * 100) / 100).toString() });
       });
+      // County 2025 aerials over Google's imagery on Satellite / Hybrid,
+      // always the bottom overlay so data rasters draw above them.
+      const aerials = createCountyAerials();
+      const credit = document.createElement('a');
+      credit.href = COUNTY_AERIALS_SERVICE;
+      credit.target = '_blank';
+      credit.rel = 'noopener noreferrer';
+      credit.textContent = COUNTY_AERIALS_ATTRIBUTION;
+      credit.className = 'county-aerials-credit';
+      const syncAerials = () => {
+        const on = showsCountyAerials(mapInstance.getMapTypeId());
+        const has = mapInstance.overlayMapTypes.getLength() > 0 && isCountyAerials(mapInstance.overlayMapTypes.getAt(0));
+        if (on && !has) mapInstance.overlayMapTypes.insertAt(0, aerials);
+        if (!on && has) mapInstance.overlayMapTypes.removeAt(0);
+        credit.style.display = on && (mapInstance.getZoom() ?? 0) >= COUNTY_AERIALS_MIN_ZOOM ? '' : 'none';
+      };
+      mapInstance.controls[google.maps.ControlPosition.BOTTOM_RIGHT].push(credit);
+      syncAerials();
+      mapInstance.addListener('zoom_changed', syncAerials);
+
       mapInstance.addListener('maptypeid_changed', () => {
         const t = mapInstance.getMapTypeId();
         setUrlParams({ b: t && t !== google.maps.MapTypeId.HYBRID ? String(t) : null });
+        syncAerials();
       });
 
       setMap(mapInstance);

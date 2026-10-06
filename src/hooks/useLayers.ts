@@ -11,6 +11,7 @@ import {
 import { createHeatmapOverlay, type HeatmapOverlay } from '../components/Map/HeatmapOverlay';
 import { createKelpOverlay, type KelpOverlay } from '../components/Map/KelpOverlay';
 import { warmHitCache } from '../services/hitTest';
+import { dataOverlayBase } from '../components/Map/countyAerials';
 
 /** Fired on window as the cursor enters / moves over / leaves a midpoint or centroid pin. */
 export const MARKER_HOVER_EVENT = 'ssx-marker-hover';
@@ -836,7 +837,7 @@ export function useLayers(
         });
 
         rasterLayersRef.current.set(config.id, imageMapType);
-        map.overlayMapTypes.insertAt(0, imageMapType);
+        map.overlayMapTypes.insertAt(dataOverlayBase(map), imageMapType);
 
         setLayers(prev => prev.map(l =>
           l.config.id === config.id
@@ -1616,7 +1617,7 @@ export function useLayers(
     });
 
     rasterLayersRef.current.set(layerId, imageMapType);
-    map.overlayMapTypes.insertAt(0, imageMapType);
+    map.overlayMapTypes.insertAt(dataOverlayBase(map), imageMapType);
 
     // Set opacity based on current layer state
     setLayers(prev => prev.map(layer => {

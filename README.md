@@ -29,6 +29,7 @@
 
 ### Interactive Map
 - Google Maps (hybrid satellite + roads) centered on the San Juan Islands (48.53, -123.02)
+- San Juan County's own 2025 aerials (EagleView) drawn over Google's imagery inside the county from zoom 13 in, on Satellite and Hybrid ([`countyAerials.ts`](src/components/Map/countyAerials.ts)). Tiles come on demand from the county's MapServer `export` endpoint; edge tiles draw only the image raster (layer 4), so Google's imagery shows past the county line. Credited bottom-right.
 - 20 configurable layers across five categories: Fish Habitat, Ecological, Property, Planning & Infrastructure, Community Science
 - Layer toggle, per-category show/hide, opacity slider for raster layers
 - Viewport-filtered rendering for Tax Parcels and Building Footprints (only draws features in the current view; full dataset stays in memory for spatial queries)

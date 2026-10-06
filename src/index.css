@@ -241,3 +241,7 @@ body {
 /* eBird species link in the Birds tab (hover colour was an inline handler; the CSP forbids those). */
 .ssx-bird-link { color: #1A1A1A; text-decoration: none; }
 .ssx-bird-link:hover { color: #036E88; }
+
+/* Credit for the San Juan County 2025 aerials, styled like Google's own attribution line */
+.county-aerials-credit { font: 10px Roboto, Arial, sans-serif; color: #444; background: rgba(245,245,245,.7); padding: 0 6px; line-height: 14px; text-decoration: none; margin: 0 0 0 2px; }
+.county-aerials-credit:hover { text-decoration: underline; }
