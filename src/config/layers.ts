@@ -63,6 +63,7 @@ export const layerConfigs: LayerConfig[] = [
       fillOpacity: 0.7,
       strokeColor: '#1A252F',
       strokeWeight: 0.8,
+      closeUp: { fromZoom: 17, fillOpacity: 0.2, strokeColor: '#60A5FA', strokeWeight: 1.5 },
     },
     popupFields: [
       { key: 'ADDRESS', label: 'Address' },

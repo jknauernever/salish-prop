@@ -382,7 +382,9 @@ class DeckManager {
   private buildMvt(e: Entry): Layer {
     const { config } = e;
     const t = config.tiles!;
-    const st = config.style;
+    const base = config.style;
+    const cu = base.closeUp && this.zoom >= base.closeUp.fromZoom ? base.closeUp : null;
+    const st = cu ? { ...base, fillOpacity: cu.fillOpacity, strokeColor: cu.strokeColor ?? base.strokeColor, strokeWeight: cu.strokeWeight ?? base.strokeWeight } : base;
     const fill = hexToRgb(st.fillColor, [173, 181, 189]);
     const stroke = hexToRgb(st.strokeColor, [13, 79, 79]);
     const fillA = Math.round((st.fillOpacity ?? 0) * 255);
@@ -409,7 +411,7 @@ class DeckManager {
       getLineColor: [stroke[0], stroke[1], stroke[2], strokeA],
       lineWidthUnits: 'pixels',
       // From zoom 17 the ground itself shows the lot lines; keep ours hairline so shore layers stay legible
-      getLineWidth: this.zoom >= 17 ? Math.min(st.strokeWeight ?? 1, 1) : (st.strokeWeight ?? 1),
+      getLineWidth: this.zoom >= 17 && !cu ? Math.min(st.strokeWeight ?? 1, 1) : (st.strokeWeight ?? 1),
       lineWidthMinPixels: Math.min(st.strokeWeight ?? 1, 1),
       pointRadiusUnits: 'pixels',
       getPointRadius: 4,

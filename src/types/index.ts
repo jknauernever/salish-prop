@@ -19,6 +19,12 @@ export interface LayerStyle {
    * layers on one line: wide translucent bands low, thin identifying lines high.
    */
   zIndex?: number;
+  /**
+   * Style from this zoom in, where the county's 2025 aerials show each roof:
+   * a light fill and a crisp outline let the real building show through, so
+   * small offsets in the traced footprints don't hide what is on the ground.
+   */
+  closeUp?: { fromZoom: number; fillOpacity: number; strokeColor?: string; strokeWeight?: number };
 }
 
 export interface StyleByProperty {
